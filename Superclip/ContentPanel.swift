@@ -7,6 +7,7 @@ import AppKit
 import SwiftUI
 
 class ContentPanel: NSPanel {
+    weak var appDelegate: AppDelegate?
     
     init() {
         super.init(
@@ -33,6 +34,9 @@ class ContentPanel: NSPanel {
             .canJoinAllSpaces,
             .stationary
         ]
+        
+        // Set delegate to handle window events
+        delegate = self
     }
     
     private func setupContentView() {
@@ -54,6 +58,25 @@ class ContentPanel: NSPanel {
             
             setFrameOrigin(NSPoint(x: xPosition, y: yPosition))
             setContentSize(hostingView.frame.size)
+        }
+    }
+}
+
+extension ContentPanel: NSWindowDelegate {
+    func windowDidResignKey(_ notification: Notification) {
+        // Close when window loses key status (user clicked elsewhere)
+        close()
+    }
+    
+    override func mouseDown(with event: NSEvent) {
+        // If click is outside content view, close the panel
+        let clickPoint = event.locationInWindow
+        let contentRect = contentView?.frame ?? .zero
+        
+        if !contentRect.contains(clickPoint) {
+            close()
+        } else {
+            super.mouseDown(with: event)
         }
     }
 }

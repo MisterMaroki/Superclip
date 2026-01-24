@@ -10,6 +10,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var contentWindow: NSWindow?
     var hotKey: HotKey?
     var clickMonitor: Any?
+    let clipboardManager = ClipboardManager()
+    private var shouldPasteAfterClose = false
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -19,22 +21,31 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     func applicationDidResignActive(_ notification: Notification) {
         // Close panel when app loses focus
-        closeReviewWindow()
+        closeReviewWindow(andPaste: false)
     }
     
     private func setupHotkey() {
         hotKey = HotKey(key: .a, modifiers: [.command, .shift])
         hotKey?.keyDownHandler = { [weak self] in
             DispatchQueue.main.async {
-                self?.showContentWindow()
+                self?.toggleContentWindow()
             }
         }
     }
     
+    func toggleContentWindow() {
+        // If panel is open, close it; otherwise open it
+        if contentWindow != nil && contentWindow?.isVisible == true {
+            closeReviewWindow(andPaste: false)
+        } else {
+            showContentWindow()
+        }
+    }
+    
     func showContentWindow() {
-        self.closeReviewWindow()
+        self.closeReviewWindow(andPaste: false)
         
-        let contentPanel = ContentPanel()
+        let contentPanel = ContentPanel(clipboardManager: clipboardManager)
         contentPanel.appDelegate = self
         
         contentWindow = contentPanel
@@ -42,7 +53,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         contentPanel.makeKeyAndOrderFront(nil)
         contentPanel.makeKey()
         
-        // Start monitoring for clicks outside the panel
+        // Start monitoring for clicks outside the panel and ESC key
         startClickMonitoring()
     }
     
@@ -51,19 +62,48 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         guard let panelWindow = contentWindow else { return }
         
-        // Monitor mouse down events - this catches events within our app
-        clickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event -> NSEvent? in
+        // Monitor mouse down events and key events
+        clickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .keyDown]) { [weak self] event -> NSEvent? in
             guard let self = self,
-                  let panelWindow = self.contentWindow else {
+                  let panelWindow = self.contentWindow as? ContentPanel else {
                 return event
             }
             
-            // If click is in a different window (or nil), close the panel
-            if event.window != panelWindow {
-                DispatchQueue.main.async {
-                    self.closeReviewWindow()
+            if event.type == .keyDown {
+                switch event.keyCode {
+                case 53: // ESC key
+                    DispatchQueue.main.async {
+                        self.closeReviewWindow(andPaste: false)
+                    }
+                    return nil
+                case 123: // Left arrow
+                    panelWindow.navigationState.moveLeft()
+                    return nil
+                case 124: // Right arrow
+                    panelWindow.navigationState.moveRight()
+                    return nil
+                case 125: // Down arrow
+                    panelWindow.navigationState.moveRight()
+                    return nil
+                case 126: // Up arrow
+                    panelWindow.navigationState.moveLeft()
+                    return nil
+                case 36: // Return/Enter
+                    panelWindow.navigationState.selectCurrent()
+                    return nil
+                default:
+                    return event
                 }
-                return event
+            }
+            
+            // If click is in a different window (or nil), close the panel
+            if event.type == .leftMouseDown || event.type == .rightMouseDown {
+                if event.window != panelWindow {
+                    DispatchQueue.main.async {
+                        self.closeReviewWindow(andPaste: false)
+                    }
+                    return event
+                }
             }
             
             return event
@@ -80,7 +120,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     @objc private func windowDidResignKey(_ notification: Notification) {
         if notification.object as? NSWindow == contentWindow {
-            closeReviewWindow()
+            closeReviewWindow(andPaste: false)
         }
     }
     
@@ -92,12 +132,36 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NotificationCenter.default.removeObserver(self, name: NSWindow.didResignKeyNotification, object: contentWindow)
     }
     
-    private func closeReviewWindow() {
+    func closeReviewWindow(andPaste shouldPaste: Bool) {
         stopClickMonitoring()
         
         if let window = contentWindow {
             window.close()
             contentWindow = nil
         }
+        
+        // If we should paste, do it after a brief delay to let the previous app regain focus
+        if shouldPaste {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                self.simulatePaste()
+            }
+        }
+    }
+    
+    private func simulatePaste() {
+        // Create and post Cmd+V key event
+        let source = CGEventSource(stateID: .hidSystemState)
+        
+        // Key code 9 is 'V'
+        let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: true)
+        let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: false)
+        
+        // Add Command modifier
+        keyDown?.flags = .maskCommand
+        keyUp?.flags = .maskCommand
+        
+        // Post the events
+        keyDown?.post(tap: .cghidEventTap)
+        keyUp?.post(tap: .cghidEventTap)
     }
 }

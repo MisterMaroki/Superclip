@@ -1,0 +1,206 @@
+//
+//  ClipboardManager.swift
+//  Superclip
+//
+
+import AppKit
+import Combine
+
+class ClipboardManager: ObservableObject {
+    @Published var history: [ClipboardItem] = []
+    
+    private var pasteboard: NSPasteboard
+    private var changeCount: Int
+    private var timer: Timer?
+    private let maxHistorySize: Int = 100
+    
+    init() {
+        pasteboard = NSPasteboard.general
+        changeCount = pasteboard.changeCount
+        
+        // Start monitoring clipboard changes
+        startMonitoring()
+        
+        // Load initial clipboard content
+        loadCurrentClipboard()
+    }
+    
+    deinit {
+        stopMonitoring()
+    }
+    
+    private func startMonitoring() {
+        // Poll the pasteboard for changes every 0.5 seconds
+        timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            self?.checkClipboard()
+        }
+    }
+    
+    private func stopMonitoring() {
+        timer?.invalidate()
+        timer = nil
+    }
+    
+    private func checkClipboard() {
+        let currentChangeCount = pasteboard.changeCount
+        
+        if currentChangeCount != changeCount {
+            changeCount = currentChangeCount
+            loadCurrentClipboard()
+        }
+    }
+    
+    private func loadCurrentClipboard() {
+        let types = pasteboard.types ?? []
+        
+        // Check for files first (highest priority)
+        if types.contains(.fileURL) {
+            if let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: nil) as? [URL], !urls.isEmpty {
+                let fileNames = urls.map { $0.lastPathComponent }.joined(separator: ", ")
+                addToHistory(item: ClipboardItem(
+                    content: fileNames,
+                    type: .file,
+                    fileURLs: urls
+                ))
+                return
+            }
+        }
+        
+        // Check for images (PNG, TIFF, etc.)
+        if types.contains(.png) || types.contains(.tiff) {
+            if let imageData = pasteboard.data(forType: .png) ?? pasteboard.data(forType: .tiff) {
+                // Create a description for the image
+                var description = "Image"
+                if let image = NSImage(data: imageData) {
+                    description = "\(Int(image.size.width))×\(Int(image.size.height))"
+                }
+                addToHistory(item: ClipboardItem(
+                    content: description,
+                    type: .image,
+                    imageData: imageData
+                ))
+                return
+            }
+        }
+        
+        // Check for URLs
+        if types.contains(.URL) {
+            if let url = pasteboard.string(forType: .URL), !url.isEmpty {
+                addToHistory(item: ClipboardItem(content: url, type: .url))
+                return
+            }
+        }
+        
+        // Check for RTF content
+        if types.contains(.rtf) {
+            if let rtfData = pasteboard.data(forType: .rtf),
+               let attributedString = NSAttributedString(rtf: rtfData, documentAttributes: nil) {
+                let plainText = attributedString.string
+                if !plainText.isEmpty {
+                    addToHistory(item: ClipboardItem(content: plainText, type: .rtf))
+                    return
+                }
+            }
+        }
+        
+        // Check for plain string content
+        if let string = pasteboard.string(forType: .string), !string.isEmpty {
+            // Detect if it's a URL
+            if let url = URL(string: string), url.scheme != nil {
+                addToHistory(item: ClipboardItem(content: string, type: .url))
+            } else {
+                addToHistory(item: ClipboardItem(content: string, type: .text))
+            }
+        }
+    }
+    
+    private func addToHistory(item: ClipboardItem) {
+        let identifier = item.uniqueIdentifier
+        
+        // Check if already at front
+        if let firstItem = history.first, firstItem.uniqueIdentifier == identifier {
+            return
+        }
+        
+        DispatchQueue.main.async {
+            // Check if content already exists in history
+            if let existingIndex = self.history.firstIndex(where: { $0.uniqueIdentifier == identifier }) {
+                // Remove existing item and move to front with updated timestamp
+                let existingItem = self.history.remove(at: existingIndex)
+                let updatedItem = ClipboardItem(
+                    id: existingItem.id,
+                    content: existingItem.content,
+                    timestamp: Date(),
+                    type: existingItem.type,
+                    imageData: existingItem.imageData,
+                    fileURLs: existingItem.fileURLs
+                )
+                self.history.insert(updatedItem, at: 0)
+            } else {
+                // New item - insert at beginning
+                self.history.insert(item, at: 0)
+                
+                // Limit history size
+                if self.history.count > self.maxHistorySize {
+                    self.history = Array(self.history.prefix(self.maxHistorySize))
+                }
+            }
+        }
+    }
+    
+    func copyToClipboard(_ item: ClipboardItem) {
+        pasteboard.clearContents()
+        
+        switch item.type {
+        case .image:
+            if let imageData = item.imageData {
+                // Try to determine the image type and set appropriate pasteboard type
+                if let image = NSImage(data: imageData) {
+                    pasteboard.writeObjects([image])
+                }
+            }
+        case .file:
+            if let urls = item.fileURLs {
+                pasteboard.writeObjects(urls as [NSURL])
+            }
+        case .url:
+            if let url = URL(string: item.content) {
+                pasteboard.writeObjects([url as NSURL])
+            }
+            pasteboard.setString(item.content, forType: .string)
+        case .text, .rtf:
+            pasteboard.setString(item.content, forType: .string)
+        }
+        
+        changeCount = pasteboard.changeCount
+        
+        // Move item to the front of the list (most recently used)
+        DispatchQueue.main.async {
+            // Remove the item from its current position
+            self.history.removeAll { $0.id == item.id }
+            
+            // Create a new item with updated timestamp and insert at front
+            let updatedItem = ClipboardItem(
+                id: item.id,
+                content: item.content,
+                timestamp: Date(),
+                type: item.type,
+                imageData: item.imageData,
+                fileURLs: item.fileURLs
+            )
+            self.history.insert(updatedItem, at: 0)
+        }
+    }
+    
+    func deleteItem(_ item: ClipboardItem) {
+        DispatchQueue.main.async {
+            self.history.removeAll { $0.id == item.id }
+        }
+    }
+    
+    func clearHistory() {
+        DispatchQueue.main.async {
+            self.history.removeAll()
+        }
+    }
+}

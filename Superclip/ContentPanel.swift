@@ -8,8 +8,12 @@ import SwiftUI
 
 class ContentPanel: NSPanel {
     weak var appDelegate: AppDelegate?
+    let clipboardManager: ClipboardManager
+    let navigationState = NavigationState()
     
-    init() {
+    init(clipboardManager: ClipboardManager) {
+        self.clipboardManager = clipboardManager
+        
         super.init(
             contentRect: .zero,
             styleMask: [.borderless, .nonactivatingPanel, .titled],
@@ -21,12 +25,14 @@ class ContentPanel: NSPanel {
         setupContentView()
     }
     
+    override var canBecomeKey: Bool { true }
+    
     private func setupWindow() {
         backgroundColor = .clear
         isOpaque = false
-        hasShadow = false
+        hasShadow = true
         level = .floating
-        isMovableByWindowBackground = true
+        isMovableByWindowBackground = false // Don't allow moving the bottom bar
         titlebarAppearsTransparent = true
         titleVisibility = .hidden
         
@@ -40,24 +46,40 @@ class ContentPanel: NSPanel {
     }
     
     private func setupContentView() {
-        let contentView = ContentView() {
-            self.close()
+        let contentView = ContentView(
+            clipboardManager: clipboardManager,
+            navigationState: navigationState
+        ) { shouldPaste in
+            self.appDelegate?.closeReviewWindow(andPaste: shouldPaste)
         }
         
         let hostingView = NSHostingView(rootView: contentView)
         self.contentView = hostingView
         
-        hostingView.setFrameSize(hostingView.fittingSize)
-        
         if let screen = NSScreen.main {
-            let padding: CGFloat = 20
-            
             let screenFrame = screen.visibleFrame
-            let xPosition = screenFrame.maxX - hostingView.frame.width - padding
-            let yPosition = screenFrame.minY + padding
+            let padding: CGFloat = 20
+            let bottomPadding: CGFloat = 20
+            let panelHeight: CGFloat = 320 // Height for horizontal clipboard cards
             
-            setFrameOrigin(NSPoint(x: xPosition, y: yPosition))
-            setContentSize(hostingView.frame.size)
+            // Set panel to span across the bottom of the screen
+            let panelWidth = screenFrame.width - (padding * 2)
+            let xPosition = screenFrame.minX + padding
+            let yPosition = screenFrame.minY + bottomPadding
+            
+            // Set the hosting view size first
+            hostingView.setFrameSize(NSSize(width: panelWidth, height: panelHeight))
+            
+            // Set the window frame
+            setFrame(
+                NSRect(
+                    x: xPosition,
+                    y: yPosition,
+                    width: panelWidth,
+                    height: panelHeight
+                ),
+                display: false
+            )
         }
     }
 }

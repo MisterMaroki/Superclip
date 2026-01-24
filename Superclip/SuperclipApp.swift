@@ -2,16 +2,17 @@
 //  SuperclipApp.swift
 //  Superclip
 //
-//  Created by Omar Maroki on 23/01/2026.
-//
 
 import SwiftUI
 
 @main
 struct SuperclipApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+
     var body: some Scene {
-        WindowGroup {
-            ContentView()
+        // No visible window — app runs from menu bar + AppDelegate
+        Settings {
+            EmptyView()
         }
     }
 }

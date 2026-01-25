@@ -4,23 +4,48 @@
 //
 
 import SwiftUI
+import AVKit
 
 struct PreviewView: View {
     let item: ClipboardItem
     let clipboardManager: ClipboardManager
+    @ObservedObject var editingState: PreviewEditingState
     let onDismiss: () -> Void
     let onPaste: (String) -> Void
     
     @State private var editableContent: String
-    @State private var isEditing: Bool = false
+    @State private var originalContent: String
     @FocusState private var isTextEditorFocused: Bool
     
-    init(item: ClipboardItem, clipboardManager: ClipboardManager, onDismiss: @escaping () -> Void, onPaste: @escaping (String) -> Void) {
+    private var isEditing: Bool {
+        get { editingState.isEditing }
+    }
+    
+    private func setEditing(_ value: Bool) {
+        editingState.isEditing = value
+    }
+    
+    private func cancelEditing() {
+        // Reset to original content
+        editableContent = originalContent
+        setEditing(false)
+    }
+    
+    private func saveEditing() {
+        // Save changes to the clipboard item
+        clipboardManager.updateItemContent(item, newContent: editableContent)
+        originalContent = editableContent
+        setEditing(false)
+    }
+    
+    init(item: ClipboardItem, clipboardManager: ClipboardManager, editingState: PreviewEditingState, onDismiss: @escaping () -> Void, onPaste: @escaping (String) -> Void) {
         self.item = item
         self.clipboardManager = clipboardManager
+        self.editingState = editingState
         self.onDismiss = onDismiss
         self.onPaste = onPaste
         self._editableContent = State(initialValue: item.content)
+        self._originalContent = State(initialValue: item.content)
     }
     
     var characterCount: Int {
@@ -60,6 +85,9 @@ struct PreviewView: View {
             HStack(spacing: 12) {
                 // Close button
                 Button {
+                    if isEditing {
+                        cancelEditing()
+                    }
                     onDismiss()
                 } label: {
                     Image(systemName: "xmark.circle.fill")
@@ -113,22 +141,40 @@ struct PreviewView: View {
                     }
                     .buttonStyle(.plain)
                     
-                    // Edit button
+                    // Edit/Done button
                     Button {
-                        isEditing.toggle()
                         if isEditing {
+                            saveEditing()
+                        } else {
+                            setEditing(true)
                             isTextEditorFocused = true
                         }
                     } label: {
-                        Text("Edit")
+                        Text(isEditing ? "Done" : "Edit")
                             .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(isEditing ? .white : .white.opacity(0.6))
+                            .foregroundStyle(.white)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 4)
-                            .background(isEditing ? appColor : Color.white.opacity(0.1))
+                            .background(isEditing ? Color.green : Color.white.opacity(0.1))
                             .cornerRadius(4)
                     }
                     .buttonStyle(.plain)
+                    
+                    // Cancel button (only visible when editing)
+                    if isEditing {
+                        Button {
+                            cancelEditing()
+                        } label: {
+                            Text("Cancel")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(.white.opacity(0.6))
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 4)
+                                .background(Color.white.opacity(0.1))
+                                .cornerRadius(4)
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
             }
             .padding(.horizontal, 16)
@@ -201,24 +247,35 @@ struct PreviewView: View {
             }
         )
         .clipShape(RoundedRectangle(cornerRadius: 12))
+        .onChange(of: editingState.shouldCancelEditing) { shouldCancel in
+            if shouldCancel {
+                editableContent = originalContent
+                setEditing(false)
+                editingState.shouldCancelEditing = false
+            }
+        }
     }
     
     var textPreview: some View {
-        ScrollView {
+        Group {
             if isEditing {
+                // TextEditor has its own scrolling, no need for ScrollView wrapper
                 TextEditor(text: $editableContent)
                     .font(.system(size: 13, design: .monospaced))
                     .scrollContentBackground(.hidden)
                     .background(Color.clear)
                     .focused($isTextEditorFocused)
                     .padding(16)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                Text(editableContent)
-                    .font(.system(size: 13))
-                    .foregroundStyle(.primary)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(16)
+                ScrollView {
+                    Text(editableContent)
+                        .font(.system(size: 13))
+                        .foregroundStyle(.primary)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(16)
+                }
             }
         }
     }
@@ -251,9 +308,25 @@ struct PreviewView: View {
 struct FilePreviewRow: View {
     let url: URL
     
+    // Media file extensions
+    private static let videoExtensions = ["mp4", "mov", "avi", "mkv", "webm", "m4v", "wmv", "flv"]
+    private static let audioExtensions = ["mp3", "wav", "aac", "flac", "m4a", "ogg", "wma", "aiff"]
+    private static let imageExtensions = ["jpg", "jpeg", "png", "gif", "bmp", "tiff", "tif", "webp", "heic", "heif"]
+    
     private var isImageFile: Bool {
-        let imageExtensions = ["jpg", "jpeg", "png", "gif", "bmp", "tiff", "tif", "webp", "heic", "heif"]
-        return imageExtensions.contains(url.pathExtension.lowercased())
+        Self.imageExtensions.contains(url.pathExtension.lowercased())
+    }
+    
+    private var isVideoFile: Bool {
+        Self.videoExtensions.contains(url.pathExtension.lowercased())
+    }
+    
+    private var isAudioFile: Bool {
+        Self.audioExtensions.contains(url.pathExtension.lowercased())
+    }
+    
+    private var isGIF: Bool {
+        url.pathExtension.lowercased() == "gif"
     }
     
     private var imageFromFile: NSImage? {
@@ -261,10 +334,31 @@ struct FilePreviewRow: View {
         return NSImage(contentsOf: url)
     }
     
+    private var mediaTypeLabel: String {
+        let ext = url.pathExtension.uppercased()
+        if isVideoFile {
+            return "Video • \(ext)"
+        } else if isAudioFile {
+            return "Audio • \(ext)"
+        } else if isImageFile {
+            return "Image • \(ext)"
+        }
+        return ext
+    }
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            // Show image preview if it's an image file
-            if isImageFile, let image = imageFromFile {
+            // Show appropriate media preview
+            if isVideoFile {
+                VideoPlayerView(url: url)
+                    .frame(maxWidth: .infinity, maxHeight: 280)
+                    .cornerRadius(8)
+                    .clipped()
+            } else if isAudioFile {
+                AudioPlayerView(url: url)
+                    .frame(maxWidth: .infinity)
+                    .cornerRadius(8)
+            } else if isImageFile, let image = imageFromFile {
                 Image(nsImage: image)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
@@ -284,11 +378,22 @@ struct FilePreviewRow: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(url.lastPathComponent)
                         .font(.system(size: 13, weight: .medium))
-                    Text(url.deletingLastPathComponent().path)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+                    
+                    HStack(spacing: 8) {
+                        Text(url.deletingLastPathComponent().path)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        
+                        if isVideoFile || isAudioFile || isImageFile {
+                            Text("•")
+                                .foregroundStyle(.secondary.opacity(0.5))
+                            Text(mediaTypeLabel)
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 }
                 
                 Spacer()
@@ -298,5 +403,166 @@ struct FilePreviewRow: View {
             .background(Color(nsColor: .separatorColor).opacity(0.2))
             .cornerRadius(8)
         }
+    }
+}
+
+// MARK: - Video Player View
+
+struct VideoPlayerView: View {
+    let url: URL
+    @State private var player: AVPlayer?
+    @State private var isPlaying = false
+    
+    var body: some View {
+        ZStack {
+            if let player = player {
+                VideoPlayer(player: player)
+                    .onAppear {
+                        // Don't auto-play
+                        player.pause()
+                    }
+                    .onDisappear {
+                        player.pause()
+                    }
+            } else {
+                // Loading state
+                Rectangle()
+                    .fill(Color.black.opacity(0.3))
+                    .overlay {
+                        ProgressView()
+                            .scaleEffect(0.8)
+                    }
+            }
+        }
+        .onAppear {
+            player = AVPlayer(url: url)
+        }
+    }
+}
+
+// MARK: - Audio Player View
+
+struct AudioPlayerView: View {
+    let url: URL
+    @State private var player: AVPlayer?
+    @State private var isPlaying = false
+    @State private var currentTime: Double = 0
+    @State private var duration: Double = 0
+    @State private var timeObserver: Any?
+    
+    var body: some View {
+        VStack(spacing: 12) {
+            // Waveform visualization placeholder
+            HStack(spacing: 2) {
+                ForEach(0..<40, id: \.self) { i in
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(i < Int((currentTime / max(duration, 1)) * 40) ? Color.purple : Color.purple.opacity(0.3))
+                        .frame(width: 4, height: CGFloat.random(in: 10...40))
+                }
+            }
+            .frame(height: 50)
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+            
+            // Playback controls
+            HStack(spacing: 20) {
+                // Play/Pause button
+                Button {
+                    togglePlayback()
+                } label: {
+                    Image(systemName: isPlaying ? "pause.circle.fill" : "play.circle.fill")
+                        .font(.system(size: 36))
+                        .foregroundStyle(.purple)
+                }
+                .buttonStyle(.plain)
+                
+                // Time slider
+                VStack(spacing: 4) {
+                    Slider(value: $currentTime, in: 0...max(duration, 1)) { editing in
+                        if !editing {
+                            player?.seek(to: CMTime(seconds: currentTime, preferredTimescale: 600))
+                        }
+                    }
+                    .tint(.purple)
+                    
+                    HStack {
+                        Text(formatTime(currentTime))
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Text(formatTime(duration))
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 12)
+        }
+        .background(Color(nsColor: .separatorColor).opacity(0.2))
+        .onAppear {
+            setupPlayer()
+        }
+        .onDisappear {
+            cleanup()
+        }
+    }
+    
+    private func setupPlayer() {
+        let avPlayer = AVPlayer(url: url)
+        self.player = avPlayer
+        
+        // Get duration
+        let asset = AVAsset(url: url)
+        Task {
+            if let durationValue = try? await asset.load(.duration) {
+                await MainActor.run {
+                    self.duration = durationValue.seconds
+                }
+            }
+        }
+        
+        // Add time observer
+        let interval = CMTime(seconds: 0.1, preferredTimescale: 600)
+        timeObserver = avPlayer.addPeriodicTimeObserver(forInterval: interval, queue: .main) { time in
+            self.currentTime = time.seconds
+        }
+        
+        // Observe playback end
+        NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime,
+            object: avPlayer.currentItem,
+            queue: .main
+        ) { _ in
+            self.isPlaying = false
+            self.player?.seek(to: .zero)
+            self.currentTime = 0
+        }
+    }
+    
+    private func togglePlayback() {
+        guard let player = player else { return }
+        
+        if isPlaying {
+            player.pause()
+        } else {
+            player.play()
+        }
+        isPlaying.toggle()
+    }
+    
+    private func cleanup() {
+        player?.pause()
+        if let observer = timeObserver {
+            player?.removeTimeObserver(observer)
+        }
+        player = nil
+    }
+    
+    private func formatTime(_ time: Double) -> String {
+        guard time.isFinite else { return "0:00" }
+        let minutes = Int(time) / 60
+        let seconds = Int(time) % 60
+        return String(format: "%d:%02d", minutes, seconds)
     }
 }

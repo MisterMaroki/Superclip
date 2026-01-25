@@ -176,6 +176,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 switch event.keyCode {
                 case 53: // ESC key
                     DispatchQueue.main.async {
+                        // If editing, cancel editing first (don't close preview)
+                        if let previewPanel = self.previewWindow as? PreviewPanel,
+                           previewPanel.editingState.isEditing {
+                            previewPanel.editingState.cancelEditing()
+                            return
+                        }
                         // Close preview first if open, otherwise close drawer
                         if self.previewWindow?.isVisible == true {
                             self.closePreviewWindow()
@@ -204,6 +210,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     panelWindow.navigationState.focusSearch()
                     return nil
                 case 49: // Space key - toggle preview
+                    // Don't close preview if user is editing text
+                    if let previewPanel = self.previewWindow as? PreviewPanel,
+                       previewPanel.editingState.isEditing {
+                        return event // Allow space to be typed in the text editor
+                    }
                     if self.previewWindow?.isVisible == true {
                         self.closePreviewWindow()
                         self.contentWindow?.makeKey()

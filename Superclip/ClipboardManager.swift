@@ -80,21 +80,8 @@ class ClipboardManager: ObservableObject {
         let types = pasteboard.types ?? []
         let sourceApp = getFrontmostApp()
         
-        // Check for files first (highest priority)
-        if types.contains(.fileURL) {
-            if let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: nil) as? [URL], !urls.isEmpty {
-                let fileNames = urls.map { $0.lastPathComponent }.joined(separator: ", ")
-                addToHistory(item: ClipboardItem(
-                    content: fileNames,
-                    type: .file,
-                    fileURLs: urls,
-                    sourceApp: sourceApp
-                ))
-                return
-            }
-        }
-        
-        // Check for images (PNG, TIFF, etc.)
+        // Check for images first (PNG, TIFF, etc.) - before files, since copied images
+        // often have both image data and a file URL reference
         if types.contains(.png) || types.contains(.tiff) {
             if let imageData = pasteboard.data(forType: .png) ?? pasteboard.data(forType: .tiff) {
                 // Create a description for the image
@@ -106,6 +93,39 @@ class ClipboardManager: ObservableObject {
                     content: description,
                     type: .image,
                     imageData: imageData,
+                    sourceApp: sourceApp
+                ))
+                return
+            }
+        }
+        
+        // Check for files
+        if types.contains(.fileURL) {
+            if let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: nil) as? [URL], !urls.isEmpty {
+                // Check if it's a single image file - treat as image instead of file
+                let imageExtensions = ["jpg", "jpeg", "png", "gif", "bmp", "tiff", "tif", "webp", "heic", "heif"]
+                if urls.count == 1, let url = urls.first,
+                   imageExtensions.contains(url.pathExtension.lowercased()),
+                   let imageData = try? Data(contentsOf: url) {
+                    var description = "Image"
+                    if let image = NSImage(data: imageData) {
+                        description = "\(Int(image.size.width))×\(Int(image.size.height))"
+                    }
+                    addToHistory(item: ClipboardItem(
+                        content: description,
+                        type: .image,
+                        imageData: imageData,
+                        fileURLs: urls,  // Keep file URL for reference
+                        sourceApp: sourceApp
+                    ))
+                    return
+                }
+                
+                let fileNames = urls.map { $0.lastPathComponent }.joined(separator: ", ")
+                addToHistory(item: ClipboardItem(
+                    content: fileNames,
+                    type: .file,
+                    fileURLs: urls,
                     sourceApp: sourceApp
                 ))
                 return
@@ -226,6 +246,24 @@ class ClipboardManager: ObservableObject {
     func deleteItem(_ item: ClipboardItem) {
         DispatchQueue.main.async {
             self.history.removeAll { $0.id == item.id }
+        }
+    }
+    
+    func updateItemContent(_ item: ClipboardItem, newContent: String) {
+        DispatchQueue.main.async {
+            if let index = self.history.firstIndex(where: { $0.id == item.id }) {
+                let existingItem = self.history[index]
+                let updatedItem = ClipboardItem(
+                    id: existingItem.id,
+                    content: newContent,
+                    timestamp: existingItem.timestamp,
+                    type: existingItem.type,
+                    imageData: existingItem.imageData,
+                    fileURLs: existingItem.fileURLs,
+                    sourceApp: existingItem.sourceApp
+                )
+                self.history[index] = updatedItem
+            }
         }
     }
     

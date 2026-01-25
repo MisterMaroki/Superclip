@@ -4,6 +4,7 @@
 //
 
 import SwiftUI
+import AVFoundation
 
 struct ContentView: View {
     @ObservedObject var clipboardManager: ClipboardManager
@@ -371,44 +372,51 @@ struct ClipboardItemCard: View {
         }
     }
     
+    // Media file extensions
+    private static let videoExtensions = ["mp4", "mov", "avi", "mkv", "webm", "m4v", "wmv", "flv"]
+    private static let audioExtensions = ["mp3", "wav", "aac", "flac", "m4a", "ogg", "wma", "aiff"]
+    private static let imageExtensions = ["jpg", "jpeg", "png", "gif", "bmp", "tiff", "tif", "webp", "heic", "heif"]
+    
     private func isImageFile(_ url: URL) -> Bool {
-        let imageExtensions = ["jpg", "jpeg", "png", "gif", "bmp", "tiff", "tif", "webp", "heic", "heif"]
-        return imageExtensions.contains(url.pathExtension.lowercased())
+        Self.imageExtensions.contains(url.pathExtension.lowercased())
+    }
+    
+    private func isVideoFile(_ url: URL) -> Bool {
+        Self.videoExtensions.contains(url.pathExtension.lowercased())
+    }
+    
+    private func isAudioFile(_ url: URL) -> Bool {
+        Self.audioExtensions.contains(url.pathExtension.lowercased())
     }
     
     var fileContentView: some View {
         Group {
             if let urls = item.fileURLs {
-                // Check if it's a single image file - show image preview
-                if urls.count == 1, let url = urls.first, isImageFile(url), let image = NSImage(contentsOf: url) {
-                    Image(nsImage: image)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .cornerRadius(4)
+                // Check if it's a single media file - show preview
+                if urls.count == 1, let url = urls.first {
+                    if isImageFile(url), let image = NSImage(contentsOf: url) {
+                        Image(nsImage: image)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .cornerRadius(4)
+                    } else if isVideoFile(url) {
+                        VideoThumbnailView(url: url)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .cornerRadius(4)
+                    } else if isAudioFile(url) {
+                        AudioFileThumbnailView(url: url)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .cornerRadius(4)
+                    } else {
+                        singleFileView(url: url)
+                    }
                 } else {
-                    // Multiple files or non-image files - show list
+                    // Multiple files - show list
                     VStack(alignment: .leading, spacing: 4) {
                         ForEach(urls.prefix(4), id: \.self) { url in
                             HStack(spacing: 6) {
-                                // Show thumbnail for images, icon for others
-                                if isImageFile(url), let image = NSImage(contentsOf: url) {
-                                    Image(nsImage: image)
-                                        .resizable()
-                                        .aspectRatio(contentMode: .fill)
-                                        .frame(width: 20, height: 20)
-                                        .cornerRadius(3)
-                                        .clipped()
-                                } else if let icon = NSWorkspace.shared.icon(forFile: url.path) as NSImage? {
-                                    Image(nsImage: icon)
-                                        .resizable()
-                                        .frame(width: 20, height: 20)
-                                } else {
-                                    Image(systemName: "doc")
-                                        .font(.system(size: 14))
-                                        .foregroundStyle(.secondary)
-                                        .frame(width: 20, height: 20)
-                                }
+                                fileThumbnail(for: url)
                                 
                                 Text(url.lastPathComponent)
                                     .font(.system(size: 11))
@@ -426,6 +434,63 @@ struct ClipboardItemCard: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
+        }
+    }
+    
+    @ViewBuilder
+    private func singleFileView(url: URL) -> some View {
+        VStack(spacing: 8) {
+            if let icon = NSWorkspace.shared.icon(forFile: url.path) as NSImage? {
+                Image(nsImage: icon)
+                    .resizable()
+                    .frame(width: 48, height: 48)
+            }
+            Text(url.lastPathComponent)
+                .font(.system(size: 11))
+                .lineLimit(2)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+    
+    @ViewBuilder
+    private func fileThumbnail(for url: URL) -> some View {
+        if isImageFile(url), let image = NSImage(contentsOf: url) {
+            Image(nsImage: image)
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+                .frame(width: 20, height: 20)
+                .cornerRadius(3)
+                .clipped()
+        } else if isVideoFile(url) {
+            ZStack {
+                Rectangle()
+                    .fill(Color.gray.opacity(0.3))
+                    .frame(width: 20, height: 20)
+                    .cornerRadius(3)
+                Image(systemName: "play.fill")
+                    .font(.system(size: 8))
+                    .foregroundStyle(.white)
+            }
+        } else if isAudioFile(url) {
+            ZStack {
+                Rectangle()
+                    .fill(Color.purple.opacity(0.3))
+                    .frame(width: 20, height: 20)
+                    .cornerRadius(3)
+                Image(systemName: "waveform")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.purple)
+            }
+        } else if let icon = NSWorkspace.shared.icon(forFile: url.path) as NSImage? {
+            Image(nsImage: icon)
+                .resizable()
+                .frame(width: 20, height: 20)
+        } else {
+            Image(systemName: "doc")
+                .font(.system(size: 14))
+                .foregroundStyle(.secondary)
+                .frame(width: 20, height: 20)
         }
     }
     
@@ -447,6 +512,103 @@ struct ClipboardItemCard: View {
                 .multilineTextAlignment(.leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+}
+
+// MARK: - Video Thumbnail View
+
+struct VideoThumbnailView: View {
+    let url: URL
+    @State private var thumbnail: NSImage?
+    
+    var body: some View {
+        ZStack {
+            if let thumbnail = thumbnail {
+                Image(nsImage: thumbnail)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+            } else {
+                Rectangle()
+                    .fill(Color.gray.opacity(0.2))
+            }
+            
+            // Play button overlay
+            VStack {
+                Image(systemName: "play.circle.fill")
+                    .font(.system(size: 36))
+                    .foregroundStyle(.white.opacity(0.9))
+                    .shadow(color: .black.opacity(0.3), radius: 4)
+                
+                Text("VIDEO")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.8))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 2)
+                    .background(Color.black.opacity(0.5))
+                    .cornerRadius(4)
+            }
+        }
+        .onAppear {
+            generateThumbnail()
+        }
+    }
+    
+    private func generateThumbnail() {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let asset = AVAsset(url: url)
+            let imageGenerator = AVAssetImageGenerator(asset: asset)
+            imageGenerator.appliesPreferredTrackTransform = true
+            imageGenerator.maximumSize = CGSize(width: 400, height: 300)
+            
+            let time = CMTime(seconds: 1, preferredTimescale: 600)
+            
+            do {
+                let cgImage = try imageGenerator.copyCGImage(at: time, actualTime: nil)
+                let image = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+                DispatchQueue.main.async {
+                    self.thumbnail = image
+                }
+            } catch {
+                // Failed to generate thumbnail
+            }
+        }
+    }
+}
+
+// MARK: - Audio File Thumbnail View
+
+struct AudioFileThumbnailView: View {
+    let url: URL
+    
+    var body: some View {
+        VStack(spacing: 12) {
+            // Waveform visualization
+            HStack(spacing: 3) {
+                ForEach(0..<20, id: \.self) { i in
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(Color.purple.opacity(0.6))
+                        .frame(width: 6, height: CGFloat.random(in: 15...50))
+                }
+            }
+            
+            // Audio icon and label
+            HStack(spacing: 8) {
+                Image(systemName: "waveform.circle.fill")
+                    .font(.system(size: 24))
+                    .foregroundStyle(.purple)
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("AUDIO")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                    Text(url.pathExtension.uppercased())
+                        .font(.system(size: 9))
+                        .foregroundStyle(.tertiary)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.purple.opacity(0.1))
     }
 }
 

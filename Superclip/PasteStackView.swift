@@ -4,6 +4,7 @@
 //
 
 import SwiftUI
+import AVFoundation
 
 enum SortOrder {
     case ascending  // Oldest first (first copied at top)
@@ -230,9 +231,83 @@ struct PasteStackItemRow: View {
     let onDelete: () -> Void
     
     @State private var isHovered: Bool = false
+    @State private var mediaThumbnail: NSImage?
     
     var appColor: Color {
         item.sourceApp?.accentColor ?? Color(nsColor: .systemGray)
+    }
+    
+    // Get file extension for display
+    var fileExtension: String? {
+        switch item.type {
+        case .file:
+            if let urls = item.fileURLs, let firstURL = urls.first, urls.count == 1 {
+                let ext = firstURL.pathExtension.lowercased()
+                return ext.isEmpty ? nil : ext
+            }
+            return nil
+        case .image:
+            // Check if there's a file URL with extension
+            if let urls = item.fileURLs, let firstURL = urls.first {
+                let ext = firstURL.pathExtension.lowercased()
+                return ext.isEmpty ? nil : ext
+            }
+            // Try to detect from image data
+            if let data = item.imageData {
+                if data.starts(with: [0x89, 0x50, 0x4E, 0x47]) { return "png" }
+                if data.starts(with: [0xFF, 0xD8, 0xFF]) { return "jpg" }
+                if data.starts(with: [0x47, 0x49, 0x46]) { return "gif" }
+                if data.count >= 12 {
+                    let webpHeader = Array(data[8..<12])
+                    if webpHeader == [0x57, 0x45, 0x42, 0x50] { return "webp" }
+                }
+            }
+            return nil
+        default:
+            return nil
+        }
+    }
+    
+    // Media file extensions
+    private static let videoExtensions = ["mp4", "mov", "avi", "mkv", "webm", "m4v", "wmv", "flv"]
+    private static let audioExtensions = ["mp3", "wav", "aac", "flac", "m4a", "ogg", "wma", "aiff"]
+    private static let imageExtensions = ["jpg", "jpeg", "png", "gif", "bmp", "tiff", "tif", "webp", "heic", "heif"]
+    
+    private func isVideoFile(_ url: URL) -> Bool {
+        Self.videoExtensions.contains(url.pathExtension.lowercased())
+    }
+    
+    private func isAudioFile(_ url: URL) -> Bool {
+        Self.audioExtensions.contains(url.pathExtension.lowercased())
+    }
+    
+    private func isImageFile(_ url: URL) -> Bool {
+        Self.imageExtensions.contains(url.pathExtension.lowercased())
+    }
+    
+    private func isMediaFile(_ url: URL) -> Bool {
+        isVideoFile(url) || isAudioFile(url) || isImageFile(url)
+    }
+    
+    private func generateVideoThumbnail(for url: URL) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let asset = AVAsset(url: url)
+            let imageGenerator = AVAssetImageGenerator(asset: asset)
+            imageGenerator.appliesPreferredTrackTransform = true
+            imageGenerator.maximumSize = CGSize(width: 64, height: 64)
+            
+            let time = CMTime(seconds: 1, preferredTimescale: 600)
+            
+            do {
+                let cgImage = try imageGenerator.copyCGImage(at: time, actualTime: nil)
+                let thumbnail = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+                DispatchQueue.main.async {
+                    self.mediaThumbnail = thumbnail
+                }
+            } catch {
+                // Fallback - no thumbnail available
+            }
+        }
     }
     
     var body: some View {
@@ -253,11 +328,19 @@ struct PasteStackItemRow: View {
             contentPreview
                 .frame(maxWidth: .infinity, alignment: .topLeading)
             
-            // Type indicator
-            typeIcon
-                .font(.system(size: 10))
-                .foregroundStyle(.secondary)
-                .padding(.top, 2)
+            // Type indicator with extension
+            HStack(spacing: 3) {
+                typeIcon
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                
+                if let ext = fileExtension {
+                    Text(ext.uppercased())
+                        .font(.system(size: 8, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.top, 2)
             
             // Delete button (visible on hover)
             if isHovered || isSelected {
@@ -315,19 +398,7 @@ struct PasteStackItemRow: View {
                     .lineLimit(2)
             }
         case .file:
-            HStack(alignment: .top, spacing: 6) {
-                if let urls = item.fileURLs, let firstURL = urls.first {
-                    if let icon = NSWorkspace.shared.icon(forFile: firstURL.path) as NSImage? {
-                        Image(nsImage: icon)
-                            .resizable()
-                            .frame(width: 24, height: 24)
-                    }
-                    Text(urls.count == 1 ? firstURL.lastPathComponent : "\(urls.count) files")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.primary)
-                        .lineLimit(2)
-                }
-            }
+            fileContentPreview
         case .url:
             Text(item.content)
                 .font(.system(size: 11))
@@ -344,18 +415,134 @@ struct PasteStackItemRow: View {
     }
     
     @ViewBuilder
+    var fileContentPreview: some View {
+        if let urls = item.fileURLs, let firstURL = urls.first {
+            HStack(alignment: .top, spacing: 6) {
+                // Show thumbnail for media files
+                if urls.count == 1 {
+                    if isImageFile(firstURL) {
+                        // Image file - show image thumbnail
+                        if let image = NSImage(contentsOf: firstURL) {
+                            Image(nsImage: image)
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(width: 32, height: 32)
+                                .cornerRadius(4)
+                                .clipped()
+                        } else {
+                            defaultFileIcon(for: firstURL)
+                        }
+                    } else if isVideoFile(firstURL) {
+                        // Video file - show video thumbnail with play overlay
+                        ZStack {
+                            if let thumbnail = mediaThumbnail {
+                                Image(nsImage: thumbnail)
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fill)
+                                    .frame(width: 32, height: 32)
+                                    .cornerRadius(4)
+                                    .clipped()
+                            } else {
+                                Rectangle()
+                                    .fill(Color.gray.opacity(0.3))
+                                    .frame(width: 32, height: 32)
+                                    .cornerRadius(4)
+                            }
+                            // Play icon overlay
+                            Image(systemName: "play.circle.fill")
+                                .font(.system(size: 14))
+                                .foregroundStyle(.white.opacity(0.9))
+                                .shadow(radius: 2)
+                        }
+                        .onAppear {
+                            generateVideoThumbnail(for: firstURL)
+                        }
+                    } else if isAudioFile(firstURL) {
+                        // Audio file - show waveform icon
+                        ZStack {
+                            Rectangle()
+                                .fill(Color.purple.opacity(0.3))
+                                .frame(width: 32, height: 32)
+                                .cornerRadius(4)
+                            Image(systemName: "waveform")
+                                .font(.system(size: 14))
+                                .foregroundStyle(.purple)
+                        }
+                    } else {
+                        defaultFileIcon(for: firstURL)
+                    }
+                } else {
+                    // Multiple files - show default icon
+                    defaultFileIcon(for: firstURL)
+                }
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(urls.count == 1 ? firstURL.lastPathComponent : "\(urls.count) files")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    
+                    if urls.count == 1 {
+                        Text(mediaTypeLabel(for: firstURL))
+                            .font(.system(size: 9))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+    }
+    
+    @ViewBuilder
+    func defaultFileIcon(for url: URL) -> some View {
+        if let icon = NSWorkspace.shared.icon(forFile: url.path) as NSImage? {
+            Image(nsImage: icon)
+                .resizable()
+                .frame(width: 24, height: 24)
+        }
+    }
+    
+    func mediaTypeLabel(for url: URL) -> String {
+        let ext = url.pathExtension.lowercased()
+        if isVideoFile(url) {
+            return "Video • \(ext.uppercased())"
+        } else if isAudioFile(url) {
+            return "Audio • \(ext.uppercased())"
+        } else if isImageFile(url) {
+            return "Image • \(ext.uppercased())"
+        }
+        return ext.uppercased()
+    }
+    
+    @ViewBuilder
     var typeIcon: some View {
         switch item.type {
         case .image:
             Image(systemName: "photo")
         case .file:
-            Image(systemName: "doc")
+            fileTypeIcon
         case .url:
             Image(systemName: "link")
         case .rtf:
             Image(systemName: "text.badge.star")
         case .text:
             Image(systemName: "text.alignleft")
+        }
+    }
+    
+    @ViewBuilder
+    var fileTypeIcon: some View {
+        if let urls = item.fileURLs, let firstURL = urls.first, urls.count == 1 {
+            if isVideoFile(firstURL) {
+                Image(systemName: "video")
+            } else if isAudioFile(firstURL) {
+                Image(systemName: "waveform")
+            } else if isImageFile(firstURL) {
+                Image(systemName: "photo")
+            } else {
+                Image(systemName: "doc")
+            }
+        } else {
+            Image(systemName: "doc")
         }
     }
 }

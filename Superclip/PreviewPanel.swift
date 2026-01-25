@@ -5,12 +5,23 @@
 
 import AppKit
 import SwiftUI
+import Combine
+
+class PreviewEditingState: ObservableObject {
+    @Published var isEditing: Bool = false
+    @Published var shouldCancelEditing: Bool = false
+    
+    func cancelEditing() {
+        shouldCancelEditing = true
+    }
+}
 
 class PreviewPanel: NSPanel {
     weak var appDelegate: AppDelegate?
     let item: ClipboardItem
     let clipboardManager: ClipboardManager
     var onDismiss: (() -> Void)?
+    let editingState = PreviewEditingState()
     
     init(item: ClipboardItem, clipboardManager: ClipboardManager) {
         self.item = item
@@ -50,6 +61,7 @@ class PreviewPanel: NSPanel {
         let previewView = PreviewView(
             item: item,
             clipboardManager: clipboardManager,
+            editingState: editingState,
             onDismiss: { [weak self] in
                 self?.onDismiss?()
             },

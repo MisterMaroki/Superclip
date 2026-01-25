@@ -50,8 +50,35 @@ class ClipboardManager: ObservableObject {
         }
     }
     
+    /// Get the frontmost application (the one that likely triggered the clipboard change)
+    private func getFrontmostApp() -> SourceApp? {
+        // Get the frontmost app that isn't our app
+        guard let frontApp = NSWorkspace.shared.frontmostApplication,
+              frontApp.bundleIdentifier != Bundle.main.bundleIdentifier else {
+            // If we are the frontmost, try to get the previously active app
+            let runningApps = NSWorkspace.shared.runningApplications.filter {
+                $0.activationPolicy == .regular && $0.bundleIdentifier != Bundle.main.bundleIdentifier
+            }
+            if let lastApp = runningApps.first {
+                return SourceApp(
+                    bundleIdentifier: lastApp.bundleIdentifier,
+                    name: lastApp.localizedName ?? "Unknown",
+                    icon: lastApp.icon
+                )
+            }
+            return nil
+        }
+        
+        return SourceApp(
+            bundleIdentifier: frontApp.bundleIdentifier,
+            name: frontApp.localizedName ?? "Unknown",
+            icon: frontApp.icon
+        )
+    }
+    
     private func loadCurrentClipboard() {
         let types = pasteboard.types ?? []
+        let sourceApp = getFrontmostApp()
         
         // Check for files first (highest priority)
         if types.contains(.fileURL) {
@@ -60,7 +87,8 @@ class ClipboardManager: ObservableObject {
                 addToHistory(item: ClipboardItem(
                     content: fileNames,
                     type: .file,
-                    fileURLs: urls
+                    fileURLs: urls,
+                    sourceApp: sourceApp
                 ))
                 return
             }
@@ -77,7 +105,8 @@ class ClipboardManager: ObservableObject {
                 addToHistory(item: ClipboardItem(
                     content: description,
                     type: .image,
-                    imageData: imageData
+                    imageData: imageData,
+                    sourceApp: sourceApp
                 ))
                 return
             }
@@ -86,7 +115,7 @@ class ClipboardManager: ObservableObject {
         // Check for URLs
         if types.contains(.URL) {
             if let url = pasteboard.string(forType: .URL), !url.isEmpty {
-                addToHistory(item: ClipboardItem(content: url, type: .url))
+                addToHistory(item: ClipboardItem(content: url, type: .url, sourceApp: sourceApp))
                 return
             }
         }
@@ -97,7 +126,7 @@ class ClipboardManager: ObservableObject {
                let attributedString = NSAttributedString(rtf: rtfData, documentAttributes: nil) {
                 let plainText = attributedString.string
                 if !plainText.isEmpty {
-                    addToHistory(item: ClipboardItem(content: plainText, type: .rtf))
+                    addToHistory(item: ClipboardItem(content: plainText, type: .rtf, sourceApp: sourceApp))
                     return
                 }
             }
@@ -107,9 +136,9 @@ class ClipboardManager: ObservableObject {
         if let string = pasteboard.string(forType: .string), !string.isEmpty {
             // Detect if it's a URL
             if let url = URL(string: string), url.scheme != nil {
-                addToHistory(item: ClipboardItem(content: string, type: .url))
+                addToHistory(item: ClipboardItem(content: string, type: .url, sourceApp: sourceApp))
             } else {
-                addToHistory(item: ClipboardItem(content: string, type: .text))
+                addToHistory(item: ClipboardItem(content: string, type: .text, sourceApp: sourceApp))
             }
         }
     }
@@ -133,7 +162,8 @@ class ClipboardManager: ObservableObject {
                     timestamp: Date(),
                     type: existingItem.type,
                     imageData: existingItem.imageData,
-                    fileURLs: existingItem.fileURLs
+                    fileURLs: existingItem.fileURLs,
+                    sourceApp: existingItem.sourceApp
                 )
                 self.history.insert(updatedItem, at: 0)
             } else {
@@ -186,7 +216,8 @@ class ClipboardManager: ObservableObject {
                 timestamp: Date(),
                 type: item.type,
                 imageData: item.imageData,
-                fileURLs: item.fileURLs
+                fileURLs: item.fileURLs,
+                sourceApp: item.sourceApp
             )
             self.history.insert(updatedItem, at: 0)
         }

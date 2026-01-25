@@ -9,6 +9,7 @@ struct ContentView: View {
     @ObservedObject var clipboardManager: ClipboardManager
     @ObservedObject var navigationState: NavigationState
     var dismiss: (Bool) -> Void  // Bool indicates whether to paste after dismiss
+    var onPreview: ((ClipboardItem, Int) -> Void)?  // Item and index
     
     @FocusState private var isSearchFocused: Bool
     @State private var searchText: String = ""
@@ -47,19 +48,19 @@ struct ContentView: View {
     
     var body: some View {
         VStack(spacing: 0) {
-
-            // Search bar
-            HStack {
-                Spacer()
-                
-                HStack {
+            // Top toolbar with search
+            HStack(spacing: 16) {
+                // Search bar
+                HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass")
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.white.opacity(0.5))
                     TextField("Search clipboard history...", text: $searchText)
                         .textFieldStyle(.plain)
+                        .font(.system(size: 13))
+                        .foregroundStyle(.white)
                         .focused($isSearchFocused)
                         .onChange(of: searchText) { _ in
-                            // Reset selection when search changes
                             navigationState.selectedIndex = 0
                         }
                     
@@ -68,74 +69,90 @@ struct ContentView: View {
                             searchText = ""
                         } label: {
                             Image(systemName: "xmark.circle.fill")
-                                .foregroundStyle(.secondary)
+                                .font(.system(size: 12))
+                                .foregroundStyle(.white.opacity(0.5))
                         }
                         .buttonStyle(.plain)
                     }
                 }
                 .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
-                .cornerRadius(8)
-                .frame(maxWidth: 400)
+                .padding(.vertical, 6)
+                .background(Color.white.opacity(0.1))
+                .cornerRadius(6)
+                .frame(maxWidth: 300)
                 
                 Spacer()
+                
+                // Clipboard label
+                HStack(spacing: 6) {
+                    Image(systemName: "doc.on.clipboard")
+                        .font(.system(size: 12))
+                    Text("Clipboard")
+                        .font(.system(size: 12, weight: .medium))
+                }
+                .foregroundStyle(.white.opacity(0.7))
+                
+                Spacer()
+                
+                // Item count
+                if !filteredHistory.isEmpty {
+                    Text("\(filteredHistory.count) items")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.white.opacity(0.5))
+                }
             }
-            .padding(.vertical, 8)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(Color.black.opacity(0.3))
             
             // Clipboard history list
             if filteredHistory.isEmpty {
                 VStack(spacing: 12) {
                     Image(systemName: clipboardManager.history.isEmpty ? "doc.on.clipboard" : "magnifyingglass")
-                        .font(.system(size: 48))
-                        .foregroundStyle(.tertiary)
+                        .font(.system(size: 40))
+                        .foregroundStyle(.white.opacity(0.3))
                     
                     Text(clipboardManager.history.isEmpty ? "No clipboard history yet" : "No results found")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 13))
+                        .foregroundStyle(.white.opacity(0.5))
                     
                     if clipboardManager.history.isEmpty {
                         Text("Copy something to get started")
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.white.opacity(0.3))
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding()
             } else {
                 ScrollViewReader { proxy in
                     ScrollView(.horizontal, showsIndicators: false) {
-                        LazyHStack(spacing: 12) {
+                        LazyHStack(spacing: 14) {
                             ForEach(Array(filteredHistory.enumerated()), id: \.element.id) { index, item in
-                            ClipboardItemCard(
-                                item: item,
-                                index: index + 1,
-                                isSelected: navigationState.selectedIndex == index,
-                                onSelect: {
-                                    navigationState.selectedIndex = index
-                                    clipboardManager.copyToClipboard(item)
-                                    // Auto-dismiss and paste
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                                        dismiss(true)
+                                ClipboardItemCard(
+                                    item: item,
+                                    index: index + 1,
+                                    isSelected: navigationState.selectedIndex == index,
+                                    onSelect: {
+                                        navigationState.selectedIndex = index
+                                        clipboardManager.copyToClipboard(item)
+                                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                            dismiss(true)
+                                        }
+                                    },
+                                    onDelete: {
+                                        clipboardManager.deleteItem(item)
+                                        if navigationState.selectedIndex >= filteredHistory.count - 1 {
+                                            navigationState.selectedIndex = max(0, filteredHistory.count - 2)
+                                        }
                                     }
-                                },
-                                onDelete: {
-                                    clipboardManager.deleteItem(item)
-                                    // Adjust selected index if needed
-                                    if navigationState.selectedIndex >= filteredHistory.count - 1 {
-                                        navigationState.selectedIndex = max(0, filteredHistory.count - 2)
-                                    }
-                                }
-                            )
+                                )
                                 .id(index)
                             }
                         }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 12)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 16)
                         .onAppear {
-                            // Update item count for navigation
                             navigationState.itemCount = filteredHistory.count
-                            // Reset selection when filtered history changes
                             if navigationState.selectedIndex >= filteredHistory.count {
                                 navigationState.selectedIndex = 0
                             }
@@ -144,7 +161,6 @@ struct ContentView: View {
                             navigationState.itemCount = newCount
                         }
                         .onChange(of: navigationState.selectedIndex) { newIndex in
-                            // Scroll to selected item
                             withAnimation(.easeInOut(duration: 0.2)) {
                                 proxy.scrollTo(newIndex, anchor: .center)
                             }
@@ -154,7 +170,13 @@ struct ContentView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(.ultraThinMaterial)
+        .background(
+            ZStack {
+                Color.black.opacity(0.85)
+                VisualEffectBlur(material: .hudWindow, blendingMode: .behindWindow)
+            }
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 12))
         .onAppear {
             // Update item count
             navigationState.itemCount = filteredHistory.count
@@ -169,6 +191,18 @@ struct ContentView: View {
                 }
             }
         }
+        .onChange(of: navigationState.shouldFocusSearch) { shouldFocus in
+            if shouldFocus {
+                isSearchFocused = true
+                navigationState.shouldFocusSearch = false
+            }
+        }
+        .onChange(of: navigationState.shouldShowPreview) { shouldShow in
+            if shouldShow, let item = selectedItem {
+                navigationState.shouldShowPreview = false
+                onPreview?(item, navigationState.selectedIndex)
+            }
+        }
     }
 }
 
@@ -179,24 +213,11 @@ struct ClipboardItemCard: View {
     let onSelect: () -> Void
     let onDelete: () -> Void
     
-    var typeIcon: String {
-        switch item.type {
-        case .text: return "doc.text"
-        case .image: return "photo"
-        case .file: return "doc"
-        case .url: return "link"
-        case .rtf: return "doc.richtext"
-        }
-    }
+    private let cardWidth: CGFloat = 220
+    private let cardHeight: CGFloat = 180
     
-    var typeColor: Color {
-        switch item.type {
-        case .text: return .primary
-        case .image: return .purple
-        case .file: return .blue
-        case .url: return .green
-        case .rtf: return .orange
-        }
+    var appColor: Color {
+        item.sourceApp?.accentColor ?? Color(nsColor: .systemGray)
     }
     
     var footerText: String {
@@ -217,63 +238,71 @@ struct ClipboardItemCard: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Header with type and timestamp
-            HStack {
-                HStack(spacing: 4) {
-                    Image(systemName: typeIcon)
-                        .font(.caption)
-                        .foregroundStyle(typeColor)
-                    Text(item.type.rawValue.capitalized)
-                        .font(.caption)
-                        .fontWeight(.medium)
-                        .foregroundStyle(.secondary)
+            // Colored header bar with app info - Paste style
+            HStack(spacing: 8) {
+                // App icon
+                if let icon = item.sourceApp?.icon {
+                    Image(nsImage: icon)
+                        .resizable()
+                        .frame(width: 16, height: 16)
+                } else {
+                    Image(systemName: "app.fill")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.white.opacity(0.9))
                 }
+                
+                // App name
+                Text(item.sourceApp?.name ?? item.type.rawValue.capitalized)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
                 
                 Spacer()
                 
+                // Timestamp
                 Text(item.timeAgo)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.white.opacity(0.8))
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, 10)
             .padding(.vertical, 8)
-            .background(Color(NSColor.controlBackgroundColor).opacity(0.3))
+            .background(appColor)
             
             // Content area
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 0) {
                 contentView
-                
-                Spacer(minLength: 0)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 
                 // Footer with info and index
                 HStack {
                     Text(footerText)
-                        .font(.caption2)
+                        .font(.system(size: 10))
                         .foregroundStyle(.secondary)
                     
                     Spacer()
                     
-                    HStack(spacing: 4) {
-                        Image(systemName: "line.3.horizontal")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                        Text("\(index)")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
+                    Text("\(index)")
+                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color(nsColor: .separatorColor).opacity(0.3))
+                        .cornerRadius(4)
                 }
             }
-            .padding(12)
-            .frame(width: 280, height: 160)
+            .padding(10)
+            .frame(width: cardWidth, height: cardHeight - 32) // Subtract header height
+            .background(Color(nsColor: .controlBackgroundColor))
         }
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(isSelected ? Color.accentColor.opacity(0.15) : Color(NSColor.controlBackgroundColor).opacity(0.5))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(isSelected ? Color.accentColor.opacity(0.5) : Color.clear, lineWidth: 2)
-                )
+        .frame(width: cardWidth, height: cardHeight)
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(isSelected ? Color.white.opacity(0.8) : Color.clear, lineWidth: 2)
         )
+        .shadow(color: .black.opacity(isSelected ? 0.3 : 0.15), radius: isSelected ? 8 : 4, y: 2)
+        .scaleEffect(isSelected ? 1.02 : 1.0)
+        .animation(.easeOut(duration: 0.15), value: isSelected)
         .contentShape(Rectangle())
         .onTapGesture {
             onSelect()
@@ -290,13 +319,13 @@ struct ClipboardItemCard: View {
                 onDelete()
             } label: {
                 Image(systemName: "xmark.circle.fill")
-                    .foregroundStyle(.secondary)
-                    .background(Color(NSColor.controlBackgroundColor))
-                    .clipShape(Circle())
+                    .font(.system(size: 16))
+                    .foregroundStyle(.white.opacity(0.8))
+                    .shadow(radius: 2)
             }
             .buttonStyle(.plain)
             .help("Delete")
-            .padding(8)
+            .padding(6)
         }
     }
     
@@ -318,10 +347,9 @@ struct ClipboardItemCard: View {
         Text(item.content)
             .font(.system(size: 12))
             .foregroundStyle(.primary)
-            .lineLimit(6)
+            .lineLimit(7)
             .multilineTextAlignment(.leading)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .textSelection(.enabled)
     }
     
     var imageContentView: some View {
@@ -330,62 +358,114 @@ struct ClipboardItemCard: View {
                 Image(nsImage: nsImage)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
-                    .frame(maxWidth: .infinity, maxHeight: 120)
-                    .cornerRadius(6)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .cornerRadius(4)
             } else {
-                Image(systemName: "photo")
-                    .font(.system(size: 48))
-                    .foregroundStyle(.tertiary)
-                    .frame(maxWidth: .infinity, maxHeight: 120)
+                VStack {
+                    Image(systemName: "photo")
+                        .font(.system(size: 32))
+                        .foregroundStyle(.tertiary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
+    }
+    
+    private func isImageFile(_ url: URL) -> Bool {
+        let imageExtensions = ["jpg", "jpeg", "png", "gif", "bmp", "tiff", "tif", "webp", "heic", "heif"]
+        return imageExtensions.contains(url.pathExtension.lowercased())
     }
     
     var fileContentView: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        Group {
             if let urls = item.fileURLs {
-                ForEach(urls.prefix(3), id: \.self) { url in
-                    HStack(spacing: 8) {
-                        if let icon = NSWorkspace.shared.icon(forFile: url.path) as NSImage? {
-                            Image(nsImage: icon)
-                                .resizable()
-                                .frame(width: 24, height: 24)
-                        } else {
-                            Image(systemName: "doc")
-                                .font(.system(size: 16))
-                                .foregroundStyle(.secondary)
-                                .frame(width: 24, height: 24)
+                // Check if it's a single image file - show image preview
+                if urls.count == 1, let url = urls.first, isImageFile(url), let image = NSImage(contentsOf: url) {
+                    Image(nsImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .cornerRadius(4)
+                } else {
+                    // Multiple files or non-image files - show list
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(urls.prefix(4), id: \.self) { url in
+                            HStack(spacing: 6) {
+                                // Show thumbnail for images, icon for others
+                                if isImageFile(url), let image = NSImage(contentsOf: url) {
+                                    Image(nsImage: image)
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fill)
+                                        .frame(width: 20, height: 20)
+                                        .cornerRadius(3)
+                                        .clipped()
+                                } else if let icon = NSWorkspace.shared.icon(forFile: url.path) as NSImage? {
+                                    Image(nsImage: icon)
+                                        .resizable()
+                                        .frame(width: 20, height: 20)
+                                } else {
+                                    Image(systemName: "doc")
+                                        .font(.system(size: 14))
+                                        .foregroundStyle(.secondary)
+                                        .frame(width: 20, height: 20)
+                                }
+                                
+                                Text(url.lastPathComponent)
+                                    .font(.system(size: 11))
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                            }
                         }
                         
-                        Text(url.lastPathComponent)
-                            .font(.system(size: 11))
-                            .lineLimit(1)
-                            .truncationMode(.middle)
+                        if urls.count > 4 {
+                            Text("+ \(urls.count - 4) more...")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.secondary)
+                        }
                     }
-                }
-                
-                if urls.count > 3 {
-                    Text("+ \(urls.count - 3) more...")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
     
     var urlContentView: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Image(systemName: "link")
-                .font(.system(size: 24))
-                .foregroundStyle(.green)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 4) {
+                Image(systemName: "link")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                Text("Link")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
+            }
             
             Text(item.content)
                 .font(.system(size: 11))
                 .foregroundStyle(.blue)
-                .lineLimit(4)
+                .lineLimit(5)
                 .multilineTextAlignment(.leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+}
+
+// MARK: - Visual Effect Blur
+
+struct VisualEffectBlur: NSViewRepresentable {
+    let material: NSVisualEffectView.Material
+    let blendingMode: NSVisualEffectView.BlendingMode
+    
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = material
+        view.blendingMode = blendingMode
+        view.state = .active
+        return view
+    }
+    
+    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
+        nsView.material = material
+        nsView.blendingMode = blendingMode
     }
 }

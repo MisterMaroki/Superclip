@@ -8,19 +8,25 @@ import HotKey
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     var contentWindow: NSWindow?
+    var pasteStackWindow: NSWindow?
+    var previewWindow: NSWindow?
     var hotKey: HotKey?
+    var pasteStackHotKey: HotKey?
     var clickMonitor: Any?
+    var pasteStackKeyMonitor: Any?
     let clipboardManager = ClipboardManager()
+    lazy var pasteStackManager = PasteStackManager(clipboardManager: clipboardManager)
     private var shouldPasteAfterClose = false
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         
         setupHotkey()
+        setupPasteStackHotkey()
     }
     
     func applicationDidResignActive(_ notification: Notification) {
-        // Close panel when app loses focus
+        // Close content panel when app loses focus (paste stack stays open)
         closeReviewWindow(andPaste: false)
     }
     
@@ -29,6 +35,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         hotKey?.keyDownHandler = { [weak self] in
             DispatchQueue.main.async {
                 self?.toggleContentWindow()
+            }
+        }
+    }
+    
+    private func setupPasteStackHotkey() {
+        pasteStackHotKey = HotKey(key: .c, modifiers: [.command, .shift])
+        pasteStackHotKey?.keyDownHandler = { [weak self] in
+            DispatchQueue.main.async {
+                self?.togglePasteStackWindow()
             }
         }
     }
@@ -57,6 +72,94 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         startClickMonitoring()
     }
     
+    // MARK: - Paste Stack Window
+    
+    func togglePasteStackWindow() {
+        if pasteStackWindow != nil && pasteStackWindow?.isVisible == true {
+            closePasteStackWindow(andPaste: false)
+        } else {
+            showPasteStackWindow()
+        }
+    }
+    
+    func showPasteStackWindow() {
+        self.closeReviewWindow(andPaste: false)
+        
+        // If already open, just bring to front
+        if pasteStackWindow != nil && pasteStackWindow?.isVisible == true {
+            pasteStackWindow?.makeKeyAndOrderFront(nil)
+            return
+        }
+        
+        // Start a new paste stack session
+        pasteStackManager.startSession()
+        
+        let pasteStackPanel = PasteStackPanel(pasteStackManager: pasteStackManager)
+        pasteStackPanel.appDelegate = self
+        
+        pasteStackWindow = pasteStackPanel
+        
+        pasteStackPanel.orderFront(nil)
+        
+        // Start monitoring for paste events (Cmd+V)
+        startPasteStackKeyMonitoring()
+    }
+    
+    /// Handle paste from paste stack without closing the window
+    func handlePasteStackPaste(shouldPaste: Bool) {
+        if shouldPaste {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                self.simulatePaste()
+            }
+        }
+    }
+    
+    func closePasteStackWindow(andPaste shouldPaste: Bool) {
+        // Stop monitoring for paste events
+        stopPasteStackKeyMonitoring()
+        
+        if let window = pasteStackWindow {
+            window.close()
+            pasteStackWindow = nil
+        }
+        
+        // End the session when closing
+        pasteStackManager.endSession()
+        
+        if shouldPaste {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                self.simulatePaste()
+            }
+        }
+    }
+    
+    private func startPasteStackKeyMonitoring() {
+        stopPasteStackKeyMonitoring() // Clean up any existing monitor first
+        
+        // Use global monitor to detect Cmd+V in other apps
+        pasteStackKeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self = self,
+                  self.pasteStackWindow?.isVisible == true else { return }
+            
+            // Check for Cmd+V (key code 9 is 'V', Command modifier)
+            if event.keyCode == 9 && event.modifierFlags.contains(.command) {
+                DispatchQueue.main.async {
+                    // Small delay to let the paste complete before advancing
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                        self.pasteStackManager.advanceAfterPaste()
+                    }
+                }
+            }
+        }
+    }
+    
+    private func stopPasteStackKeyMonitoring() {
+        if let monitor = pasteStackKeyMonitor {
+            NSEvent.removeMonitor(monitor)
+            pasteStackKeyMonitor = nil
+        }
+    }
+    
     private func startClickMonitoring() {
         stopClickMonitoring() // Clean up any existing monitor first
         
@@ -73,7 +176,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 switch event.keyCode {
                 case 53: // ESC key
                     DispatchQueue.main.async {
-                        self.closeReviewWindow(andPaste: false)
+                        // Close preview first if open, otherwise close drawer
+                        if self.previewWindow?.isVisible == true {
+                            self.closePreviewWindow()
+                            self.contentWindow?.makeKey()
+                        } else {
+                            self.closeReviewWindow(andPaste: false)
+                        }
                     }
                     return nil
                 case 123: // Left arrow
@@ -91,14 +200,28 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 case 36: // Return/Enter
                     panelWindow.navigationState.selectCurrent()
                     return nil
+                case 44: // '/' key - focus search
+                    panelWindow.navigationState.focusSearch()
+                    return nil
+                case 49: // Space key - toggle preview
+                    if self.previewWindow?.isVisible == true {
+                        self.closePreviewWindow()
+                        self.contentWindow?.makeKey()
+                    } else {
+                        panelWindow.navigationState.showPreview()
+                    }
+                    return nil
                 default:
                     return event
                 }
             }
             
-            // If click is in a different window (or nil), close the panel
+            // If click is in a different window (or nil), close the drawer panel
+            // But don't close if clicking on the preview window or paste stack window
             if event.type == .leftMouseDown || event.type == .rightMouseDown {
-                if event.window != panelWindow {
+                if event.window != panelWindow && 
+                   event.window != self.previewWindow && 
+                   event.window != self.pasteStackWindow {
                     DispatchQueue.main.async {
                         self.closeReviewWindow(andPaste: false)
                     }
@@ -119,7 +242,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     @objc private func windowDidResignKey(_ notification: Notification) {
+        // Don't close if the preview window or paste stack window is becoming key
         if notification.object as? NSWindow == contentWindow {
+            if let preview = previewWindow, preview.isVisible {
+                return
+            }
+            if let pasteStack = pasteStackWindow, pasteStack.isVisible {
+                return
+            }
             closeReviewWindow(andPaste: false)
         }
     }
@@ -134,6 +264,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     func closeReviewWindow(andPaste shouldPaste: Bool) {
         stopClickMonitoring()
+        
+        // Close preview window if open
+        closePreviewWindow()
         
         if let window = contentWindow {
             window.close()
@@ -163,5 +296,69 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Post the events
         keyDown?.post(tap: .cghidEventTap)
         keyUp?.post(tap: .cghidEventTap)
+    }
+    
+    func simulatePastePublic() {
+        simulatePaste()
+    }
+    
+    // MARK: - Preview Window
+    
+    func showPreviewWindow(for item: ClipboardItem, atIndex index: Int) {
+        closePreviewWindow()
+        
+        let previewPanel = PreviewPanel(item: item, clipboardManager: clipboardManager)
+        previewPanel.appDelegate = self
+        previewPanel.onDismiss = { [weak self] in
+            self?.closePreviewWindow()
+            // Return focus to content window
+            self?.contentWindow?.makeKey()
+        }
+        
+        previewWindow = previewPanel
+        
+        // Position preview above the selected card in the drawer
+        if let contentWindow = contentWindow {
+            let drawerFrame = contentWindow.frame
+            
+            // Use larger size for image editor
+            let panelWidth: CGFloat = item.type == .image ? 600 : 500
+            let panelHeight: CGFloat = item.type == .image ? 500 : 400
+            
+            // Card dimensions (from ContentView)
+            let cardWidth: CGFloat = 220
+            let cardSpacing: CGFloat = 14
+            let horizontalPadding: CGFloat = 20
+            
+            // Calculate card center x position
+            let cardStartX = drawerFrame.minX + horizontalPadding
+            let cardCenterX = cardStartX + (CGFloat(index) * (cardWidth + cardSpacing)) + (cardWidth / 2)
+            
+            // Center preview horizontally above the card
+            var previewX = cardCenterX - (panelWidth / 2)
+            
+            // Make sure preview stays on screen
+            if let screen = NSScreen.main {
+                let screenFrame = screen.visibleFrame
+                previewX = max(screenFrame.minX + 16, min(previewX, screenFrame.maxX - panelWidth - 16))
+            }
+            
+            // Position preview above the drawer with a small gap
+            let previewY = drawerFrame.maxY + 12
+            
+            previewPanel.setFrame(
+                NSRect(x: previewX, y: previewY, width: panelWidth, height: panelHeight),
+                display: true
+            )
+        }
+        
+        previewPanel.orderFront(nil)
+    }
+    
+    func closePreviewWindow() {
+        if let window = previewWindow {
+            window.close()
+            previewWindow = nil
+        }
     }
 }

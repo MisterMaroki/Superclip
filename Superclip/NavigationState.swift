@@ -9,6 +9,8 @@ import Combine
 class NavigationState: ObservableObject {
     @Published var selectedIndex: Int = 0
     @Published var shouldSelectAndDismiss: Bool = false
+    @Published var shouldFocusSearch: Bool = false
+    @Published var shouldShowPreview: Bool = false
     
     var itemCount: Int = 0
     
@@ -29,5 +31,15 @@ class NavigationState: ObservableObject {
     func reset() {
         selectedIndex = 0
         shouldSelectAndDismiss = false
+        shouldFocusSearch = false
+        shouldShowPreview = false
+    }
+    
+    func focusSearch() {
+        shouldFocusSearch = true
+    }
+    
+    func showPreview() {
+        shouldShowPreview = true
     }
 }

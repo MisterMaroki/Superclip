@@ -48,19 +48,23 @@ class ContentPanel: NSPanel {
     private func setupContentView() {
         let contentView = ContentView(
             clipboardManager: clipboardManager,
-            navigationState: navigationState
-        ) { shouldPaste in
-            self.appDelegate?.closeReviewWindow(andPaste: shouldPaste)
-        }
+            navigationState: navigationState,
+            dismiss: { shouldPaste in
+                self.appDelegate?.closeReviewWindow(andPaste: shouldPaste)
+            },
+            onPreview: { [weak self] item, index in
+                self?.appDelegate?.showPreviewWindow(for: item, atIndex: index)
+            }
+        )
         
         let hostingView = NSHostingView(rootView: contentView)
         self.contentView = hostingView
         
         if let screen = NSScreen.main {
             let screenFrame = screen.visibleFrame
-            let padding: CGFloat = 20
-            let bottomPadding: CGFloat = 20
-            let panelHeight: CGFloat = 320 // Height for horizontal clipboard cards
+            let padding: CGFloat = 16
+            let bottomPadding: CGFloat = 16
+            let panelHeight: CGFloat = 280 // Height for Paste-style horizontal cards
             
             // Set panel to span across the bottom of the screen
             let panelWidth = screenFrame.width - (padding * 2)
@@ -86,6 +90,14 @@ class ContentPanel: NSPanel {
 
 extension ContentPanel: NSWindowDelegate {
     func windowDidResignKey(_ notification: Notification) {
+        // Don't close if the preview window is becoming key
+        if let previewWindow = appDelegate?.previewWindow, previewWindow.isVisible {
+            return
+        }
+        // Don't close if the paste stack window is becoming key
+        if let pasteStackWindow = appDelegate?.pasteStackWindow, pasteStackWindow.isVisible {
+            return
+        }
         // Close when window loses key status (user clicked elsewhere)
         close()
     }

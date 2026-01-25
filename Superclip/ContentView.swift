@@ -214,9 +214,6 @@ struct ClipboardItemCard: View {
     let onSelect: () -> Void
     let onDelete: () -> Void
     
-    private let cardWidth: CGFloat = 220
-    private let cardHeight: CGFloat = 180
-    
     var appColor: Color {
         item.sourceApp?.accentColor ?? Color(nsColor: .systemGray)
     }
@@ -292,10 +289,9 @@ struct ClipboardItemCard: View {
                 }
             }
             .padding(10)
-            .frame(width: cardWidth, height: cardHeight - 32) // Subtract header height
             .background(Color(nsColor: .controlBackgroundColor))
         }
-        .frame(width: cardWidth, height: cardHeight)
+        .aspectRatio(1, contentMode: .fit)
         .clipShape(RoundedRectangle(cornerRadius: 10))
         .overlay(
             RoundedRectangle(cornerRadius: 10)

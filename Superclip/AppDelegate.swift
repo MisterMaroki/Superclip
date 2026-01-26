@@ -166,14 +166,34 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         guard let panelWindow = contentWindow else { return }
         
-        // Monitor mouse down events and key events
-        clickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .keyDown]) { [weak self] event -> NSEvent? in
+        // Monitor mouse down events, key events, and modifier changes
+        clickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .keyDown, .keyUp, .flagsChanged]) { [weak self] event -> NSEvent? in
             guard let self = self,
                   let panelWindow = self.contentWindow as? ContentPanel else {
                 return event
             }
             
+            // Track Command key state for quick digit selection
+            if event.type == .flagsChanged {
+                let isCommandPressed = event.modifierFlags.contains(.command)
+                panelWindow.navigationState.isCommandHeld = isCommandPressed
+                return event
+            }
+
             if event.type == .keyDown {
+                // Quick digit selection when Command is held (1-9, 0)
+                // Key codes: 1=18, 2=19, 3=20, 4=21, 5=23, 6=22, 7=26, 8=28, 9=25, 0=29
+                if event.modifierFlags.contains(.command) {
+                    let digitKeyCodes: [UInt16: Int] = [
+                        18: 1, 19: 2, 20: 3, 21: 4, 23: 5,
+                        22: 6, 26: 7, 28: 8, 25: 9, 29: 0
+                    ]
+                    if let digit = digitKeyCodes[event.keyCode] {
+                        panelWindow.navigationState.selectByDigit(digit)
+                        return nil
+                    }
+                }
+
                 switch event.keyCode {
                 case 53: // ESC key
                     DispatchQueue.main.async {

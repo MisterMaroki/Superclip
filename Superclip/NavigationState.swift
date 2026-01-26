@@ -12,8 +12,18 @@ class NavigationState: ObservableObject {
     @Published var shouldFocusSearch: Bool = false
     @Published var shouldShowPreview: Bool = false
     @Published var shouldDeleteCurrent: Bool = false
-    
+    @Published var isCommandHeld: Bool = false
+
     var itemCount: Int = 0
+
+    /// Select item by quick-access digit (1-9 for first 9 items, 0 for 10th item)
+    func selectByDigit(_ digit: Int) {
+        let targetIndex = digit == 0 ? 9 : digit - 1
+        if targetIndex < itemCount {
+            selectedIndex = targetIndex
+            shouldSelectAndDismiss = true
+        }
+    }
     
     func moveRight() {
         if itemCount > 0 {

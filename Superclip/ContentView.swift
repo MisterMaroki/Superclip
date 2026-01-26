@@ -123,6 +123,7 @@ struct ContentView: View {
                                     item: item,
                                     index: index + 1,
                                     isSelected: navigationState.selectedIndex == index,
+                                    quickAccessNumber: navigationState.isCommandHeld && index < 10 ? (index == 9 ? 0 : index + 1) : nil,
                                     onSelect: {
                                         navigationState.selectedIndex = index
                                         clipboardManager.copyToClipboard(item)
@@ -205,6 +206,7 @@ struct ClipboardItemCard: View {
     let item: ClipboardItem
     let index: Int
     let isSelected: Bool
+    let quickAccessNumber: Int? // 1-9 for first 9, 0 for 10th, nil if not in first 10 or command not held
     let onSelect: () -> Void
     
     var body: some View {
@@ -261,6 +263,19 @@ struct ClipboardItemCard: View {
             RoundedRectangle(cornerRadius: 10)
                 .stroke(isSelected ? Color.white.opacity(0.8) : Color.clear, lineWidth: 2)
         )
+        .overlay(alignment: .bottomLeading) {
+            if let number = quickAccessNumber {
+                Text(number == 0 ? "0" : "\(number)")
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .frame(width: 20, height: 20)
+                    .background(Color.accentColor.opacity(0.9))
+                    .cornerRadius(5)
+                    .padding(6)
+                    .transition(.scale.combined(with: .opacity))
+            }
+        }
+        .animation(.easeOut(duration: 0.15), value: quickAccessNumber != nil)
         .shadow(color: .black.opacity(isSelected ? 0.3 : 0.15), radius: isSelected ? 8 : 4, y: 2)
         .scaleEffect(isSelected ? 1.02 : 1.0)
         .animation(.easeOut(duration: 0.15), value: isSelected)

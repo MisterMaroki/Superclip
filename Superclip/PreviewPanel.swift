@@ -67,23 +67,26 @@ class PreviewPanel: NSPanel {
             },
             onPaste: { [weak self] updatedContent in
                 self?.handlePaste(updatedContent: updatedContent)
+            },
+            onOpenEditor: { [weak self] item, frame in
+                self?.appDelegate?.showRichTextEditorWindow(for: item, fromPreviewFrame: frame)
             }
         )
-        
+
         let hostingView = NSHostingView(rootView: previewView)
         self.contentView = hostingView
-        
+
         if let screen = NSScreen.main {
             let screenFrame = screen.visibleFrame
             let panelWidth: CGFloat = 500
             let panelHeight: CGFloat = 400
-            
+
             // Center the panel on screen, slightly above center
             let xPosition = screenFrame.midX - (panelWidth / 2)
             let yPosition = screenFrame.midY - (panelHeight / 2) + 50
-            
+
             hostingView.setFrameSize(NSSize(width: panelWidth, height: panelHeight))
-            
+
             setFrame(
                 NSRect(
                     x: xPosition,

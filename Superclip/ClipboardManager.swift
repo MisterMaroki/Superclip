@@ -271,7 +271,8 @@ class ClipboardManager: ObservableObject {
                     imageData: existingItem.imageData,
                     fileURLs: existingItem.fileURLs,
                     sourceApp: existingItem.sourceApp,
-                    linkMetadata: existingItem.linkMetadata
+                    linkMetadata: existingItem.linkMetadata,
+                    rtfData: existingItem.rtfData
                 )
                 self.history.insert(updatedItem, at: 0)
             } else {
@@ -326,6 +327,11 @@ class ClipboardManager: ObservableObject {
             }
             pasteboard.setString(item.content, forType: .string)
         case .text:
+            // If item has rich text formatting, include RTF data
+            if let rtfData = item.rtfData {
+                pasteboard.setData(rtfData, forType: .rtf)
+            }
+            // Always include plain text as fallback
             pasteboard.setString(item.content, forType: .string)
         }
         
@@ -335,7 +341,7 @@ class ClipboardManager: ObservableObject {
         DispatchQueue.main.async {
             // Remove the item from its current position
             self.history.removeAll { $0.id == item.id }
-            
+
             // Create a new item with updated timestamp and insert at front
             let updatedItem = ClipboardItem(
                 id: item.id,
@@ -345,7 +351,8 @@ class ClipboardManager: ObservableObject {
                 imageData: item.imageData,
                 fileURLs: item.fileURLs,
                 sourceApp: item.sourceApp,
-                linkMetadata: item.linkMetadata
+                linkMetadata: item.linkMetadata,
+                rtfData: item.rtfData
             )
             self.history.insert(updatedItem, at: 0)
         }
@@ -396,7 +403,35 @@ class ClipboardManager: ObservableObject {
                     imageData: existingItem.imageData,
                     fileURLs: existingItem.fileURLs,
                     sourceApp: existingItem.sourceApp,
-                    linkMetadata: existingItem.linkMetadata
+                    linkMetadata: existingItem.linkMetadata,
+                    rtfData: existingItem.rtfData
+                )
+                self.history[index] = updatedItem
+            }
+        }
+    }
+
+    func updateItemRichContent(_ item: ClipboardItem, attributedString: NSAttributedString) {
+        DispatchQueue.main.async {
+            if let index = self.history.firstIndex(where: { $0.id == item.id }) {
+                let existingItem = self.history[index]
+                // Convert attributed string to RTF data
+                let rtfData = try? attributedString.data(
+                    from: NSRange(location: 0, length: attributedString.length),
+                    documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf]
+                )
+                // Also update plain text content
+                let plainText = attributedString.string
+                let updatedItem = ClipboardItem(
+                    id: existingItem.id,
+                    content: plainText,
+                    timestamp: existingItem.timestamp,
+                    type: existingItem.type,
+                    imageData: existingItem.imageData,
+                    fileURLs: existingItem.fileURLs,
+                    sourceApp: existingItem.sourceApp,
+                    linkMetadata: existingItem.linkMetadata,
+                    rtfData: rtfData
                 )
                 self.history[index] = updatedItem
             }

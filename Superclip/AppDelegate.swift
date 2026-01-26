@@ -10,6 +10,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var contentWindow: NSWindow?
     var pasteStackWindow: NSWindow?
     var previewWindow: NSWindow?
+    var richTextEditorWindows: [RichTextEditorPanel] = []
     var hotKey: HotKey?
     var pasteStackHotKey: HotKey?
     var clickMonitor: Any?
@@ -228,12 +229,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                         return nil
                     }
                     return event
-                case 49: // Space key - toggle preview
-                    // Don't close preview if user is editing text
+                case 49: // Space key - toggle preview or open editor on hold
+                    // Don't handle if user is editing text
                     if let previewPanel = self.previewWindow as? PreviewPanel,
                        previewPanel.editingState.isEditing {
                         return event // Allow space to be typed in the text editor
                     }
+
+                    // If key is being held (repeat), open the rich text editor directly
+                    if event.isARepeat {
+                        // Close preview if open, then open editor
+                        self.closePreviewWindow()
+                        self.openRichTextEditorForSelectedItem()
+                        return nil
+                    }
+
+                    // Normal press - toggle preview
                     if self.previewWindow?.isVisible == true {
                         self.closePreviewWindow()
                         self.contentWindow?.makeKey()
@@ -247,11 +258,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
             
             // If click is in a different window (or nil), close the drawer panel
-            // But don't close if clicking on the preview window or paste stack window
+            // But don't close if clicking on the preview window, paste stack window, or rich text editor windows
             if event.type == .leftMouseDown || event.type == .rightMouseDown {
-                if event.window != panelWindow && 
-                   event.window != self.previewWindow && 
-                   event.window != self.pasteStackWindow {
+                let isRichTextEditorWindow = self.richTextEditorWindows.contains { $0 === event.window }
+                if event.window != panelWindow &&
+                   event.window != self.previewWindow &&
+                   event.window != self.pasteStackWindow &&
+                   !isRichTextEditorWindow {
                     DispatchQueue.main.async {
                         self.closeReviewWindow(andPaste: false)
                     }
@@ -272,12 +285,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     @objc private func windowDidResignKey(_ notification: Notification) {
-        // Don't close if the preview window or paste stack window is becoming key
+        // Don't close if the preview window, paste stack window, or rich text editor windows are becoming key
         if notification.object as? NSWindow == contentWindow {
             if let preview = previewWindow, preview.isVisible {
                 return
             }
             if let pasteStack = pasteStackWindow, pasteStack.isVisible {
+                return
+            }
+            // Check if any rich text editor window is visible
+            if richTextEditorWindows.contains(where: { $0.isVisible }) {
                 return
             }
             closeReviewWindow(andPaste: false)
@@ -390,5 +407,84 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             window.close()
             previewWindow = nil
         }
+    }
+
+    // MARK: - Rich Text Editor Window
+
+    /// Open rich text editor for the currently selected item (called when holding spacebar)
+    func openRichTextEditorForSelectedItem() {
+        guard let contentPanel = contentWindow as? ContentPanel else { return }
+        let index = contentPanel.navigationState.selectedIndex
+        let filteredHistory = clipboardManager.history // In real use, this should match ContentView's filtered list
+        guard index >= 0, index < filteredHistory.count else { return }
+        let item = filteredHistory[index]
+
+        // Only open editor for text items
+        guard item.type == .text || item.type == .url else { return }
+
+        // Calculate frame position (same logic as showPreviewWindow)
+        let editorFrame: NSRect
+        if let contentWindow = contentWindow {
+            let drawerFrame = contentWindow.frame
+            let panelWidth: CGFloat = 500
+            let panelHeight: CGFloat = 400
+
+            let cardWidth: CGFloat = 220
+            let cardSpacing: CGFloat = 14
+            let horizontalPadding: CGFloat = 20
+
+            let cardStartX = drawerFrame.minX + horizontalPadding
+            let cardCenterX = cardStartX + (CGFloat(index) * (cardWidth + cardSpacing)) + (cardWidth / 2)
+
+            var editorX = cardCenterX - (panelWidth / 2)
+
+            if let screen = NSScreen.main {
+                let screenFrame = screen.visibleFrame
+                editorX = max(screenFrame.minX + 16, min(editorX, screenFrame.maxX - panelWidth - 16))
+            }
+
+            let editorY = drawerFrame.maxY + 12
+            editorFrame = NSRect(x: editorX, y: editorY, width: panelWidth, height: panelHeight)
+        } else {
+            editorFrame = NSRect(x: 100, y: 100, width: 500, height: 400)
+        }
+
+        showRichTextEditorWindow(for: item, fromPreviewFrame: editorFrame)
+    }
+
+    func showRichTextEditorWindow(for item: ClipboardItem, fromPreviewFrame previewFrame: NSRect) {
+        // Close drawer and preview
+        closePreviewWindow()
+        closeReviewWindow(andPaste: false)
+
+        let editorPanel = RichTextEditorPanel(
+            item: item,
+            clipboardManager: clipboardManager,
+            frame: previewFrame
+        )
+        editorPanel.appDelegate = self
+
+        editorPanel.onSave = { [weak self] attributedString in
+            guard let self = self else { return }
+            // Update the item with rich content
+            self.clipboardManager.updateItemRichContent(item, attributedString: attributedString)
+            // Copy the updated item to clipboard so it's ready to paste
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                if let updatedItem = self.clipboardManager.history.first(where: { $0.id == item.id }) {
+                    self.clipboardManager.copyToClipboard(updatedItem)
+                }
+            }
+        }
+
+        editorPanel.onCancel = {
+            // Nothing special needed on cancel
+        }
+
+        richTextEditorWindows.append(editorPanel)
+        editorPanel.makeKeyAndOrderFront(nil)
+    }
+
+    func removeRichTextEditorWindow(_ panel: RichTextEditorPanel) {
+        richTextEditorWindows.removeAll { $0 === panel }
     }
 }

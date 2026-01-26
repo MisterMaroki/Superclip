@@ -12,38 +12,40 @@ struct PreviewView: View {
     @ObservedObject var editingState: PreviewEditingState
     let onDismiss: () -> Void
     let onPaste: (String) -> Void
-    
+    var onOpenEditor: ((ClipboardItem, NSRect) -> Void)?
+
     @State private var editableContent: String
     @State private var originalContent: String
     @FocusState private var isTextEditorFocused: Bool
-    
+
     private var isEditing: Bool {
         get { editingState.isEditing }
     }
-    
+
     private func setEditing(_ value: Bool) {
         editingState.isEditing = value
     }
-    
+
     private func cancelEditing() {
         // Reset to original content
         editableContent = originalContent
         setEditing(false)
     }
-    
+
     private func saveEditing() {
         // Save changes to the clipboard item
         clipboardManager.updateItemContent(item, newContent: editableContent)
         originalContent = editableContent
         setEditing(false)
     }
-    
-    init(item: ClipboardItem, clipboardManager: ClipboardManager, editingState: PreviewEditingState, onDismiss: @escaping () -> Void, onPaste: @escaping (String) -> Void) {
+
+    init(item: ClipboardItem, clipboardManager: ClipboardManager, editingState: PreviewEditingState, onDismiss: @escaping () -> Void, onPaste: @escaping (String) -> Void, onOpenEditor: ((ClipboardItem, NSRect) -> Void)? = nil) {
         self.item = item
         self.clipboardManager = clipboardManager
         self.editingState = editingState
         self.onDismiss = onDismiss
         self.onPaste = onPaste
+        self.onOpenEditor = onOpenEditor
         self._editableContent = State(initialValue: item.content)
         self._originalContent = State(initialValue: item.content)
     }
@@ -141,33 +143,17 @@ struct PreviewView: View {
                     }
                     .buttonStyle(.plain)
                     
-                    // Edit/Done button
-                    Button {
-                        if isEditing {
-                            saveEditing()
-                        } else {
-                            setEditing(true)
-                            isTextEditorFocused = true
-                        }
-                    } label: {
-                        Text(isEditing ? "Done" : "Edit")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 4)
-                            .background(isEditing ? Color.green : Color.white.opacity(0.1))
-                            .cornerRadius(4)
-                    }
-                    .buttonStyle(.plain)
-                    
-                    // Cancel button (only visible when editing)
-                    if isEditing {
+                    // Edit button - opens rich text editor in new window
+                    if item.type == .text || item.type == .url {
                         Button {
-                            cancelEditing()
+                            // Get current window frame to position editor
+                            if let window = NSApp.keyWindow {
+                                onOpenEditor?(item, window.frame)
+                            }
                         } label: {
-                            Text("Cancel")
+                            Text("Edit")
                                 .font(.system(size: 12, weight: .medium))
-                                .foregroundStyle(.white.opacity(0.6))
+                                .foregroundStyle(.white)
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 4)
                                 .background(Color.white.opacity(0.1))
@@ -247,35 +233,22 @@ struct PreviewView: View {
             }
         )
         .clipShape(RoundedRectangle(cornerRadius: 12))
-        .onChange(of: editingState.shouldCancelEditing) { shouldCancel in
-            if shouldCancel {
-                editableContent = originalContent
-                setEditing(false)
-                editingState.shouldCancelEditing = false
-            }
-        }
     }
     
     var textPreview: some View {
-        Group {
-            if isEditing {
-                // TextEditor has its own scrolling, no need for ScrollView wrapper
-                TextEditor(text: $editableContent)
-                    .font(.system(size: 13, design: .monospaced))
-                    .scrollContentBackground(.hidden)
-                    .background(Color.clear)
-                    .focused($isTextEditorFocused)
+        ScrollView {
+            if let attributedString = item.attributedString {
+                // Display rich text content
+                AttributedTextView(attributedString: attributedString)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(16)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                ScrollView {
-                    Text(editableContent)
-                        .font(.system(size: 13))
-                        .foregroundStyle(.primary)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(16)
-                }
+                Text(editableContent)
+                    .font(.system(size: 13))
+                    .foregroundStyle(.primary)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(16)
             }
         }
     }
@@ -564,5 +537,27 @@ struct AudioPlayerView: View {
         let minutes = Int(time) / 60
         let seconds = Int(time) % 60
         return String(format: "%d:%02d", minutes, seconds)
+    }
+}
+
+// MARK: - Attributed Text View
+
+struct AttributedTextView: NSViewRepresentable {
+    let attributedString: NSAttributedString
+
+    func makeNSView(context: Context) -> NSTextView {
+        let textView = NSTextView()
+        textView.isEditable = false
+        textView.isSelectable = true
+        textView.drawsBackground = false
+        textView.backgroundColor = .clear
+        textView.textContainerInset = .zero
+        textView.textContainer?.lineFragmentPadding = 0
+        textView.textStorage?.setAttributedString(attributedString)
+        return textView
+    }
+
+    func updateNSView(_ nsView: NSTextView, context: Context) {
+        nsView.textStorage?.setAttributedString(attributedString)
     }
 }

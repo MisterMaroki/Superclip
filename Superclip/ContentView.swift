@@ -84,17 +84,6 @@ struct ContentView: View {
                 
                 Spacer()
                 
-                // Clipboard label
-                HStack(spacing: 6) {
-                    Image(systemName: "doc.on.clipboard")
-                        .font(.system(size: 12))
-                    Text("Clipboard")
-                        .font(.system(size: 12, weight: .medium))
-                }
-                .foregroundStyle(.white.opacity(0.7))
-                
-                Spacer()
-                
                 // Item count
                 if !filteredHistory.isEmpty {
                     Text("\(filteredHistory.count) items")
@@ -302,13 +291,22 @@ struct ClipboardItemCard: View {
     }
     
     var textContentView: some View {
-        Text(item.content)
-            .font(.system(size: 12))
-            .foregroundStyle(.primary)
-            .lineLimit(8)
-            .multilineTextAlignment(.leading)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .padding(10)
+        Group {
+            if let attributedString = item.attributedString {
+                // Display rich text preview
+                RichTextCardPreview(attributedString: attributedString)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .padding(10)
+            } else {
+                Text(item.content)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.primary)
+                    .lineLimit(8)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .padding(10)
+            }
+        }
     }
     
     var imageContentView: some View {
@@ -589,6 +587,30 @@ struct AudioFileThumbnailView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.purple.opacity(0.1))
+    }
+}
+
+// MARK: - Rich Text Card Preview
+
+struct RichTextCardPreview: NSViewRepresentable {
+    let attributedString: NSAttributedString
+
+    func makeNSView(context: Context) -> NSTextView {
+        let textView = NSTextView()
+        textView.isEditable = false
+        textView.isSelectable = false
+        textView.drawsBackground = false
+        textView.backgroundColor = .clear
+        textView.textContainerInset = .zero
+        textView.textContainer?.lineFragmentPadding = 0
+        textView.textContainer?.maximumNumberOfLines = 8
+        textView.textContainer?.lineBreakMode = .byTruncatingTail
+        textView.textStorage?.setAttributedString(attributedString)
+        return textView
+    }
+
+    func updateNSView(_ nsView: NSTextView, context: Context) {
+        nsView.textStorage?.setAttributedString(attributedString)
     }
 }
 

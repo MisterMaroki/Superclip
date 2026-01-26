@@ -122,15 +122,16 @@ struct ClipboardItem: Identifiable, Equatable {
     let fileURLs: [URL]?
     let sourceApp: SourceApp?
     var linkMetadata: LinkMetadata?
-    
+    var rtfData: Data?  // Rich text formatting data (RTF format)
+
     enum ClipboardType: String, Codable {
         case text
         case image
         case file
         case url
     }
-    
-    init(id: UUID = UUID(), content: String, timestamp: Date = Date(), type: ClipboardType = .text, imageData: Data? = nil, fileURLs: [URL]? = nil, sourceApp: SourceApp? = nil, linkMetadata: LinkMetadata? = nil) {
+
+    init(id: UUID = UUID(), content: String, timestamp: Date = Date(), type: ClipboardType = .text, imageData: Data? = nil, fileURLs: [URL]? = nil, sourceApp: SourceApp? = nil, linkMetadata: LinkMetadata? = nil, rtfData: Data? = nil) {
         self.id = id
         self.content = content
         self.timestamp = timestamp
@@ -139,6 +140,18 @@ struct ClipboardItem: Identifiable, Equatable {
         self.fileURLs = fileURLs
         self.sourceApp = sourceApp
         self.linkMetadata = linkMetadata
+        self.rtfData = rtfData
+    }
+
+    // Get attributed string from RTF data
+    var attributedString: NSAttributedString? {
+        guard let data = rtfData else { return nil }
+        return NSAttributedString(rtf: data, documentAttributes: nil)
+    }
+
+    // Check if item has rich text formatting
+    var hasRichText: Bool {
+        rtfData != nil
     }
     
     // Type label for display

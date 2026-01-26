@@ -5,6 +5,7 @@
 
 import SwiftUI
 import AVFoundation
+import UniformTypeIdentifiers
 
 struct ContentView: View {
     @ObservedObject var clipboardManager: ClipboardManager
@@ -274,8 +275,51 @@ struct ClipboardItemCard: View {
                 NSCursor.pop()
             }
         }
+        .onDrag {
+            createDragItemProvider()
+        }
     }
-    
+
+    private func createDragItemProvider() -> NSItemProvider {
+        let provider = NSItemProvider()
+
+        switch item.type {
+        case .text:
+            // For text, provide both plain text and RTF if available
+            if let rtfData = item.rtfData {
+                provider.registerDataRepresentation(forTypeIdentifier: UTType.rtf.identifier, visibility: .all) { completion in
+                    completion(rtfData, nil)
+                    return nil
+                }
+            }
+            provider.registerObject(item.content as NSString, visibility: .all)
+
+        case .image:
+            if let imageData = item.imageData, let nsImage = NSImage(data: imageData) {
+                provider.registerObject(nsImage, visibility: .all)
+            }
+
+        case .file:
+            if let urls = item.fileURLs {
+                for url in urls {
+                    provider.registerFileRepresentation(forTypeIdentifier: UTType.fileURL.identifier, fileOptions: [], visibility: .all) { completion in
+                        completion(url, false, nil)
+                        return nil
+                    }
+                }
+            }
+
+        case .url:
+            if let url = URL(string: item.content) {
+                provider.registerObject(url as NSURL, visibility: .all)
+            }
+            // Also provide as plain text
+            provider.registerObject(item.content as NSString, visibility: .all)
+        }
+
+        return provider
+    }
+
     @ViewBuilder
     var contentView: some View {
         switch item.type {

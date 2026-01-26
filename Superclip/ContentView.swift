@@ -139,12 +139,6 @@ struct ContentView: View {
                                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                                             dismiss(true)
                                         }
-                                    },
-                                    onDelete: {
-                                        clipboardManager.deleteItem(item)
-                                        if navigationState.selectedIndex >= filteredHistory.count - 1 {
-                                            navigationState.selectedIndex = max(0, filteredHistory.count - 2)
-                                        }
                                     }
                                 )
                                 .id(index)
@@ -204,6 +198,16 @@ struct ContentView: View {
                 onPreview?(item, navigationState.selectedIndex)
             }
         }
+        .onChange(of: navigationState.shouldDeleteCurrent) { shouldDelete in
+            if shouldDelete, let item = selectedItem {
+                navigationState.shouldDeleteCurrent = false
+                clipboardManager.deleteItem(item)
+                // Adjust selection if needed
+                if navigationState.selectedIndex >= filteredHistory.count - 1 {
+                    navigationState.selectedIndex = max(0, filteredHistory.count - 2)
+                }
+            }
+        }
     }
 }
 
@@ -212,83 +216,53 @@ struct ClipboardItemCard: View {
     let index: Int
     let isSelected: Bool
     let onSelect: () -> Void
-    let onDelete: () -> Void
-    
-    var appColor: Color {
-        item.sourceApp?.accentColor ?? Color(nsColor: .systemGray)
-    }
-    
-    var footerText: String {
-        switch item.type {
-        case .image:
-            return item.imageDimensions ?? "Image"
-        case .file:
-            if let urls = item.fileURLs {
-                return urls.count == 1 ? "1 file" : "\(urls.count) files"
-            }
-            return "File"
-        case .url:
-            return "URL"
-        default:
-            return "\(item.content.count) characters"
-        }
-    }
     
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Colored header bar with app info - Paste style
-            HStack(spacing: 8) {
-                // App icon
-                if let icon = item.sourceApp?.icon {
-                    Image(nsImage: icon)
-                        .resizable()
-                        .frame(width: 16, height: 16)
-                } else {
-                    Image(systemName: "app.fill")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.white.opacity(0.9))
-                }
+            // Header: type + time on left, app icon on right
+            HStack(spacing: 6) {
+                // Type label
+                Text(item.typeLabel)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.9))
                 
-                // App name
-                Text(item.sourceApp?.name ?? item.type.rawValue.capitalized)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
+                // Time ago
+                Text(item.timeAgo)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.white.opacity(0.6))
                 
                 Spacer()
                 
-                // Timestamp
-                Text(item.timeAgo)
-                    .font(.system(size: 10))
-                    .foregroundStyle(.white.opacity(0.8))
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .background(appColor)
-            
-            // Content area
-            VStack(alignment: .leading, spacing: 0) {
-                contentView
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                
-                // Footer with info and index
-                HStack {
-                    Text(footerText)
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
-                    
-                    Spacer()
-                    
-                    Text("\(index)")
-                        .font(.system(size: 10, weight: .medium, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color(nsColor: .separatorColor).opacity(0.3))
+                // Source app icon on right
+                if let icon = item.sourceApp?.icon {
+                    Image(nsImage: icon)
+                        .resizable()
+                        .frame(width: 18, height: 18)
                         .cornerRadius(4)
                 }
             }
-            .padding(10)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(Color(white: 0.15))
+            
+            // Content area
+            ZStack(alignment: .bottomTrailing) {
+                contentView
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                
+                // Floating char count for text only
+                if item.type == .text {
+                    Text("\(item.content.count)")
+                        .font(.system(size: 9, weight: .medium, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.7))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(Color.black.opacity(0.5))
+                        .cornerRadius(4)
+                        .padding(8)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color(nsColor: .controlBackgroundColor))
         }
         .aspectRatio(1, contentMode: .fit)
@@ -311,19 +285,6 @@ struct ClipboardItemCard: View {
                 NSCursor.pop()
             }
         }
-        .overlay(alignment: .topTrailing) {
-            Button {
-                onDelete()
-            } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 16))
-                    .foregroundStyle(.white.opacity(0.8))
-                    .shadow(radius: 2)
-            }
-            .buttonStyle(.plain)
-            .help("Delete")
-            .padding(6)
-        }
     }
     
     @ViewBuilder
@@ -344,9 +305,10 @@ struct ClipboardItemCard: View {
         Text(item.content)
             .font(.system(size: 12))
             .foregroundStyle(.primary)
-            .lineLimit(7)
+            .lineLimit(8)
             .multilineTextAlignment(.leading)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .padding(10)
     }
     
     var imageContentView: some View {
@@ -427,7 +389,8 @@ struct ClipboardItemCard: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(10)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 }
             }
         }
@@ -491,22 +454,43 @@ struct ClipboardItemCard: View {
     }
     
     var urlContentView: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 4) {
-                Image(systemName: "link")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                Text("Link")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 0) {
+            // Link metadata image or placeholder
+            if let metadata = item.linkMetadata, let image = metadata.image {
+                Image(nsImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .clipped()
+            } else {
+                // Placeholder with link icon
+                VStack {
+                    Image(systemName: "link.circle.fill")
+                        .font(.system(size: 40))
+                        .foregroundStyle(.secondary.opacity(0.5))
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color(nsColor: .separatorColor).opacity(0.2))
             }
             
-            Text(item.content)
-                .font(.system(size: 11))
-                .foregroundStyle(.blue)
-                .lineLimit(5)
-                .multilineTextAlignment(.leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            // Footer with title and URL
+            VStack(alignment: .leading, spacing: 2) {
+                if let metadata = item.linkMetadata, let title = metadata.title, !title.isEmpty {
+                    Text(title)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                }
+                
+                Text(item.linkMetadata?.displayURL ?? item.content)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(nsColor: .controlBackgroundColor))
         }
     }
 }

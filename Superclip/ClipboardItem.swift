@@ -69,6 +69,50 @@ struct SourceApp: Equatable {
 
 import SwiftUI
 
+// Link metadata for URL previews
+class LinkMetadata: NSObject {
+    let title: String?
+    let url: URL
+    let imageData: Data?
+    
+    init(title: String?, url: URL, imageData: Data?) {
+        self.title = title
+        self.url = url
+        self.imageData = imageData
+        super.init()
+    }
+    
+    var image: NSImage? {
+        guard let data = imageData else { return nil }
+        return NSImage(data: data)
+    }
+    
+    var displayURL: String {
+        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        components?.scheme = nil
+        var display = components?.string ?? url.absoluteString
+        if display.hasPrefix("//") {
+            display = String(display.dropFirst(2))
+        }
+        if display.hasSuffix("/") {
+            display = String(display.dropLast())
+        }
+        return display
+    }
+    
+    override func isEqual(_ object: Any?) -> Bool {
+        guard let other = object as? LinkMetadata else { return false }
+        return url == other.url && title == other.title
+    }
+    
+    override var hash: Int {
+        var hasher = Hasher()
+        hasher.combine(url)
+        hasher.combine(title)
+        return hasher.finalize()
+    }
+}
+
 struct ClipboardItem: Identifiable, Equatable {
     let id: UUID
     let content: String
@@ -77,16 +121,16 @@ struct ClipboardItem: Identifiable, Equatable {
     let imageData: Data?
     let fileURLs: [URL]?
     let sourceApp: SourceApp?
+    var linkMetadata: LinkMetadata?
     
     enum ClipboardType: String, Codable {
         case text
         case image
         case file
         case url
-        case rtf
     }
     
-    init(id: UUID = UUID(), content: String, timestamp: Date = Date(), type: ClipboardType = .text, imageData: Data? = nil, fileURLs: [URL]? = nil, sourceApp: SourceApp? = nil) {
+    init(id: UUID = UUID(), content: String, timestamp: Date = Date(), type: ClipboardType = .text, imageData: Data? = nil, fileURLs: [URL]? = nil, sourceApp: SourceApp? = nil, linkMetadata: LinkMetadata? = nil) {
         self.id = id
         self.content = content
         self.timestamp = timestamp
@@ -94,6 +138,41 @@ struct ClipboardItem: Identifiable, Equatable {
         self.imageData = imageData
         self.fileURLs = fileURLs
         self.sourceApp = sourceApp
+        self.linkMetadata = linkMetadata
+    }
+    
+    // Type label for display
+    var typeLabel: String {
+        switch type {
+        case .text:
+            return "Text"
+        case .image:
+            // Check file extension from content or image format
+            return "Image"
+        case .file:
+            if let urls = fileURLs, urls.count == 1, let url = urls.first {
+                let ext = url.pathExtension.lowercased()
+                switch ext {
+                case "jpg", "jpeg":
+                    return "JPG"
+                case "png":
+                    return "PNG"
+                case "gif":
+                    return "GIF"
+                case "mp4", "mov", "avi", "mkv", "webm":
+                    return "Video"
+                case "mp3", "wav", "m4a", "aac":
+                    return "Audio"
+                case "pdf":
+                    return "PDF"
+                default:
+                    return ext.uppercased()
+                }
+            }
+            return "File"
+        case .url:
+            return "Link"
+        }
     }
     
     var preview: String {

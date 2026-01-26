@@ -11,6 +11,7 @@ class NavigationState: ObservableObject {
     @Published var shouldSelectAndDismiss: Bool = false
     @Published var shouldFocusSearch: Bool = false
     @Published var shouldShowPreview: Bool = false
+    @Published var shouldDeleteCurrent: Bool = false
     
     var itemCount: Int = 0
     
@@ -33,6 +34,7 @@ class NavigationState: ObservableObject {
         shouldSelectAndDismiss = false
         shouldFocusSearch = false
         shouldShowPreview = false
+        shouldDeleteCurrent = false
     }
     
     func focusSearch() {
@@ -41,5 +43,9 @@ class NavigationState: ObservableObject {
     
     func showPreview() {
         shouldShowPreview = true
+    }
+    
+    func deleteCurrentItem() {
+        shouldDeleteCurrent = true
     }
 }

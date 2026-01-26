@@ -5,6 +5,83 @@
 
 import AppKit
 import Combine
+import LinkPresentation
+
+// Link metadata fetching service
+class LinkMetadataService {
+    static let shared = LinkMetadataService()
+    private let cache = NSCache<NSURL, LinkMetadata>()
+    
+    private init() {}
+    
+    func fetchMetadata(for urlString: String, completion: @escaping (LinkMetadata?) -> Void) {
+        guard let url = URL(string: urlString) else {
+            completion(nil)
+            return
+        }
+        
+        // Check cache first
+        if let cached = cache.object(forKey: url as NSURL) {
+            completion(cached)
+            return
+        }
+        
+        let provider = LPMetadataProvider()
+        provider.timeout = 5.0
+        
+        provider.startFetchingMetadata(for: url) { [weak self] metadata, error in
+            guard let metadata = metadata, error == nil else {
+                // Create basic metadata without image
+                let basicMetadata = LinkMetadata(title: nil, url: url, imageData: nil)
+                DispatchQueue.main.async {
+                    completion(basicMetadata)
+                }
+                return
+            }
+            
+            // Fetch the image if available
+            if let imageProvider = metadata.imageProvider {
+                imageProvider.loadObject(ofClass: NSImage.self) { image, _ in
+                    let linkMetadata: LinkMetadata
+                    if let nsImage = image as? NSImage,
+                       let imageData = nsImage.tiffRepresentation {
+                        linkMetadata = LinkMetadata(
+                            title: metadata.title,
+                            url: url,
+                            imageData: imageData
+                        )
+                    } else {
+                        linkMetadata = LinkMetadata(
+                            title: metadata.title,
+                            url: url,
+                            imageData: nil
+                        )
+                    }
+                    
+                    self?.cache.setObject(linkMetadata, forKey: url as NSURL)
+                    
+                    DispatchQueue.main.async {
+                        completion(linkMetadata)
+                    }
+                }
+            } else {
+                let linkMetadata = LinkMetadata(title: metadata.title, url: url, imageData: nil)
+                self?.cache.setObject(linkMetadata, forKey: url as NSURL)
+                
+                DispatchQueue.main.async {
+                    completion(linkMetadata)
+                }
+            }
+        }
+    }
+}
+
+// Struct to track deleted items for undo
+struct DeletedItemRecord {
+    let item: ClipboardItem
+    let index: Int
+    let timestamp: Date
+}
 
 class ClipboardManager: ObservableObject {
     @Published var history: [ClipboardItem] = []
@@ -14,6 +91,11 @@ class ClipboardManager: ObservableObject {
     private var timer: Timer?
     private let maxHistorySize: Int = 100
     
+    // Undo support - keep deleted items for a short period
+    private var deletedItems: [DeletedItemRecord] = []
+    private let undoTimeout: TimeInterval = 30.0 // 30 seconds to undo
+    private var undoCleanupTimer: Timer?
+    
     init() {
         pasteboard = NSPasteboard.general
         changeCount = pasteboard.changeCount
@@ -21,12 +103,28 @@ class ClipboardManager: ObservableObject {
         // Start monitoring clipboard changes
         startMonitoring()
         
+        // Start undo cleanup timer
+        startUndoCleanupTimer()
+        
         // Load initial clipboard content
         loadCurrentClipboard()
     }
     
     deinit {
         stopMonitoring()
+        undoCleanupTimer?.invalidate()
+    }
+    
+    private func startUndoCleanupTimer() {
+        // Clean up old deleted items every 10 seconds
+        undoCleanupTimer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: true) { [weak self] _ in
+            self?.cleanupExpiredDeletedItems()
+        }
+    }
+    
+    private func cleanupExpiredDeletedItems() {
+        let now = Date()
+        deletedItems.removeAll { now.timeIntervalSince($0.timestamp) > undoTimeout }
     }
     
     private func startMonitoring() {
@@ -140,17 +238,6 @@ class ClipboardManager: ObservableObject {
             }
         }
         
-        // Check for RTF content
-        if types.contains(.rtf) {
-            if let rtfData = pasteboard.data(forType: .rtf),
-               let attributedString = NSAttributedString(rtf: rtfData, documentAttributes: nil) {
-                let plainText = attributedString.string
-                if !plainText.isEmpty {
-                    addToHistory(item: ClipboardItem(content: plainText, type: .rtf, sourceApp: sourceApp))
-                    return
-                }
-            }
-        }
         
         // Check for plain string content
         if let string = pasteboard.string(forType: .string), !string.isEmpty {
@@ -183,16 +270,36 @@ class ClipboardManager: ObservableObject {
                     type: existingItem.type,
                     imageData: existingItem.imageData,
                     fileURLs: existingItem.fileURLs,
-                    sourceApp: existingItem.sourceApp
+                    sourceApp: existingItem.sourceApp,
+                    linkMetadata: existingItem.linkMetadata
                 )
                 self.history.insert(updatedItem, at: 0)
             } else {
                 // New item - insert at beginning
                 self.history.insert(item, at: 0)
                 
+                // If it's a URL, fetch link metadata
+                if item.type == .url {
+                    self.fetchLinkMetadata(for: item)
+                }
+                
                 // Limit history size
                 if self.history.count > self.maxHistorySize {
                     self.history = Array(self.history.prefix(self.maxHistorySize))
+                }
+            }
+        }
+    }
+    
+    private func fetchLinkMetadata(for item: ClipboardItem) {
+        LinkMetadataService.shared.fetchMetadata(for: item.content) { [weak self] metadata in
+            guard let self = self, let metadata = metadata else { return }
+            
+            DispatchQueue.main.async {
+                if let index = self.history.firstIndex(where: { $0.id == item.id }) {
+                    var updatedItem = self.history[index]
+                    updatedItem.linkMetadata = metadata
+                    self.history[index] = updatedItem
                 }
             }
         }
@@ -218,7 +325,7 @@ class ClipboardManager: ObservableObject {
                 pasteboard.writeObjects([url as NSURL])
             }
             pasteboard.setString(item.content, forType: .string)
-        case .text, .rtf:
+        case .text:
             pasteboard.setString(item.content, forType: .string)
         }
         
@@ -237,7 +344,8 @@ class ClipboardManager: ObservableObject {
                 type: item.type,
                 imageData: item.imageData,
                 fileURLs: item.fileURLs,
-                sourceApp: item.sourceApp
+                sourceApp: item.sourceApp,
+                linkMetadata: item.linkMetadata
             )
             self.history.insert(updatedItem, at: 0)
         }
@@ -245,7 +353,34 @@ class ClipboardManager: ObservableObject {
     
     func deleteItem(_ item: ClipboardItem) {
         DispatchQueue.main.async {
-            self.history.removeAll { $0.id == item.id }
+            // Find the index before removing
+            if let index = self.history.firstIndex(where: { $0.id == item.id }) {
+                // Store for undo
+                let record = DeletedItemRecord(item: item, index: index, timestamp: Date())
+                self.deletedItems.append(record)
+                
+                // Remove from history
+                self.history.remove(at: index)
+            }
+        }
+    }
+    
+    /// Returns true if there are items that can be undone
+    var canUndo: Bool {
+        !deletedItems.isEmpty
+    }
+    
+    /// Undo the last deletion
+    func undoDelete() {
+        DispatchQueue.main.async {
+            guard let lastDeleted = self.deletedItems.popLast() else { return }
+            
+            // Check if the undo hasn't expired
+            if Date().timeIntervalSince(lastDeleted.timestamp) <= self.undoTimeout {
+                // Insert back at the original position (or at the end if history is shorter now)
+                let insertIndex = min(lastDeleted.index, self.history.count)
+                self.history.insert(lastDeleted.item, at: insertIndex)
+            }
         }
     }
     
@@ -260,7 +395,8 @@ class ClipboardManager: ObservableObject {
                     type: existingItem.type,
                     imageData: existingItem.imageData,
                     fileURLs: existingItem.fileURLs,
-                    sourceApp: existingItem.sourceApp
+                    sourceApp: existingItem.sourceApp,
+                    linkMetadata: existingItem.linkMetadata
                 )
                 self.history[index] = updatedItem
             }

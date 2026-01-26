@@ -1,0 +1,17 @@
+---
+description: Auto-rebuild and run Superclip after code changes
+alwaysApply: true
+---
+
+# Auto-Rebuild and Run After Changes
+
+After making any code changes to Swift files, stop the current app, rebuild, and launch:
+
+```bash
+pkill -x Superclip 2>/dev/null; xcodebuild -project Superclip.xcodeproj -scheme Superclip -configuration Debug -derivedDataPath build build 2>&1 | tail -30 && open build/Build/Products/Debug/Superclip.app
+```
+
+This:
+1. Kills the running Superclip app (if any)
+2. Builds the project with xcodebuild
+3. Launches the newly built app

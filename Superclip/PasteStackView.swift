@@ -522,8 +522,6 @@ struct PasteStackItemRow: View {
             fileTypeIcon
         case .url:
             Image(systemName: "link")
-        case .rtf:
-            Image(systemName: "text.badge.star")
         case .text:
             Image(systemName: "text.alignleft")
         }

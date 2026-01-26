@@ -209,6 +209,25 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 case 44: // '/' key - focus search
                     panelWindow.navigationState.focusSearch()
                     return nil
+                case 51: // Backspace key - delete selected item
+                    // Don't delete if user is editing text
+                    if let previewPanel = self.previewWindow as? PreviewPanel,
+                       previewPanel.editingState.isEditing {
+                        return event // Allow backspace to delete characters in editor
+                    }
+                    DispatchQueue.main.async {
+                        panelWindow.navigationState.deleteCurrentItem()
+                    }
+                    return nil
+                case 6: // 'Z' key
+                    // Check for Cmd+Z (undo)
+                    if event.modifierFlags.contains(.command) {
+                        DispatchQueue.main.async {
+                            self.clipboardManager.undoDelete()
+                        }
+                        return nil
+                    }
+                    return event
                 case 49: // Space key - toggle preview
                     // Don't close preview if user is editing text
                     if let previewPanel = self.previewWindow as? PreviewPanel,

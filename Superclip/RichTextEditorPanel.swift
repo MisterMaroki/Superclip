@@ -104,6 +104,26 @@ class RichTextEditorPanel: NSPanel {
         appDelegate?.removeRichTextEditorWindow(self)
         close()
     }
+
+    /// Find and focus the NSTextView within the hosting view hierarchy
+    func focusTextView() {
+        guard let hostingView = contentView else { return }
+        if let textView = findTextView(in: hostingView) {
+            makeFirstResponder(textView)
+        }
+    }
+
+    private func findTextView(in view: NSView) -> NSTextView? {
+        if let textView = view as? NSTextView {
+            return textView
+        }
+        for subview in view.subviews {
+            if let found = findTextView(in: subview) {
+                return found
+            }
+        }
+        return nil
+    }
 }
 
 extension Notification.Name {

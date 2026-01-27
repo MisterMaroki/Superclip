@@ -4,6 +4,7 @@
 //
 
 import AppKit
+import QuartzCore
 import HotKey
 
 class AppDelegate: NSObject, NSApplicationDelegate {
@@ -19,6 +20,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     let clipboardManager = ClipboardManager()
     lazy var pasteStackManager = PasteStackManager(clipboardManager: clipboardManager)
     private var shouldPasteAfterClose = false
+    
+    // Hold-to-edit: timer-based progress, rebound on early release
+    private var holdProgressTimer: Timer?
+    private var holdCompletionTimer: Timer?
+    private var holdStartTime: CFTimeInterval = 0
+    private var holdCompleted = false
+    private let holdDuration: TimeInterval = 0.5
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -258,22 +266,53 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                         return nil
                     }
                     return event
-                case 49: // Space key - toggle preview or open editor on hold
+                case 49: // Space key - toggle preview or hold-to-edit (timer-based, rebounding progress)
                     // Don't handle if user is editing text
                     if let previewPanel = self.previewWindow as? PreviewPanel,
                        previewPanel.editingState.isEditing {
                         return event // Allow space to be typed in the text editor
                     }
 
-                    // If key is being held (repeat), open the rich text editor directly
-                    if event.isARepeat {
-                        // Close preview if open, then open editor
-                        self.closePreviewWindow()
-                        self.openRichTextEditorForSelectedItem()
+                    // Ignore key repeat; we use a timer for hold-to-edit
+                    if event.isARepeat { return nil }
+
+                    // Only hold-to-edit for editable (text/url) items
+                    let history = self.clipboardManager.history
+                    let idx = panelWindow.navigationState.selectedIndex
+                    let isEditable = idx >= 0 && idx < history.count && (history[idx].type == .text || history[idx].type == .url)
+
+                    if isEditable {
+                        // Start hold: progress animation + completion timer
+                        self.cancelHoldToEdit()
+                        panelWindow.navigationState.isHoldingSpace = true
+                        panelWindow.navigationState.holdProgress = 0
+                        self.holdCompleted = false
+                        self.holdStartTime = CACurrentMediaTime()
+
+                        self.holdProgressTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] t in
+                            guard let self = self, let panel = self.contentWindow as? ContentPanel else {
+                                t.invalidate()
+                                return
+                            }
+                            let elapsed = CACurrentMediaTime() - self.holdStartTime
+                            let p = min(1.0, elapsed / self.holdDuration)
+                            DispatchQueue.main.async {
+                                panel.navigationState.holdProgress = p
+                            }
+                            if p >= 1.0 { t.invalidate(); self.holdProgressTimer = nil }
+                        }
+                        self.holdProgressTimer?.tolerance = 0.01
+                        RunLoop.main.add(self.holdProgressTimer!, forMode: .common)
+
+                        self.holdCompletionTimer = Timer.scheduledTimer(withTimeInterval: self.holdDuration, repeats: false) { [weak self] _ in
+                            self?.completeHoldToEdit()
+                        }
+                        self.holdCompletionTimer?.tolerance = 0.02
+                        RunLoop.main.add(self.holdCompletionTimer!, forMode: .common)
                         return nil
                     }
 
-                    // Normal press - toggle preview
+                    // Non-editable: normal press - toggle preview
                     if self.previewWindow?.isVisible == true {
                         self.closePreviewWindow()
                         self.contentWindow?.makeKey()
@@ -284,6 +323,29 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 default:
                     return event
                 }
+            }
+            
+            if event.type == .keyUp && event.keyCode == 49 {
+                // Space key up - handle hold release (rebound) or consume after completed hold
+                guard let panel = self.contentWindow as? ContentPanel else { return event }
+                let wasHolding = panel.navigationState.isHoldingSpace || self.holdCompleted
+                self.cancelHoldToEdit()
+                if wasHolding {
+                    if self.holdCompleted {
+                        self.holdCompleted = false
+                        return nil
+                    }
+                    // Early release: rebound (holdProgress already 0) then toggle preview
+                    panel.navigationState.holdProgress = 0
+                    if self.previewWindow?.isVisible == true {
+                        self.closePreviewWindow()
+                        self.contentWindow?.makeKey()
+                    } else {
+                        panel.navigationState.showPreview()
+                    }
+                    return nil
+                }
+                return event
             }
             
             // If click is in a different window (or nil), close the drawer panel
@@ -353,11 +415,34 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     private func stopClickMonitoring() {
+        cancelHoldToEdit()
         if let monitor = clickMonitor {
             NSEvent.removeMonitor(monitor)
             clickMonitor = nil
         }
         NotificationCenter.default.removeObserver(self, name: NSWindow.didResignKeyNotification, object: contentWindow)
+    }
+    
+    private func cancelHoldToEdit() {
+        holdProgressTimer?.invalidate()
+        holdProgressTimer = nil
+        holdCompletionTimer?.invalidate()
+        holdCompletionTimer = nil
+        guard let panel = contentWindow as? ContentPanel else { return }
+        panel.navigationState.isHoldingSpace = false
+        panel.navigationState.holdProgress = 0
+    }
+
+    private func completeHoldToEdit() {
+        holdProgressTimer?.invalidate()
+        holdProgressTimer = nil
+        holdCompletionTimer = nil
+        holdCompleted = true
+        guard let panel = contentWindow as? ContentPanel else { return }
+        panel.navigationState.isHoldingSpace = false
+        panel.navigationState.holdProgress = 0
+        closePreviewWindow()
+        openRichTextEditorForSelectedItem()
     }
     
     func closeReviewWindow(andPaste shouldPaste: Bool) {
@@ -571,6 +656,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         richTextEditorWindows.append(editorPanel)
         editorPanel.makeKeyAndOrderFront(nil)
+
+        // Ensure app is activated and panel gets focus (needed for first item without prior navigation)
+        NSApp.activate(ignoringOtherApps: true)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            editorPanel.makeFirstResponder(editorPanel.contentView)
+            editorPanel.focusTextView()
+        }
     }
 
     func removeRichTextEditorWindow(_ panel: RichTextEditorPanel) {

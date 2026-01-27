@@ -13,6 +13,10 @@ class NavigationState: ObservableObject {
     @Published var shouldShowPreview: Bool = false
     @Published var shouldDeleteCurrent: Bool = false
     @Published var isCommandHeld: Bool = false
+    
+    /// Hold-to-edit: progress 0...1 while spacebar held. Springs back to 0 on early release.
+    @Published var holdProgress: Double = 0
+    @Published var isHoldingSpace: Bool = false
 
     var itemCount: Int = 0
 

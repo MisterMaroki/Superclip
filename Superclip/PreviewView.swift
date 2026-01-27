@@ -284,14 +284,18 @@ struct PreviewView: View {
                 // Display rich text content
                 AttributedTextView(attributedString: attributedString)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(16)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 24)
+                    .padding(.bottom, 16)
             } else {
                 Text(editableContent)
                     .font(.system(size: 13))
                     .foregroundStyle(.primary)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(16)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 24)
+                    .padding(.bottom, 16)
             }
         }
     }

@@ -524,6 +524,7 @@ struct ContentView: View {
                                     index: index + 1,
                                     isSelected: navigationState.selectedIndex == index,
                                     quickAccessNumber: navigationState.isCommandHeld && index < 10 ? (index == 9 ? 0 : index + 1) : nil,
+                                    holdProgress: navigationState.holdProgress,
                                     onSelect: {
                                         navigationState.selectedIndex = index
                                         clipboardManager.copyToClipboard(item)
@@ -583,6 +584,7 @@ struct ClipboardItemCard: View {
     let index: Int
     let isSelected: Bool
     let quickAccessNumber: Int? // 1-9 for first 9, 0 for 10th, nil if not in first 10 or command not held
+    let holdProgress: Double // 0...1 for hold-to-edit progress
     let onSelect: () -> Void
     var onDragStart: (() -> Void)? = nil
     var onDragEnd: (() -> Void)? = nil
@@ -653,7 +655,45 @@ struct ClipboardItemCard: View {
                     .transition(.scale.combined(with: .opacity))
             }
         }
+        .overlay {
+            // Hold-to-edit progress ring (only for editable items when selected and holding)
+            if isSelected && (item.type == .text || item.type == .url) && holdProgress > 0 {
+                ZStack {
+                    // Background ring (subtle)
+                    Circle()
+                        .stroke(Color.white.opacity(0.2), lineWidth: 3)
+                        .frame(width: 50, height: 50)
+
+                    // Progress ring (fills clockwise)
+                    Circle()
+                        .trim(from: 0, to: holdProgress)
+                        .stroke(
+                            Color.white.opacity(0.9),
+                            style: StrokeStyle(lineWidth: 3, lineCap: .round)
+                        )
+                        .frame(width: 50, height: 50)
+                        .rotationEffect(.degrees(-90)) // Start from top
+
+                    // Edit icon in center
+                    Image(systemName: "pencil")
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundStyle(.white)
+                        .opacity(0.7 + holdProgress * 0.3)
+                }
+                .animation(.spring(response: 0.35, dampingFraction: 0.65), value: holdProgress)
+            }
+        }
         .animation(.easeOut(duration: 0.15), value: quickAccessNumber != nil)
+        // Hold-to-edit glow effect (layered for soft bloom) - only for selected card
+        .shadow(
+            color: Color.white.opacity(isSelected ? holdProgress * 0.5 : 0),
+            radius: isSelected ? 6 * holdProgress : 0
+        )
+        .shadow(
+            color: Color.blue.opacity(isSelected ? holdProgress * 0.3 : 0),
+            radius: isSelected ? 10 * holdProgress : 0
+        )
+        .animation(.easeOut(duration: 0.12), value: isSelected ? holdProgress : 0)
         .shadow(color: .black.opacity(isSelected ? 0.3 : 0.15), radius: isSelected ? 8 : 4, y: 2)
         .scaleEffect(isSelected ? 1.02 : 1.0)
         .animation(.easeOut(duration: 0.15), value: isSelected)
@@ -1066,6 +1106,9 @@ struct RichTextCardPreview: NSViewRepresentable {
         textView.textContainer?.lineFragmentPadding = 0
         textView.textContainer?.maximumNumberOfLines = 8
         textView.textContainer?.lineBreakMode = .byTruncatingTail
+        // Prevent vertical expansion - keep text at top
+        textView.isVerticallyResizable = false
+        textView.autoresizingMask = [.width]
         textView.textStorage?.setAttributedString(attributedString)
         return textView
     }

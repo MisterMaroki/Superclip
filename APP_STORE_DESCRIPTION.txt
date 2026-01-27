@@ -1,0 +1,20 @@
+Superclip
+
+A clipboard manager for macOS that keeps track of what you copy and makes it easy to access and edit your clipboard history.
+
+Clipboard Management
+Access your clipboard history from anywhere with a keyboard shortcut. Browse through previously copied items including text, images, files, and URLs. Items are automatically saved as you copy them.
+
+Quick Editing
+Edit clipboard items before pasting. Select any item from your history, make changes, and paste the edited version. Supports both plain text and rich text editing.
+
+Text Sniper
+Extract text from images or videos displayed on your screen. Select a region and the app uses OCR to recognize and copy the text. Works with any visible content including video frames, screenshots, or images in other applications.
+
+Pinboards
+Create pinboards to store frequently used snippets. Organize items into named collections with color coding. Pinboards persist across sessions, so you can keep reusable text, code snippets, or other content organized and easily accessible.
+
+Paste Stack
+Sequential pasting mode for copying multiple items in a row. Copy several items, then paste them one after another. The app automatically advances to the next item after each paste.
+
+Free.

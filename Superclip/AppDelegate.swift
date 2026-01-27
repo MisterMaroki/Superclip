@@ -6,6 +6,7 @@
 import AppKit
 import QuartzCore
 import HotKey
+import ScreenCaptureKit
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     var contentWindow: NSWindow?
@@ -14,6 +15,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var richTextEditorWindows: [RichTextEditorPanel] = []
     var hotKey: HotKey?
     var pasteStackHotKey: HotKey?
+    var ocrHotKey: HotKey?
+    var screenCaptureWindow: NSWindow?
     var clickMonitor: Any?
     var pasteStackKeyMonitor: Any?
     var previewClickMonitor: Any?
@@ -30,9 +33,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
-        
+
         setupHotkey()
         setupPasteStackHotkey()
+        setupOCRHotkey()
     }
     
     func applicationDidResignActive(_ notification: Notification) {
@@ -667,5 +671,179 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func removeRichTextEditorWindow(_ panel: RichTextEditorPanel) {
         richTextEditorWindows.removeAll { $0 === panel }
+    }
+
+    // MARK: - OCR Screen Capture
+
+    private func setupOCRHotkey() {
+        ocrHotKey = HotKey(key: .t, modifiers: [.command, .shift])
+        ocrHotKey?.keyDownHandler = { [weak self] in
+            DispatchQueue.main.async {
+                self?.startScreenCapture()
+            }
+        }
+    }
+
+    func startScreenCapture() {
+        // Close any open panels first
+        closeReviewWindow(andPaste: false)
+        closePasteStackWindow(andPaste: false)
+
+        // Check for screen recording permission
+        if !hasScreenRecordingPermission() {
+            requestScreenRecordingPermission()
+            return
+        }
+
+        // Get the main screen frame
+        guard let screen = NSScreen.main else { return }
+        let screenFrame = screen.frame
+
+        // Create and show the capture panel
+        let capturePanel = ScreenCapturePanel(screenFrame: screenFrame)
+        capturePanel.onCapture = { [weak self] rect in
+            self?.captureScreenRegion(rect)
+            self?.screenCaptureWindow = nil
+        }
+        capturePanel.onCancel = { [weak self] in
+            self?.screenCaptureWindow = nil
+        }
+
+        screenCaptureWindow = capturePanel
+        capturePanel.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func captureScreenRegion(_ rect: NSRect) {
+        // Get scale factor on main thread before async work
+        let scaleFactor = NSScreen.main?.backingScaleFactor ?? 2.0
+
+        // Capture the screen region using ScreenCaptureKit
+        Task {
+            do {
+                // Get shareable content
+                let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+
+                // Find the main display
+                guard let display = content.displays.first(where: { display in
+                    display.displayID == CGMainDisplayID()
+                }) ?? content.displays.first else {
+                    await MainActor.run {
+                        self.showOCRError(.invalidImage)
+                    }
+                    return
+                }
+
+                // Find windows belonging to our app to exclude them
+                let ourBundleID = Bundle.main.bundleIdentifier ?? ""
+                let windowsToExclude = content.windows.filter { window in
+                    window.owningApplication?.bundleIdentifier == ourBundleID
+                }
+
+                // Create a filter for the display, excluding our app's windows
+                let filter = SCContentFilter(display: display, excludingWindows: windowsToExclude)
+
+                // Configure the capture
+                let config = SCStreamConfiguration()
+                config.sourceRect = rect
+                config.width = Int(rect.width * scaleFactor)
+                config.height = Int(rect.height * scaleFactor)
+                config.scalesToFit = true
+                config.showsCursor = false
+                config.pixelFormat = kCVPixelFormatType_32BGRA
+
+                // Capture the image
+                let image = try await SCScreenshotManager.captureImage(
+                    contentFilter: filter,
+                    configuration: config
+                )
+
+                // Convert CGImage to NSImage
+                let nsImage = NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
+
+                // Run OCR on main thread
+                await MainActor.run {
+                    OCRManager.shared.recognizeTextAsync(in: nsImage) { [weak self] result in
+                        switch result {
+                        case .success(let text):
+                            self?.handleOCRResult(text)
+                        case .failure(let error):
+                            self?.showOCRError(error)
+                        }
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    self.showOCRError(.screenCaptureFailed(error))
+                }
+            }
+        }
+    }
+
+    private func handleOCRResult(_ text: String) {
+        // Copy text to clipboard
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
+
+        // Create a temporary ClipboardItem for the rich text editor
+        let item = ClipboardItem(
+            content: text,
+            type: .text,
+            sourceApp: SourceApp(
+                bundleIdentifier: Bundle.main.bundleIdentifier,
+                name: "Superclip OCR",
+                icon: NSApp.applicationIconImage
+            )
+        )
+
+        // Open rich text editor with the OCR result
+        let editorFrame: NSRect
+        if let screen = NSScreen.main {
+            let screenFrame = screen.visibleFrame
+            let panelWidth: CGFloat = 500
+            let panelHeight: CGFloat = 400
+            editorFrame = NSRect(
+                x: screenFrame.midX - panelWidth / 2,
+                y: screenFrame.midY - panelHeight / 2,
+                width: panelWidth,
+                height: panelHeight
+            )
+        } else {
+            editorFrame = NSRect(x: 100, y: 100, width: 500, height: 400)
+        }
+
+        showRichTextEditorWindow(for: item, fromPreviewFrame: editorFrame)
+    }
+
+    private func showOCRError(_ error: OCRError) {
+        let alert = NSAlert()
+        alert.messageText = "OCR Failed"
+        alert.informativeText = error.localizedDescription
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
+
+    private func hasScreenRecordingPermission() -> Bool {
+        // Check if we have screen recording permission using CGPreflightScreenCaptureAccess
+        return CGPreflightScreenCaptureAccess()
+    }
+
+    private func requestScreenRecordingPermission() {
+        let alert = NSAlert()
+        alert.messageText = "Screen Recording Permission Required"
+        alert.informativeText = "Superclip needs screen recording permission to capture screen regions for OCR.\n\nPlease grant permission in System Settings > Privacy & Security > Screen Recording."
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "Open System Settings")
+        alert.addButton(withTitle: "Cancel")
+
+        let response = alert.runModal()
+        if response == .alertFirstButtonReturn {
+            // Open System Settings to Privacy & Security > Screen Recording
+            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
+                NSWorkspace.shared.open(url)
+            }
+        }
     }
 }

@@ -719,7 +719,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let scaleFactor = NSScreen.main?.backingScaleFactor ?? 2.0
 
         // Capture the screen region using ScreenCaptureKit
-        Task {
+        // Use [weak self] to avoid retain cycles
+        Task { [weak self] in
+            guard let self = self else { return }
+
             do {
                 // Get shareable content
                 let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
@@ -728,8 +731,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 guard let display = content.displays.first(where: { display in
                     display.displayID == CGMainDisplayID()
                 }) ?? content.displays.first else {
-                    await MainActor.run {
-                        self.showOCRError(.invalidImage)
+                    await MainActor.run { [weak self] in
+                        self?.showOCRError(.invalidImage)
                     }
                     return
                 }
@@ -753,28 +756,26 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 config.pixelFormat = kCVPixelFormatType_32BGRA
 
                 // Capture the image
-                let image = try await SCScreenshotManager.captureImage(
+                let cgImage = try await SCScreenshotManager.captureImage(
                     contentFilter: filter,
                     configuration: config
                 )
 
-                // Convert CGImage to NSImage
-                let nsImage = NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
+                // Run OCR synchronously to avoid retaining the image in closures
+                let ocrResult = OCRManager.shared.recognizeText(in: NSImage(cgImage: cgImage, size: .zero))
 
-                // Run OCR on main thread
-                await MainActor.run {
-                    OCRManager.shared.recognizeTextAsync(in: nsImage) { [weak self] result in
-                        switch result {
-                        case .success(let text):
-                            self?.handleOCRResult(text)
-                        case .failure(let error):
-                            self?.showOCRError(error)
-                        }
+                // Handle result on main thread (image is no longer needed)
+                await MainActor.run { [weak self] in
+                    switch ocrResult {
+                    case .success(let text):
+                        self?.handleOCRResult(text)
+                    case .failure(let error):
+                        self?.showOCRError(error)
                     }
                 }
             } catch {
-                await MainActor.run {
-                    self.showOCRError(.screenCaptureFailed(error))
+                await MainActor.run { [weak self] in
+                    self?.showOCRError(.screenCaptureFailed(error))
                 }
             }
         }

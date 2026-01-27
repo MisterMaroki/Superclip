@@ -30,7 +30,11 @@ class ScreenCapturePanel: NSPanel {
     deinit {
         if let monitor = localKeyMonitor {
             NSEvent.removeMonitor(monitor)
+            localKeyMonitor = nil
         }
+        contentView = nil
+        onCapture = nil
+        onCancel = nil
     }
 
     override var canBecomeKey: Bool { true }
@@ -88,16 +92,20 @@ class ScreenCapturePanel: NSPanel {
         // Restore cursor
         NSCursor.arrow.set()
 
-        // Store callback before closing
+        // Store callback before clearing
         let captureCallback = onCapture
 
-        // Hide window immediately (orderOut is faster than close for visual hiding)
+        // Clear callbacks to break retain cycles
+        onCapture = nil
+        onCancel = nil
+
+        // Hide window immediately
         orderOut(nil)
 
-        // Close the panel
-        closePanel()
+        // Clean up the panel
+        cleanupPanel()
 
-        // Longer delay to ensure window is fully gone from screen
+        // Delay to ensure window is fully gone from screen, then call back
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
             captureCallback?(rect)
         }
@@ -107,15 +115,28 @@ class ScreenCapturePanel: NSPanel {
         // Restore cursor
         NSCursor.arrow.set()
 
-        closePanel()
-        onCancel?()
+        // Store callback before clearing
+        let cancelCallback = onCancel
+
+        // Clear callbacks to break retain cycles
+        onCapture = nil
+        onCancel = nil
+
+        cleanupPanel()
+        cancelCallback?()
     }
 
-    private func closePanel() {
+    private func cleanupPanel() {
+        // Remove event monitor
         if let monitor = localKeyMonitor {
             NSEvent.removeMonitor(monitor)
             localKeyMonitor = nil
         }
+
+        // Clear content view to release SwiftUI view hierarchy
+        contentView = nil
+
+        // Close the window
         close()
     }
 }

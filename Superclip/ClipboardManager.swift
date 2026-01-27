@@ -232,7 +232,7 @@ class ClipboardManager: ObservableObject {
         
         // Check for URLs
         if types.contains(.URL) {
-            if let url = pasteboard.string(forType: .URL), !url.isEmpty {
+            if let url = pasteboard.string(forType: .URL)?.trimmingCharacters(in: .whitespacesAndNewlines), !url.isEmpty {
                 addToHistory(item: ClipboardItem(content: url, type: .url, sourceApp: sourceApp))
                 return
             }
@@ -240,10 +240,19 @@ class ClipboardManager: ObservableObject {
         
         
         // Check for plain string content
-        if let string = pasteboard.string(forType: .string), !string.isEmpty {
+        if let string = pasteboard.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines), !string.isEmpty {
             // Detect if it's a URL
-            if let url = URL(string: string), url.scheme != nil {
-                addToHistory(item: ClipboardItem(content: string, type: .url, sourceApp: sourceApp))
+            // Real URLs don't contain unencoded whitespace, so skip URL detection if string has spaces
+            let containsWhitespace = string.rangeOfCharacter(from: .whitespaces) != nil
+            if !containsWhitespace, let url = URL(string: string), url.scheme != nil || string.contains(".") {
+                // Has a scheme (http://...) or looks like a domain (google.com)
+                // Validate domain-like strings by checking they have valid URL structure
+                let urlString = url.scheme != nil ? string : "https://\(string)"
+                if let validatedURL = URL(string: urlString), validatedURL.host != nil {
+                    addToHistory(item: ClipboardItem(content: string, type: .url, sourceApp: sourceApp))
+                } else {
+                    addToHistory(item: ClipboardItem(content: string, type: .text, sourceApp: sourceApp))
+                }
             } else {
                 addToHistory(item: ClipboardItem(content: string, type: .text, sourceApp: sourceApp))
             }
@@ -391,22 +400,54 @@ class ClipboardManager: ObservableObject {
         }
     }
     
+    /// Determine if a string should be treated as a URL
+    private func isValidURL(_ string: String) -> Bool {
+        let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+
+        // Real URLs don't contain unencoded whitespace
+        let containsWhitespace = trimmed.rangeOfCharacter(from: .whitespaces) != nil
+        guard !containsWhitespace else { return false }
+
+        if let url = URL(string: trimmed), url.scheme != nil || trimmed.contains(".") {
+            // Has a scheme (http://...) or looks like a domain (google.com)
+            let urlString = url.scheme != nil ? trimmed : "https://\(trimmed)"
+            if let validatedURL = URL(string: urlString), validatedURL.host != nil {
+                return true
+            }
+        }
+        return false
+    }
+
     func updateItemContent(_ item: ClipboardItem, newContent: String) {
         DispatchQueue.main.async {
             if let index = self.history.firstIndex(where: { $0.id == item.id }) {
                 let existingItem = self.history[index]
+                let trimmedContent = newContent.trimmingCharacters(in: .whitespacesAndNewlines)
+
+                // Re-evaluate if content is a URL
+                let newType: ClipboardItem.ClipboardType = self.isValidURL(trimmedContent) ? .url : .text
+
+                // Clear metadata if no longer a URL, or fetch new metadata if became a URL
+                let newMetadata: LinkMetadata? = (newType == .url) ? existingItem.linkMetadata : nil
+
                 let updatedItem = ClipboardItem(
                     id: existingItem.id,
-                    content: newContent,
+                    content: trimmedContent,
                     timestamp: existingItem.timestamp,
-                    type: existingItem.type,
+                    type: newType,
                     imageData: existingItem.imageData,
                     fileURLs: existingItem.fileURLs,
                     sourceApp: existingItem.sourceApp,
-                    linkMetadata: existingItem.linkMetadata,
+                    linkMetadata: newMetadata,
                     rtfData: existingItem.rtfData
                 )
                 self.history[index] = updatedItem
+
+                // If it became a URL or URL changed, fetch new metadata
+                if newType == .url && (existingItem.type != .url || existingItem.content != trimmedContent) {
+                    self.fetchLinkMetadata(for: updatedItem)
+                }
             }
         }
     }
@@ -421,19 +462,31 @@ class ClipboardManager: ObservableObject {
                     documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf]
                 )
                 // Also update plain text content
-                let plainText = attributedString.string
+                let plainText = attributedString.string.trimmingCharacters(in: .whitespacesAndNewlines)
+
+                // Re-evaluate if content is a URL
+                let newType: ClipboardItem.ClipboardType = self.isValidURL(plainText) ? .url : .text
+
+                // Clear metadata if no longer a URL
+                let newMetadata: LinkMetadata? = (newType == .url) ? existingItem.linkMetadata : nil
+
                 let updatedItem = ClipboardItem(
                     id: existingItem.id,
                     content: plainText,
                     timestamp: existingItem.timestamp,
-                    type: existingItem.type,
+                    type: newType,
                     imageData: existingItem.imageData,
                     fileURLs: existingItem.fileURLs,
                     sourceApp: existingItem.sourceApp,
-                    linkMetadata: existingItem.linkMetadata,
+                    linkMetadata: newMetadata,
                     rtfData: rtfData
                 )
                 self.history[index] = updatedItem
+
+                // If it became a URL or URL changed, fetch new metadata
+                if newType == .url && (existingItem.type != .url || existingItem.content != plainText) {
+                    self.fetchLinkMetadata(for: updatedItem)
+                }
             }
         }
     }

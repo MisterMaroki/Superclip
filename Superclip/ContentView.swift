@@ -6,15 +6,68 @@
 import SwiftUI
 import AVFoundation
 import UniformTypeIdentifiers
+import Combine
+
+// Custom identifier for clipboard item drag and drop
+private let clipboardItemIDType = "com.omarmaroki.superclip.clipboard-item-id"
+
+// Global state to track dragged item (fallback approach)
+class DragState: ObservableObject {
+    static let shared = DragState()
+    @Published var draggedItemId: UUID?
+}
+
+enum ViewMode: Equatable {
+    case clipboard
+    case pinboard(Pinboard)
+}
 
 struct ContentView: View {
     @ObservedObject var clipboardManager: ClipboardManager
     @ObservedObject var navigationState: NavigationState
+    @ObservedObject var pinboardManager: PinboardManager
     var dismiss: (Bool) -> Void  // Bool indicates whether to paste after dismiss
     var onPreview: ((ClipboardItem, Int) -> Void)?  // Item and index
+    var onEditingPinboardChanged: ((Bool) -> Void)?  // Called when editing state changes
     
     @FocusState private var isSearchFocused: Bool
     @State private var searchText: String = ""
+    @State private var showSearchField: Bool = false
+    @State private var viewMode: ViewMode = .clipboard
+    @State private var editingPinboard: Pinboard?
+    @State private var editingPinboardName: String = ""
+    @State private var editingPinboardColor: PinboardColor = .red
+    @FocusState private var isEditingPinboard: Bool
+    @State private var dragLocation: CGPoint? = nil
+    @State private var dragMonitorTimer: Timer? = nil
+    
+    var currentItems: [ClipboardItem] {
+        switch viewMode {
+        case .clipboard:
+            return filteredHistory
+        case .pinboard(let pinboard):
+            let pinboardItems = pinboardManager.getItems(for: pinboard, from: clipboardManager.history)
+            if searchText.isEmpty {
+                return pinboardItems
+            }
+            return pinboardItems.filter { item in
+                if item.content.localizedCaseInsensitiveContains(searchText) {
+                    return true
+                }
+                if item.type.rawValue.localizedCaseInsensitiveContains(searchText) {
+                    return true
+                }
+                if let urls = item.fileURLs {
+                    for url in urls {
+                        if url.lastPathComponent.localizedCaseInsensitiveContains(searchText) {
+                            return true
+                        }
+                    }
+                }
+                return false
+            }
+        }
+    }
     
     var filteredHistory: [ClipboardItem] {
         if searchText.isEmpty {
@@ -42,22 +95,248 @@ struct ContentView: View {
     }
     
     var selectedItem: ClipboardItem? {
-        guard !filteredHistory.isEmpty, navigationState.selectedIndex >= 0, navigationState.selectedIndex < filteredHistory.count else {
+        guard !currentItems.isEmpty, navigationState.selectedIndex >= 0, navigationState.selectedIndex < currentItems.count else {
             return nil
         }
-        return filteredHistory[navigationState.selectedIndex]
+        return currentItems[navigationState.selectedIndex]
     }
     
     var body: some View {
         VStack(spacing: 0) {
-            // Top toolbar with search
+            // New header design
+            headerView
+                .padding(.top, 12)
+            
+            // Clipboard history list
+            itemsListView
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(
+            ZStack {
+                Color.black.opacity(0.85)
+                VisualEffectBlur(material: .hudWindow, blendingMode: .behindWindow)
+            }
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .background(
+            // Invisible overlay to detect drag outside
+            GeometryReader { geometry in
+                Color.clear
+                    .onChange(of: DragState.shared.draggedItemId) { itemId in
+                        if itemId != nil {
+                            // Start monitoring mouse location when drag starts
+                            // Get frame in screen coordinates
+                            let frame = geometry.frame(in: .global)
+                            DispatchQueue.main.async {
+                                startDragMonitoring(frame: frame)
+                            }
+                        } else {
+                            // Stop monitoring when drag ends
+                            stopDragMonitoring()
+                        }
+                    }
+                    .onAppear {
+                        // Also monitor when view appears in case drag is already active
+                        if DragState.shared.draggedItemId != nil {
+                            let frame = geometry.frame(in: .global)
+                            startDragMonitoring(frame: frame)
+                        }
+                    }
+            }
+        )
+        .onAppear {
+            // Update item count
+            navigationState.itemCount = currentItems.count
+            navigationState.selectedIndex = 0
+        }
+        .onChange(of: currentItems.count) { newCount in
+            navigationState.itemCount = newCount
+        }
+        .onChange(of: navigationState.shouldSelectAndDismiss) { shouldSelect in
+            if shouldSelect, let item = selectedItem {
+                clipboardManager.copyToClipboard(item)
+                navigationState.shouldSelectAndDismiss = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    dismiss(true)
+                }
+            }
+        }
+        .onChange(of: navigationState.shouldFocusSearch) { shouldFocus in
+            if shouldFocus {
+                showSearchField = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    isSearchFocused = true
+                }
+                navigationState.shouldFocusSearch = false
+            }
+        }
+        .onChange(of: navigationState.shouldShowPreview) { shouldShow in
+            if shouldShow, let item = selectedItem {
+                navigationState.shouldShowPreview = false
+                onPreview?(item, navigationState.selectedIndex)
+            }
+        }
+        .onChange(of: navigationState.shouldDeleteCurrent) { shouldDelete in
+            if shouldDelete, let item = selectedItem {
+                navigationState.shouldDeleteCurrent = false
+                clipboardManager.deleteItem(item)
+                // Adjust selection if needed
+                if navigationState.selectedIndex >= currentItems.count - 1 {
+                    navigationState.selectedIndex = max(0, currentItems.count - 2)
+                }
+            }
+        }
+        .onChange(of: viewMode) { _ in
+            navigationState.selectedIndex = 0
+            navigationState.itemCount = currentItems.count
+        }
+        .onDisappear {
+            stopDragMonitoring()
+        }
+    }
+    
+    // MARK: - Drag Monitoring
+    
+    private func startDragMonitoring(frame: CGRect) {
+        stopDragMonitoring() // Clean up any existing timer
+        
+        let dismissCallback = dismiss
+        
+        // Get the actual window frame - look for ContentPanel specifically
+        // Try multiple ways to find the window
+        var window: NSWindow?
+        for w in NSApp.windows {
+            if w is ContentPanel {
+                window = w
+                break
+            }
+        }
+        if window == nil {
+            window = NSApp.windows.first(where: { $0.isKeyWindow })
+        }
+        if window == nil {
+            window = NSApp.windows.first(where: { $0.isMainWindow })
+        }
+        if window == nil {
+            window = NSApp.windows.first
+        }
+        
+        guard let window = window else {
+            return
+        }
+        
+        let windowFrame = window.frame
+        
+        dragMonitorTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { timer in
+            guard DragState.shared.draggedItemId != nil else {
+                timer.invalidate()
+                return
+            }
+            
+            // Get current mouse location in screen coordinates (bottom-left origin)
+            let mouseLocation = NSEvent.mouseLocation
+            
+            // Window frame and mouse location are both in screen coordinates with bottom-left origin
+            let isOutside = mouseLocation.x < windowFrame.minX || 
+                           mouseLocation.x > windowFrame.maxX ||
+                           mouseLocation.y < windowFrame.minY || 
+                           mouseLocation.y > windowFrame.maxY
+            
+            if isOutside {
+                // Close the drawer when dragged outside
+                timer.invalidate()
+                DragState.shared.draggedItemId = nil // Clear drag state
+                DispatchQueue.main.async {
+                    dismissCallback(false)
+                }
+            }
+        }
+        
+        // Make sure timer runs on main run loop in common mode
+        if let timer = dragMonitorTimer {
+            RunLoop.main.add(timer, forMode: .common)
+        }
+    }
+    
+    private func stopDragMonitoring() {
+        dragMonitorTimer?.invalidate()
+        dragMonitorTimer = nil
+    }
+    
+    // Start monitoring directly from drag callback (more reliable)
+    private func startDragMonitoringFromDrag() {
+        stopDragMonitoring() // Clean up any existing timer
+        
+        let dismissCallback = dismiss
+        
+        // Get the actual window frame - look for ContentPanel specifically
+        var window: NSWindow?
+        for w in NSApp.windows {
+            if w is ContentPanel {
+                window = w
+                break
+            }
+        }
+        if window == nil {
+            window = NSApp.windows.first(where: { $0.isKeyWindow })
+        }
+        if window == nil {
+            window = NSApp.windows.first(where: { $0.isMainWindow })
+        }
+        if window == nil {
+            window = NSApp.windows.first
+        }
+        
+        guard let window = window else {
+            return
+        }
+        
+        let windowFrame = window.frame
+        
+        dragMonitorTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { timer in
+            guard DragState.shared.draggedItemId != nil else {
+                timer.invalidate()
+                return
+            }
+            
+            // Get current mouse location in screen coordinates (bottom-left origin)
+            let mouseLocation = NSEvent.mouseLocation
+            
+            // Window frame and mouse location are both in screen coordinates with bottom-left origin
+            let isOutside = mouseLocation.x < windowFrame.minX || 
+                           mouseLocation.x > windowFrame.maxX ||
+                           mouseLocation.y < windowFrame.minY || 
+                           mouseLocation.y > windowFrame.maxY
+            
+            if isOutside {
+                // Close the drawer when dragged outside
+                timer.invalidate()
+                DragState.shared.draggedItemId = nil // Clear drag state
+                DispatchQueue.main.async {
+                    dismissCallback(false)
+                }
+            }
+        }
+        
+        // Make sure timer runs on main run loop in common mode
+        if let timer = dragMonitorTimer {
+            RunLoop.main.add(timer, forMode: .common)
+        }
+    }
+    
+    // MARK: - Header View
+    
+    var headerView: some View {
+        HStack(spacing: 16) {
+            // Centered tabs section
             HStack(spacing: 16) {
-                // Search bar
+            // Search icon and field (left side)
+            if showSearchField {
                 HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass")
                         .font(.system(size: 12))
                         .foregroundStyle(.white.opacity(0.5))
-                    TextField("Search clipboard history...", text: $searchText)
+                    TextField("Search...", text: $searchText)
                         .textFieldStyle(.plain)
                         .font(.system(size: 13))
                         .foregroundStyle(.white)
@@ -76,38 +355,159 @@ struct ContentView: View {
                         }
                         .buttonStyle(.plain)
                     }
+                    
+                    Button {
+                        showSearchField = false
+                        searchText = ""
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.white.opacity(0.5))
+                    }
+                    .buttonStyle(.plain)
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
                 .background(Color.white.opacity(0.1))
                 .cornerRadius(6)
-                .frame(maxWidth: 300)
-                
-                Spacer()
-                
-                // Item count
-                if !filteredHistory.isEmpty {
-                    Text("\(filteredHistory.count) items")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.white.opacity(0.5))
+                .frame(width: 250)
+            } else {
+                // Search icon
+                Button {
+                    showSearchField = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        isSearchFocused = true
+                    }
+                } label: {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 14))
+                        .foregroundStyle(.white)
                 }
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-            .background(Color.black.opacity(0.3))
+                .buttonStyle(.plain)
             
-            // Clipboard history list
-            if filteredHistory.isEmpty {
+            
+                // Clipboard tab
+                ClipboardTabButton(
+                    isSelected: {
+                        if case .clipboard = viewMode {
+                            return true
+                        }
+                        return false
+                    }(),
+                    onSelect: {
+                        viewMode = .clipboard
+                    }
+                )
+                
+                // Pinboard tabs
+                ForEach(pinboardManager.pinboards) { pinboard in
+                    if editingPinboard?.id == pinboard.id {
+                        // Editing mode
+                        PinboardEditView(
+                            name: $editingPinboardName,
+                            color: $editingPinboardColor,
+                            isFocused: $isEditingPinboard,
+                            onSave: {
+                                var updated = pinboard
+                                updated.name = editingPinboardName.isEmpty ? "Untitled" : editingPinboardName
+                                updated.color = editingPinboardColor
+                                
+                                // Update in manager
+                                pinboardManager.updatePinboard(updated)
+                                
+                                // Clear editing state
+                                editingPinboard = nil
+                                isEditingPinboard = false
+                                onEditingPinboardChanged?(false)
+                                
+                                // Update viewMode if we're viewing this pinboard
+                                if case .pinboard(let current) = viewMode, current.id == pinboard.id {
+                                    viewMode = .pinboard(updated)
+                                }
+                            },
+                            onCancel: {
+                                editingPinboard = nil
+                                isEditingPinboard = false
+                                onEditingPinboardChanged?(false)
+                            }
+                        )
+                    } else {
+                        // Display mode
+                        PinboardTabButton(
+                            pinboard: pinboard,
+                            isSelected: {
+                                if case .pinboard(let current) = viewMode {
+                                    return current.id == pinboard.id
+                                }
+                                return false
+                            }(),
+                            onSelect: {
+                                viewMode = .pinboard(pinboard)
+                            },
+                            onEdit: {
+                                editingPinboard = pinboard
+                                editingPinboardName = pinboard.name
+                                editingPinboardColor = pinboard.color
+                                isEditingPinboard = true
+                                onEditingPinboardChanged?(true)
+                            },
+                            onDelete: {
+                                // If we're viewing this pinboard, switch to clipboard view
+                                if case .pinboard(let current) = viewMode, current.id == pinboard.id {
+                                    viewMode = .clipboard
+                                }
+                                // Delete the pinboard
+                                pinboardManager.deletePinboard(pinboard)
+                            },
+                            onDrop: { itemId in
+                                pinboardManager.addItem(itemId, to: pinboard)
+                                // Navigate to this pinboard after adding the item (get updated version from manager)
+                                if let updatedPinboard = pinboardManager.pinboards.first(where: { $0.id == pinboard.id }) {
+                                    viewMode = .pinboard(updatedPinboard)
+                                } else {
+                                    viewMode = .pinboard(pinboard)
+                                }
+                            }
+                        )
+                    }
+                }
+            
+            
+            // Add pinboard button (right side)
+            Button {
+                let newPinboard = pinboardManager.createPinboard(name: "Untitled", color: .red)
+                editingPinboard = newPinboard
+                editingPinboardName = "Untitled"
+                editingPinboardColor = .red
+                isEditingPinboard = true
+                onEditingPinboardChanged?(true)
+                viewMode = .pinboard(newPinboard)
+            } label: {
+                Image(systemName: "plus")
+                    .font(.system(size: 14))
+                    .foregroundStyle(.white)
+            }
+            .buttonStyle(.plain)
+            }
+        }
+            }
+    }
+    
+    // MARK: - Items List View
+    
+    var itemsListView: some View {
+        Group {
+            if currentItems.isEmpty {
                 VStack(spacing: 12) {
-                    Image(systemName: clipboardManager.history.isEmpty ? "doc.on.clipboard" : "magnifyingglass")
+                    Image(systemName: viewMode == .clipboard && clipboardManager.history.isEmpty ? "doc.on.clipboard" : "magnifyingglass")
                         .font(.system(size: 40))
                         .foregroundStyle(.white.opacity(0.3))
                     
-                    Text(clipboardManager.history.isEmpty ? "No clipboard history yet" : "No results found")
+                    Text(emptyStateMessage)
                         .font(.system(size: 13))
                         .foregroundStyle(.white.opacity(0.5))
                     
-                    if clipboardManager.history.isEmpty {
+                    if viewMode == .clipboard && clipboardManager.history.isEmpty {
                         Text("Copy something to get started")
                             .font(.system(size: 11))
                             .foregroundStyle(.white.opacity(0.3))
@@ -118,7 +518,7 @@ struct ContentView: View {
                 ScrollViewReader { proxy in
                     ScrollView(.horizontal, showsIndicators: false) {
                         LazyHStack(spacing: 14) {
-                            ForEach(Array(filteredHistory.enumerated()), id: \.element.id) { index, item in
+                            ForEach(Array(currentItems.enumerated()), id: \.element.id) { index, item in
                                 ClipboardItemCard(
                                     item: item,
                                     index: index + 1,
@@ -130,6 +530,16 @@ struct ContentView: View {
                                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                                             dismiss(true)
                                         }
+                                    },
+                                    onDragStart: {
+                                        DragState.shared.draggedItemId = item.id
+                                        // Immediately start monitoring when drag begins
+                                        startDragMonitoringFromDrag()
+                                    },
+                                    onDragEnd: {
+                                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                                            DragState.shared.draggedItemId = nil
+                                        }
                                     }
                                 )
                                 .id(index)
@@ -138,12 +548,12 @@ struct ContentView: View {
                         .padding(.horizontal, 20)
                         .padding(.vertical, 16)
                         .onAppear {
-                            navigationState.itemCount = filteredHistory.count
-                            if navigationState.selectedIndex >= filteredHistory.count {
+                            navigationState.itemCount = currentItems.count
+                            if navigationState.selectedIndex >= currentItems.count {
                                 navigationState.selectedIndex = 0
                             }
                         }
-                        .onChange(of: filteredHistory.count) { newCount in
+                        .onChange(of: currentItems.count) { newCount in
                             navigationState.itemCount = newCount
                         }
                         .onChange(of: navigationState.selectedIndex) { newIndex in
@@ -155,51 +565,17 @@ struct ContentView: View {
                 }
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(
-            ZStack {
-                Color.black.opacity(0.85)
-                VisualEffectBlur(material: .hudWindow, blendingMode: .behindWindow)
-            }
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .onAppear {
-            // Update item count
-            navigationState.itemCount = filteredHistory.count
-            navigationState.selectedIndex = 0
-        }
-        .onChange(of: navigationState.shouldSelectAndDismiss) { shouldSelect in
-            if shouldSelect, let item = selectedItem {
-                clipboardManager.copyToClipboard(item)
-                navigationState.shouldSelectAndDismiss = false
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    dismiss(true)
-                }
-            }
-        }
-        .onChange(of: navigationState.shouldFocusSearch) { shouldFocus in
-            if shouldFocus {
-                isSearchFocused = true
-                navigationState.shouldFocusSearch = false
-            }
-        }
-        .onChange(of: navigationState.shouldShowPreview) { shouldShow in
-            if shouldShow, let item = selectedItem {
-                navigationState.shouldShowPreview = false
-                onPreview?(item, navigationState.selectedIndex)
-            }
-        }
-        .onChange(of: navigationState.shouldDeleteCurrent) { shouldDelete in
-            if shouldDelete, let item = selectedItem {
-                navigationState.shouldDeleteCurrent = false
-                clipboardManager.deleteItem(item)
-                // Adjust selection if needed
-                if navigationState.selectedIndex >= filteredHistory.count - 1 {
-                    navigationState.selectedIndex = max(0, filteredHistory.count - 2)
-                }
-            }
+    }
+    
+    var emptyStateMessage: String {
+        switch viewMode {
+        case .clipboard:
+            return clipboardManager.history.isEmpty ? "No clipboard history yet" : "No results found"
+        case .pinboard:
+            return searchText.isEmpty ? "This pinboard is empty" : "No results found"
         }
     }
+            
 }
 
 struct ClipboardItemCard: View {
@@ -208,6 +584,8 @@ struct ClipboardItemCard: View {
     let isSelected: Bool
     let quickAccessNumber: Int? // 1-9 for first 9, 0 for 10th, nil if not in first 10 or command not held
     let onSelect: () -> Void
+    var onDragStart: (() -> Void)? = nil
+    var onDragEnd: (() -> Void)? = nil
     
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -291,12 +669,35 @@ struct ClipboardItemCard: View {
             }
         }
         .onDrag {
-            createDragItemProvider()
+            onDragStart?()
+            return createDragItemProvider(with: item.id)
+        }
+        .onChange(of: DragState.shared.draggedItemId) { newValue in
+            if newValue == nil {
+                onDragEnd?()
+            }
         }
     }
 
-    private func createDragItemProvider() -> NSItemProvider {
+    private func createDragItemProvider(with itemId: UUID) -> NSItemProvider {
+        // Set global state for drag tracking
+        DragState.shared.draggedItemId = itemId
+        
         let provider = NSItemProvider()
+        
+        // Register the item ID as a custom type for pinboard drops
+        let itemIdString = itemId.uuidString
+        provider.registerDataRepresentation(forTypeIdentifier: clipboardItemIDType, visibility: .all) { completion in
+            completion(itemIdString.data(using: .utf8), nil)
+            return nil
+        }
+        
+        // Also register as plain text with a special prefix as fallback
+        provider.registerDataRepresentation(forTypeIdentifier: UTType.plainText.identifier, visibility: .all) { completion in
+            let text = "SUPERCLIP_ITEM_ID:\(itemIdString)"
+            completion(text.data(using: .utf8), nil)
+            return nil
+        }
 
         switch item.type {
         case .text:
@@ -516,9 +917,10 @@ struct ClipboardItemCard: View {
             if let metadata = item.linkMetadata, let image = metadata.image {
                 Image(nsImage: image)
                     .resizable()
-                    .aspectRatio(contentMode: .fill)
+                    .aspectRatio(contentMode: .fit)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .clipped()
+                    .background(Color(nsColor: .separatorColor).opacity(0.1))
             } else {
                 // Placeholder with link icon
                 VStack {
@@ -670,6 +1072,205 @@ struct RichTextCardPreview: NSViewRepresentable {
 
     func updateNSView(_ nsView: NSTextView, context: Context) {
         nsView.textStorage?.setAttributedString(attributedString)
+    }
+}
+
+// MARK: - Header Components
+
+struct ClipboardTabButton: View {
+    let isSelected: Bool
+    let onSelect: () -> Void
+    
+    var body: some View {
+        Button(action: onSelect) {
+            HStack(spacing: 6) {
+                Image(systemName: "arrow.clockwise")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.white)
+                Text("Clipboard")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.white)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(isSelected ? Color(white: 0.3) : Color.clear)
+            .cornerRadius(12)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+struct PinboardTabButton: View {
+    let pinboard: Pinboard
+    let isSelected: Bool
+    let onSelect: () -> Void
+    let onEdit: () -> Void
+    let onDelete: () -> Void
+    let onDrop: (UUID) -> Void
+    
+    @State private var isDragOver = false
+    @ObservedObject private var dragState = DragState.shared
+    
+    var body: some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(pinboard.color.color)
+                .frame(width: 6, height: 6)
+            Text(pinboard.name)
+                .font(.system(size: 12))
+                .foregroundStyle(.white)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(
+            Group {
+                if isDragOver {
+                    Color.white.opacity(0.4)
+                } else if dragState.draggedItemId != nil {
+                    Color.white.opacity(0.2)
+                } else if isSelected {
+                    Color.white.opacity(0.15)
+                } else {
+                    Color.clear
+                }
+            }
+        )
+        .cornerRadius(6)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            onSelect()
+        }
+        .onDrop(of: [clipboardItemIDType, UTType.plainText.identifier, UTType.image.identifier, UTType.fileURL.identifier, UTType.url.identifier], isTargeted: $isDragOver) { providers in
+            // Use global state as primary method since it's more reliable
+            if let itemId = dragState.draggedItemId {
+                DispatchQueue.main.async {
+                    onDrop(itemId)
+                    dragState.draggedItemId = nil
+                }
+                return true
+            }
+            
+            // Fallback: try to extract from providers
+            guard let provider = providers.first else { return false }
+            
+            // Try custom type first
+            if provider.hasItemConformingToTypeIdentifier(clipboardItemIDType) {
+                _ = provider.loadDataRepresentation(forTypeIdentifier: clipboardItemIDType) { data, error in
+                    guard let data = data,
+                          let itemIdString = String(data: data, encoding: .utf8),
+                          let itemId = UUID(uuidString: itemIdString) else {
+                        return
+                    }
+                    
+                    DispatchQueue.main.async {
+                        onDrop(itemId)
+                        dragState.draggedItemId = nil
+                    }
+                }
+                return true
+            }
+            
+            // Try plain text with prefix
+            if provider.hasItemConformingToTypeIdentifier(UTType.plainText.identifier) {
+                _ = provider.loadDataRepresentation(forTypeIdentifier: UTType.plainText.identifier) { data, error in
+                    guard let data = data,
+                          let text = String(data: data, encoding: .utf8),
+                          text.hasPrefix("SUPERCLIP_ITEM_ID:") else {
+                        return
+                    }
+                    
+                    let itemIdString = String(text.dropFirst("SUPERCLIP_ITEM_ID:".count))
+                    guard let itemId = UUID(uuidString: itemIdString) else {
+                        return
+                    }
+                    
+                    DispatchQueue.main.async {
+                        onDrop(itemId)
+                        dragState.draggedItemId = nil
+                    }
+                }
+                return true
+            }
+            
+            return false
+        }
+        .contextMenu {
+            Button("Edit") {
+                onEdit()
+            }
+            Divider()
+            Button(role: .destructive) {
+                onDelete()
+            } label: {
+                Text("Delete")
+            }
+        }
+    }
+}
+
+struct PinboardEditView: View {
+    @Binding var name: String
+    @Binding var color: PinboardColor
+    @FocusState.Binding var isFocused: Bool
+    let onSave: () -> Void
+    let onCancel: () -> Void
+    
+    @State private var showingColorPicker = false
+    
+    var body: some View {
+        HStack(spacing: 6) {
+            // Color picker
+            Menu {
+                ForEach(PinboardColor.allCases, id: \.self) { pinboardColor in
+                    Button {
+                        color = pinboardColor
+                    } label: {
+                        HStack {
+                            Circle()
+                                .fill(pinboardColor.color)
+                                .frame(width: 12, height: 12)
+                            Text(pinboardColor.rawValue.capitalized)
+                            if color == pinboardColor {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                }
+            } label: {
+                Circle()
+                    .fill(color.color)
+                    .frame(width: 8, height: 8)
+            }
+            .menuStyle(.borderlessButton)
+            
+            // Name text field
+            TextField("Untitled", text: $name)
+                .textFieldStyle(.plain)
+                .font(.system(size: 12))
+                .foregroundStyle(.white)
+                .focused($isFocused)
+                .frame(width: 120)
+                .onSubmit {
+                    onSave()
+                }
+                .onKeyPress(.return) {
+                    onSave()
+                    return .handled
+                }
+                .onKeyPress(.escape) {
+                    onCancel()
+                    return .handled
+                }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(Color(white: 0.25))
+        .cornerRadius(6)
+        .onAppear {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                isFocused = true
+            }
+        }
     }
 }
 

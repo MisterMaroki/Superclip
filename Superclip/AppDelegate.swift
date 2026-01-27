@@ -15,6 +15,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var pasteStackHotKey: HotKey?
     var clickMonitor: Any?
     var pasteStackKeyMonitor: Any?
+    var previewClickMonitor: Any?
     let clipboardManager = ClipboardManager()
     lazy var pasteStackManager = PasteStackManager(clipboardManager: clipboardManager)
     private var shouldPasteAfterClose = false
@@ -27,7 +28,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     func applicationDidResignActive(_ notification: Notification) {
-        // Close content panel when app loses focus (paste stack stays open)
+        // Don't close if rich text editor windows are open
+        if richTextEditorWindows.contains(where: { $0.isVisible }) {
+            return
+        }
+        // Close both preview and drawer when app loses focus (paste stack stays open)
         closeReviewWindow(andPaste: false)
     }
     
@@ -225,6 +230,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     panelWindow.navigationState.moveLeft()
                     return nil
                 case 36: // Return/Enter
+                    // Don't intercept if editing a pinboard - let the TextField handle it
+                    if panelWindow.isEditingPinboard {
+                        return event
+                    }
                     panelWindow.navigationState.selectCurrent()
                     return nil
                 case 44: // '/' key - focus search
@@ -286,6 +295,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                    event.window != self.pasteStackWindow &&
                    !isRichTextEditorWindow {
                     DispatchQueue.main.async {
+                        // Close both preview and drawer when clicking outside the app
                         self.closeReviewWindow(andPaste: false)
                     }
                     return event
@@ -305,19 +315,40 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     @objc private func windowDidResignKey(_ notification: Notification) {
-        // Don't close if the preview window, paste stack window, or rich text editor windows are becoming key
+        // Don't close if the paste stack window or rich text editor windows are becoming key
+        // But if clicking outside the app (not on preview, paste stack, or editor), close both preview and drawer
         if notification.object as? NSWindow == contentWindow {
-            if let preview = previewWindow, preview.isVisible {
-                return
+            // Use a small delay to check which window becomes key (handles timing issues)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) { [weak self] in
+                guard let self = self else { return }
+                
+                // Check which window is now key
+                let keyWindow = NSApplication.shared.keyWindow
+                
+                // If paste stack is becoming key, don't close
+                if let pasteStack = self.pasteStackWindow, pasteStack.isVisible && keyWindow === pasteStack {
+                    return
+                }
+                // If rich text editor is becoming key, don't close
+                if let keyWin = keyWindow, self.richTextEditorWindows.contains(where: { $0 === keyWin }) {
+                    return
+                }
+                // If preview is becoming key, don't close (user clicked on preview)
+                if let preview = self.previewWindow, preview.isVisible && keyWindow === preview {
+                    return
+                }
+                // Check if mouse is over preview window (fallback check)
+                if let preview = self.previewWindow, preview.isVisible {
+                    let mouseLocation = NSEvent.mouseLocation
+                    let previewFrame = preview.frame
+                    // NSEvent.mouseLocation uses bottom-left origin, same as NSWindow.frame
+                    if previewFrame.contains(mouseLocation) {
+                        return
+                    }
+                }
+                // Otherwise, close both preview and drawer (clicked outside the app)
+                self.closeReviewWindow(andPaste: false)
             }
-            if let pasteStack = pasteStackWindow, pasteStack.isVisible {
-                return
-            }
-            // Check if any rich text editor window is visible
-            if richTextEditorWindows.contains(where: { $0.isVisible }) {
-                return
-            }
-            closeReviewWindow(andPaste: false)
         }
     }
     
@@ -420,12 +451,50 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         
         previewPanel.orderFront(nil)
+        
+        // Start global click monitoring to detect clicks outside both preview and drawer
+        startPreviewClickMonitoring()
     }
     
     func closePreviewWindow() {
+        stopPreviewClickMonitoring()
+        
         if let window = previewWindow {
             window.close()
             previewWindow = nil
+        }
+    }
+    
+    private func startPreviewClickMonitoring() {
+        stopPreviewClickMonitoring() // Clean up any existing monitor first
+        
+        // Global monitor to detect clicks outside the app when preview is open
+        previewClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
+            guard let self = self,
+                  self.previewWindow?.isVisible == true else { return }
+            
+            // Get the window that received the click
+            let clickWindow = event.window
+            
+            // Check if click is on one of our windows
+            let isPreviewWindow = clickWindow === self.previewWindow
+            let isDrawerWindow = clickWindow === self.contentWindow
+            let isPasteStackWindow = clickWindow === self.pasteStackWindow
+            let isRichTextEditorWindow = self.richTextEditorWindows.contains { $0 === clickWindow }
+            
+            // If click is outside all our windows, close both preview and drawer
+            if !isPreviewWindow && !isDrawerWindow && !isPasteStackWindow && !isRichTextEditorWindow {
+                DispatchQueue.main.async {
+                    self.closeReviewWindow(andPaste: false)
+                }
+            }
+        }
+    }
+    
+    private func stopPreviewClickMonitoring() {
+        if let monitor = previewClickMonitor {
+            NSEvent.removeMonitor(monitor)
+            previewClickMonitor = nil
         }
     }
 

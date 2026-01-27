@@ -9,7 +9,9 @@ import SwiftUI
 class ContentPanel: NSPanel {
     weak var appDelegate: AppDelegate?
     let clipboardManager: ClipboardManager
+    let pinboardManager = PinboardManager()
     let navigationState = NavigationState()
+    var isEditingPinboard: Bool = false
     
     init(clipboardManager: ClipboardManager) {
         self.clipboardManager = clipboardManager
@@ -49,11 +51,15 @@ class ContentPanel: NSPanel {
         let contentView = ContentView(
             clipboardManager: clipboardManager,
             navigationState: navigationState,
+            pinboardManager: pinboardManager,
             dismiss: { shouldPaste in
                 self.appDelegate?.closeReviewWindow(andPaste: shouldPaste)
             },
             onPreview: { [weak self] item, index in
                 self?.appDelegate?.showPreviewWindow(for: item, atIndex: index)
+            },
+            onEditingPinboardChanged: { [weak self] isEditing in
+                self?.isEditingPinboard = isEditing
             }
         )
         
@@ -90,16 +96,26 @@ class ContentPanel: NSPanel {
 
 extension ContentPanel: NSWindowDelegate {
     func windowDidResignKey(_ notification: Notification) {
-        // Don't close if the preview window is becoming key
-        if let previewWindow = appDelegate?.previewWindow, previewWindow.isVisible {
-            return
+        // Use a small delay to check which window becomes key (handles timing issues)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) { [weak self] in
+            guard let self = self else { return }
+            
+            // Check which window is now key
+            let keyWindow = NSApplication.shared.keyWindow
+            
+            // If paste stack is becoming key, don't close
+            if let pasteStackWindow = self.appDelegate?.pasteStackWindow, 
+               pasteStackWindow.isVisible && keyWindow === pasteStackWindow {
+                return
+            }
+            // If preview is becoming key, don't close (user clicked on preview)
+            if let previewWindow = self.appDelegate?.previewWindow, 
+               previewWindow.isVisible && keyWindow === previewWindow {
+                return
+            }
+            // Otherwise, close both preview and drawer (clicked outside the app)
+            self.appDelegate?.closeReviewWindow(andPaste: false)
         }
-        // Don't close if the paste stack window is becoming key
-        if let pasteStackWindow = appDelegate?.pasteStackWindow, pasteStackWindow.isVisible {
-            return
-        }
-        // Close when window loses key status (user clicked elsewhere)
-        close()
     }
     
     override func mouseDown(with event: NSEvent) {

@@ -70,6 +70,10 @@ class PreviewPanel: NSPanel {
             },
             onOpenEditor: { [weak self] item, frame in
                 self?.appDelegate?.showRichTextEditorWindow(for: item, fromPreviewFrame: frame)
+            },
+            onCloseAll: { [weak self] in
+                // Close both preview and drawer
+                self?.appDelegate?.closeReviewWindow(andPaste: false)
             }
         )
 

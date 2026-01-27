@@ -5,6 +5,7 @@
 
 import SwiftUI
 import AVKit
+import WebKit
 
 struct PreviewView: View {
     let item: ClipboardItem
@@ -13,6 +14,7 @@ struct PreviewView: View {
     let onDismiss: () -> Void
     let onPaste: (String) -> Void
     var onOpenEditor: ((ClipboardItem, NSRect) -> Void)?
+    var onCloseAll: (() -> Void)? // Callback to close both preview and drawer
 
     @State private var editableContent: String
     @State private var originalContent: String
@@ -39,13 +41,14 @@ struct PreviewView: View {
         setEditing(false)
     }
 
-    init(item: ClipboardItem, clipboardManager: ClipboardManager, editingState: PreviewEditingState, onDismiss: @escaping () -> Void, onPaste: @escaping (String) -> Void, onOpenEditor: ((ClipboardItem, NSRect) -> Void)? = nil) {
+    init(item: ClipboardItem, clipboardManager: ClipboardManager, editingState: PreviewEditingState, onDismiss: @escaping () -> Void, onPaste: @escaping (String) -> Void, onOpenEditor: ((ClipboardItem, NSRect) -> Void)? = nil, onCloseAll: (() -> Void)? = nil) {
         self.item = item
         self.clipboardManager = clipboardManager
         self.editingState = editingState
         self.onDismiss = onDismiss
         self.onPaste = onPaste
         self.onOpenEditor = onOpenEditor
+        self.onCloseAll = onCloseAll
         self._editableContent = State(initialValue: item.content)
         self._originalContent = State(initialValue: item.content)
     }
@@ -172,6 +175,8 @@ struct PreviewView: View {
                 switch item.type {
                 case .file:
                     filePreview
+                case .url:
+                    urlPreview
                 default:
                     textPreview
                 }
@@ -179,51 +184,89 @@ struct PreviewView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color(nsColor: .controlBackgroundColor).opacity(0.95))
             
-            // Footer with stats
-            HStack {
-                Text("\(characterCount) characters")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                
-                Text("·")
-                    .foregroundStyle(.secondary.opacity(0.5))
-                
-                Text("\(wordCount) \(wordCount == 1 ? "word" : "words")")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                
-                Text("·")
-                    .foregroundStyle(.secondary.opacity(0.5))
-                
-                Text("\(lineCount) \(lineCount == 1 ? "line" : "lines")")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                
-                Spacer()
-                
-                // Show in Finder button (only for files)
-                if item.type == .file, let urls = item.fileURLs, !urls.isEmpty {
-                    Button {
-                        showInFinder(urls: urls)
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "folder")
-                                .font(.system(size: 10))
-                            Text("Show in Finder")
-                                .font(.system(size: 11, weight: .medium))
+            // Footer
+            Group {
+                if item.type == .url {
+                    // Footer for URL types: URL on left, Open in browser button on right
+                    HStack {
+                        if let url = URL(string: item.content) {
+                            Text(url.absoluteString)
+                                .font(.system(size: 11))
+                                .foregroundStyle(.white)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
                         }
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(appColor)
-                        .cornerRadius(6)
+                        
+                        Spacer()
+                        
+                        Button {
+                            openInBrowser()
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "safari")
+                                    .font(.system(size: 10))
+                                Text("Open in \(defaultBrowserName)")
+                                    .font(.system(size: 11, weight: .medium))
+                            }
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(appColor)
+                            .cornerRadius(6)
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(Color.black.opacity(0.3))
+                } else {
+                    // Footer with stats for other types
+                    HStack {
+                        Text("\(characterCount) characters")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                        
+                        Text("·")
+                            .foregroundStyle(.secondary.opacity(0.5))
+                        
+                        Text("\(wordCount) \(wordCount == 1 ? "word" : "words")")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                        
+                        Text("·")
+                            .foregroundStyle(.secondary.opacity(0.5))
+                        
+                        Text("\(lineCount) \(lineCount == 1 ? "line" : "lines")")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                        
+                        Spacer()
+                        
+                        // Show in Finder button (only for files)
+                        if item.type == .file, let urls = item.fileURLs, !urls.isEmpty {
+                            Button {
+                                showInFinder(urls: urls)
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "folder")
+                                        .font(.system(size: 10))
+                                    Text("Show in Finder")
+                                        .font(.system(size: 11, weight: .medium))
+                                }
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(appColor)
+                                .cornerRadius(6)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(Color.black.opacity(0.3))
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-            .background(Color.black.opacity(0.3))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(
@@ -268,6 +311,17 @@ struct PreviewView: View {
         }
     }
     
+    var urlPreview: some View {
+        Group {
+            if let url = URL(string: item.content) {
+                WebView(url: url)
+            } else {
+                // Fallback to text preview if URL is invalid
+                textPreview
+            }
+        }
+    }
+    
     private func isImageFile(_ url: URL) -> Bool {
         let imageExtensions = ["jpg", "jpeg", "png", "gif", "bmp", "tiff", "tif", "webp", "heic", "heif"]
         return imageExtensions.contains(url.pathExtension.lowercased())
@@ -275,6 +329,49 @@ struct PreviewView: View {
     
     private func showInFinder(urls: [URL]) {
         NSWorkspace.shared.activateFileViewerSelecting(urls)
+    }
+    
+    private var defaultBrowserName: String {
+        // Get default browser name
+        guard let url = URL(string: "https://example.com"),
+              let defaultBrowserURL = NSWorkspace.shared.urlForApplication(toOpen: url) else {
+            return "Browser"
+        }
+        
+        // Get bundle identifier to identify the browser
+        if let bundle = Bundle(url: defaultBrowserURL),
+           let bundleId = bundle.bundleIdentifier {
+            // Map common browser bundle IDs to friendly names
+            let browserNames: [String: String] = [
+                "com.apple.Safari": "Safari",
+                "com.google.Chrome": "Chrome",
+                "com.microsoft.edgemac": "Edge",
+                "com.brave.Browser": "Brave",
+                "com.operasoftware.Opera": "Opera",
+                "org.mozilla.firefox": "Firefox",
+                "com.vivaldi.Vivaldi": "Vivaldi",
+                "company.thebrowser.Browser": "Arc",
+                "com.arc.browser": "Arc"
+            ]
+            
+            if let name = browserNames[bundleId] {
+                return name
+            }
+        }
+        
+        // Fallback: use the app name from the bundle
+        let browserName = defaultBrowserURL.deletingPathExtension().lastPathComponent
+        // Remove " Helper" suffix if present (e.g., "Arc Helper" -> "Arc")
+        let cleanedName = browserName.replacingOccurrences(of: " Helper", with: "")
+        // Capitalize first letter
+        return cleanedName.prefix(1).capitalized + cleanedName.dropFirst()
+    }
+    
+    private func openInBrowser() {
+        guard let url = URL(string: item.content) else { return }
+        NSWorkspace.shared.open(url)
+        // Close both preview and drawer
+        onCloseAll?()
     }
 }
 
@@ -559,5 +656,41 @@ struct AttributedTextView: NSViewRepresentable {
 
     func updateNSView(_ nsView: NSTextView, context: Context) {
         nsView.textStorage?.setAttributedString(attributedString)
+    }
+}
+
+// MARK: - Web View
+
+struct WebView: NSViewRepresentable {
+    let url: URL
+    @State private var isLoading = true
+    
+    func makeNSView(context: Context) -> WKWebView {
+        let webView = WKWebView()
+        webView.navigationDelegate = context.coordinator
+        webView.allowsBackForwardNavigationGestures = false
+        webView.allowsMagnification = false
+        return webView
+    }
+    
+    func updateNSView(_ nsView: WKWebView, context: Context) {
+        if nsView.url != url {
+            let request = URLRequest(url: url)
+            nsView.load(request)
+        }
+    }
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+    
+    class Coordinator: NSObject, WKNavigationDelegate {
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            // Page loaded
+        }
+        
+        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+            // Handle error if needed
+        }
     }
 }

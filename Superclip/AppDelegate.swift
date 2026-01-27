@@ -676,7 +676,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - OCR Screen Capture
 
     private func setupOCRHotkey() {
-        ocrHotKey = HotKey(key: .t, modifiers: [.command, .shift])
+        ocrHotKey = HotKey(key: .grave, modifiers: [.command, .shift])
         ocrHotKey?.keyDownHandler = { [weak self] in
             DispatchQueue.main.async {
                 self?.startScreenCapture()
@@ -685,6 +685,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func startScreenCapture() {
+        // Prevent multiple snipes at once
+        if screenCaptureWindow != nil && screenCaptureWindow?.isVisible == true {
+            return
+        }
+
         // Close any open panels first
         closeReviewWindow(andPaste: false)
         closePasteStackWindow(andPaste: false)

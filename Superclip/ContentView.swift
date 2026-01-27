@@ -29,6 +29,7 @@ struct ContentView: View {
     var dismiss: (Bool) -> Void  // Bool indicates whether to paste after dismiss
     var onPreview: ((ClipboardItem, Int) -> Void)?  // Item and index
     var onEditingPinboardChanged: ((Bool) -> Void)?  // Called when editing state changes
+    var onTextSnipe: (() -> Void)?  // Called when text sniper button is tapped
     
     @FocusState private var isSearchFocused: Bool
     @State private var searchText: String = ""
@@ -488,6 +489,17 @@ struct ContentView: View {
                     .foregroundStyle(.white)
             }
             .buttonStyle(.plain)
+
+            // Text sniper button
+            Button {
+                onTextSnipe?()
+            } label: {
+                Image(systemName: "text.viewfinder")
+                    .font(.system(size: 14))
+                    .foregroundStyle(.white)
+            }
+            .buttonStyle(.plain)
+            .help("Text Sniper (Cmd+Shift+`)")
             }
         }
             }

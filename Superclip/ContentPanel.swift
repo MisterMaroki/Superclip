@@ -60,6 +60,9 @@ class ContentPanel: NSPanel {
             },
             onEditingPinboardChanged: { [weak self] isEditing in
                 self?.isEditingPinboard = isEditing
+            },
+            onTextSnipe: { [weak self] in
+                self?.appDelegate?.startScreenCapture()
             }
         )
         

@@ -328,10 +328,8 @@ struct ContentView: View {
     // MARK: - Header View
     
     var headerView: some View {
-        HStack(spacing: 16) {
-            // Centered tabs section
-            HStack(spacing: 16) {
-            // Search icon and field (left side)
+        HStack(spacing: showSearchField ? 8 : 16) {
+            // Search field or icon
             if showSearchField {
                 HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass")
@@ -345,7 +343,7 @@ struct ContentView: View {
                         .onChange(of: searchText) { _ in
                             navigationState.selectedIndex = 0
                         }
-                    
+
                     if !searchText.isEmpty {
                         Button {
                             searchText = ""
@@ -356,153 +354,124 @@ struct ContentView: View {
                         }
                         .buttonStyle(.plain)
                     }
-                    
-                    Button {
-                        showSearchField = false
-                        searchText = ""
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.white.opacity(0.5))
-                    }
-                    .buttonStyle(.plain)
+
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
                 .background(Color.white.opacity(0.1))
                 .cornerRadius(6)
-                .frame(width: 250)
+                .frame(width: 200)
             } else {
-                // Search icon
-                Button {
+                HeaderIconButton(icon: "magnifyingglass") {
                     showSearchField = true
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                         isSearchFocused = true
                     }
-                } label: {
-                    Image(systemName: "magnifyingglass")
-                        .font(.system(size: 14))
-                        .foregroundStyle(.white)
                 }
-                .buttonStyle(.plain)
-            
-            
-                // Clipboard tab
-                ClipboardTabButton(
-                    isSelected: {
-                        if case .clipboard = viewMode {
-                            return true
-                        }
-                        return false
-                    }(),
-                    onSelect: {
-                        viewMode = .clipboard
-                    }
-                )
-                
-                // Pinboard tabs
-                ForEach(pinboardManager.pinboards) { pinboard in
-                    if editingPinboard?.id == pinboard.id {
-                        // Editing mode
-                        PinboardEditView(
-                            name: $editingPinboardName,
-                            color: $editingPinboardColor,
-                            isFocused: $isEditingPinboard,
-                            onSave: {
-                                var updated = pinboard
-                                updated.name = editingPinboardName.isEmpty ? "Untitled" : editingPinboardName
-                                updated.color = editingPinboardColor
-                                
-                                // Update in manager
-                                pinboardManager.updatePinboard(updated)
-                                
-                                // Clear editing state
-                                editingPinboard = nil
-                                isEditingPinboard = false
-                                onEditingPinboardChanged?(false)
-                                
-                                // Update viewMode if we're viewing this pinboard
-                                if case .pinboard(let current) = viewMode, current.id == pinboard.id {
-                                    viewMode = .pinboard(updated)
-                                }
-                            },
-                            onCancel: {
-                                editingPinboard = nil
-                                isEditingPinboard = false
-                                onEditingPinboardChanged?(false)
-                            }
-                        )
-                    } else {
-                        // Display mode
-                        PinboardTabButton(
-                            pinboard: pinboard,
-                            isSelected: {
-                                if case .pinboard(let current) = viewMode {
-                                    return current.id == pinboard.id
-                                }
-                                return false
-                            }(),
-                            onSelect: {
-                                viewMode = .pinboard(pinboard)
-                            },
-                            onEdit: {
-                                editingPinboard = pinboard
-                                editingPinboardName = pinboard.name
-                                editingPinboardColor = pinboard.color
-                                isEditingPinboard = true
-                                onEditingPinboardChanged?(true)
-                            },
-                            onDelete: {
-                                // If we're viewing this pinboard, switch to clipboard view
-                                if case .pinboard(let current) = viewMode, current.id == pinboard.id {
-                                    viewMode = .clipboard
-                                }
-                                // Delete the pinboard
-                                pinboardManager.deletePinboard(pinboard)
-                            },
-                            onDrop: { itemId in
-                                pinboardManager.addItem(itemId, to: pinboard)
-                                // Navigate to this pinboard after adding the item (get updated version from manager)
-                                if let updatedPinboard = pinboardManager.pinboards.first(where: { $0.id == pinboard.id }) {
-                                    viewMode = .pinboard(updatedPinboard)
-                                } else {
-                                    viewMode = .pinboard(pinboard)
-                                }
-                            }
-                        )
-                    }
-                }
-            
-            
-            // Add pinboard button (right side)
-            Button {
-                let newPinboard = pinboardManager.createPinboard(name: "Untitled", color: .red)
-                editingPinboard = newPinboard
-                editingPinboardName = "Untitled"
-                editingPinboardColor = .red
-                isEditingPinboard = true
-                onEditingPinboardChanged?(true)
-                viewMode = .pinboard(newPinboard)
-            } label: {
-                Image(systemName: "plus")
-                    .font(.system(size: 14))
-                    .foregroundStyle(.white)
             }
-            .buttonStyle(.plain)
 
-            // Text sniper button
-            Button {
+            // Clipboard tab
+            ClipboardTabButton(
+                isSelected: {
+                    if case .clipboard = viewMode {
+                        return true
+                    }
+                    return false
+                }(),
+                isCompact: showSearchField,
+                onSelect: {
+                    showSearchField = false
+                    searchText = ""
+                    viewMode = .clipboard
+                }
+            )
+
+            // Pinboard tabs
+            ForEach(pinboardManager.pinboards) { pinboard in
+                if editingPinboard?.id == pinboard.id && !showSearchField {
+                    // Editing mode (only when not searching)
+                    PinboardEditView(
+                        name: $editingPinboardName,
+                        color: $editingPinboardColor,
+                        isFocused: $isEditingPinboard,
+                        onSave: {
+                            var updated = pinboard
+                            updated.name = editingPinboardName.isEmpty ? "Untitled" : editingPinboardName
+                            updated.color = editingPinboardColor
+
+                            pinboardManager.updatePinboard(updated)
+
+                            editingPinboard = nil
+                            isEditingPinboard = false
+                            onEditingPinboardChanged?(false)
+
+                            if case .pinboard(let current) = viewMode, current.id == pinboard.id {
+                                viewMode = .pinboard(updated)
+                            }
+                        },
+                        onCancel: {
+                            editingPinboard = nil
+                            isEditingPinboard = false
+                            onEditingPinboardChanged?(false)
+                        }
+                    )
+                } else {
+                    // Display mode (normal or compact when searching)
+                    PinboardTabButton(
+                        pinboard: pinboard,
+                        isSelected: {
+                            if case .pinboard(let current) = viewMode {
+                                return current.id == pinboard.id
+                            }
+                            return false
+                        }(),
+                        isCompact: showSearchField,
+                        onSelect: {
+                            viewMode = .pinboard(pinboard)
+                        },
+                        onEdit: {
+                            editingPinboard = pinboard
+                            editingPinboardName = pinboard.name
+                            editingPinboardColor = pinboard.color
+                            isEditingPinboard = true
+                            onEditingPinboardChanged?(true)
+                        },
+                        onDelete: {
+                            if case .pinboard(let current) = viewMode, current.id == pinboard.id {
+                                viewMode = .clipboard
+                            }
+                            pinboardManager.deletePinboard(pinboard)
+                        },
+                        onDrop: { itemId in
+                            pinboardManager.addItem(itemId, to: pinboard)
+                            if let updatedPinboard = pinboardManager.pinboards.first(where: { $0.id == pinboard.id }) {
+                                viewMode = .pinboard(updatedPinboard)
+                            } else {
+                                viewMode = .pinboard(pinboard)
+                            }
+                        }
+                    )
+                }
+            }
+
+            // Add pinboard button (hide when searching)
+            if !showSearchField {
+                HeaderIconButton(icon: "plus") {
+                    let newPinboard = pinboardManager.createPinboard(name: "Untitled", color: .red)
+                    editingPinboard = newPinboard
+                    editingPinboardName = "Untitled"
+                    editingPinboardColor = .red
+                    isEditingPinboard = true
+                    onEditingPinboardChanged?(true)
+                    viewMode = .pinboard(newPinboard)
+                }
+            }
+
+            // Text sniper button (always visible)
+            HeaderIconButton(icon: "text.viewfinder", action: {
                 onTextSnipe?()
-            } label: {
-                Image(systemName: "text.viewfinder")
-                    .font(.system(size: 14))
-                    .foregroundStyle(.white)
-            }
-            .buttonStyle(.plain)
-            .help("Text Sniper (Cmd+Shift+`)")
-            }
+            }, helpText: "Text Sniper (Cmd+Shift+`)")
         }
-            }
     }
     
     // MARK: - Items List View
@@ -1132,66 +1101,123 @@ struct RichTextCardPreview: NSViewRepresentable {
 
 // MARK: - Header Components
 
-struct ClipboardTabButton: View {
-    let isSelected: Bool
-    let onSelect: () -> Void
-    
+struct HeaderIconButton: View {
+    let icon: String
+    let action: () -> Void
+    var helpText: String? = nil
+
+    @State private var isHovered = false
+
     var body: some View {
-        Button(action: onSelect) {
-            HStack(spacing: 6) {
-                Image(systemName: "arrow.clockwise")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.white)
-                Text("Clipboard")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.white)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(isSelected ? Color(white: 0.3) : Color.clear)
-            .cornerRadius(12)
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 14))
+                .foregroundStyle(.white)
+                .frame(width: 28, height: 28)
+                .background(isHovered ? Color.white.opacity(0.15) : Color.clear)
+                .cornerRadius(6)
         }
         .buttonStyle(.plain)
+        .onHover { hovering in
+            isHovered = hovering
+        }
+        .help(helpText ?? "")
+    }
+}
+
+struct ClipboardTabButton: View {
+    let isSelected: Bool
+    let isCompact: Bool
+    let onSelect: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: onSelect) {
+            if isCompact {
+                Image(systemName: "sparkle.text.clipboard")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.white)
+                    .frame(width: 24, height: 24)
+                    .background(isSelected ? Color(white: 0.3) : (isHovered ? Color.white.opacity(0.1) : Color.clear))
+                    .cornerRadius(6)
+            } else {
+                HStack(spacing: 6) {
+                    Image(systemName: "sparkle.text.clipboard")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.white)
+                    Text("Clipboard")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.white)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(isSelected ? Color(white: 0.3) : (isHovered ? Color.white.opacity(0.1) : Color.clear))
+                .cornerRadius(12)
+            }
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            isHovered = hovering
+        }
     }
 }
 
 struct PinboardTabButton: View {
     let pinboard: Pinboard
     let isSelected: Bool
+    let isCompact: Bool
     let onSelect: () -> Void
     let onEdit: () -> Void
     let onDelete: () -> Void
     let onDrop: (UUID) -> Void
-    
+
     @State private var isDragOver = false
+    @State private var isHovered = false
     @ObservedObject private var dragState = DragState.shared
-    
-    var body: some View {
-        HStack(spacing: 6) {
-            Circle()
-                .fill(pinboard.color.color)
-                .frame(width: 6, height: 6)
-            Text(pinboard.name)
-                .font(.system(size: 12))
-                .foregroundStyle(.white)
+
+    private var backgroundColor: Color {
+        if isDragOver {
+            return Color.white.opacity(0.4)
+        } else if dragState.draggedItemId != nil {
+            return Color.white.opacity(0.2)
+        } else if isSelected {
+            return Color.white.opacity(0.15)
+        } else if isHovered {
+            return Color.white.opacity(0.1)
+        } else {
+            return Color.clear
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .background(
-            Group {
-                if isDragOver {
-                    Color.white.opacity(0.4)
-                } else if dragState.draggedItemId != nil {
-                    Color.white.opacity(0.2)
-                } else if isSelected {
-                    Color.white.opacity(0.15)
-                } else {
-                    Color.clear
+    }
+
+    var body: some View {
+        Group {
+            if isCompact {
+                Circle()
+                    .fill(pinboard.color.color)
+                    .frame(width: 8, height: 8)
+                    .padding(8)
+                    .background(backgroundColor)
+                    .cornerRadius(6)
+            } else {
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(pinboard.color.color)
+                        .frame(width: 6, height: 6)
+                    Text(pinboard.name)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.white)
                 }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(backgroundColor)
+                .cornerRadius(6)
             }
-        )
-        .cornerRadius(6)
+        }
         .contentShape(Rectangle())
+        .onHover { hovering in
+            isHovered = hovering
+        }
         .onTapGesture {
             onSelect()
         }

@@ -6,5 +6,3 @@ preview panel should originate from the card it is previewing. with small arrow 
 
 pinboard navigation broken.
 pinboard search.
-
-no need to press / to start searching. just start typing.

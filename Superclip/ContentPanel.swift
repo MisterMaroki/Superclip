@@ -12,6 +12,8 @@ class ContentPanel: NSPanel {
     let pinboardManager = PinboardManager()
     let navigationState = NavigationState()
     var isEditingPinboard: Bool = false
+    var isSearching: Bool = false
+    var isSearchFieldFocused: Bool = false
     
     init(clipboardManager: ClipboardManager) {
         self.clipboardManager = clipboardManager
@@ -63,6 +65,12 @@ class ContentPanel: NSPanel {
             },
             onTextSnipe: { [weak self] in
                 self?.appDelegate?.startScreenCapture()
+            },
+            onSearchingChanged: { [weak self] isSearching in
+                self?.isSearching = isSearching
+            },
+            onSearchFocusChanged: { [weak self] isFocused in
+                self?.isSearchFieldFocused = isFocused
             }
         )
         

@@ -18,6 +18,15 @@ class NavigationState: ObservableObject {
     @Published var holdProgress: Double = 0
     @Published var isHoldingSpace: Bool = false
 
+    /// Pending search text from type-to-search (characters typed before search field focused)
+    @Published var pendingSearchText: String = ""
+
+    /// Signal to close search field (e.g., when arrow navigating with empty search)
+    @Published var shouldCloseSearch: Bool = false
+
+    /// Signal to clear search text and close search field (e.g., ESC key)
+    @Published var shouldClearAndCloseSearch: Bool = false
+
     var itemCount: Int = 0
 
     /// Select item by quick-access digit (1-9 for first 9 items, 0 for 10th item)
@@ -49,6 +58,9 @@ class NavigationState: ObservableObject {
         shouldFocusSearch = false
         shouldShowPreview = false
         shouldDeleteCurrent = false
+        pendingSearchText = ""
+        shouldCloseSearch = false
+        shouldClearAndCloseSearch = false
     }
     
     func focusSearch() {

@@ -220,6 +220,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                             previewPanel.editingState.cancelEditing()
                             return
                         }
+                        // If searching, clear and close search first
+                        if panelWindow.isSearching {
+                            panelWindow.navigationState.shouldClearAndCloseSearch = true
+                            return
+                        }
                         // Close preview first if open, otherwise close drawer
                         if self.previewWindow?.isVisible == true {
                             self.closePreviewWindow()
@@ -230,15 +235,27 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     }
                     return nil
                 case 123: // Left arrow
+                    if panelWindow.isSearching {
+                        panelWindow.navigationState.shouldCloseSearch = true
+                    }
                     panelWindow.navigationState.moveLeft()
                     return nil
                 case 124: // Right arrow
+                    if panelWindow.isSearching {
+                        panelWindow.navigationState.shouldCloseSearch = true
+                    }
                     panelWindow.navigationState.moveRight()
                     return nil
                 case 125: // Down arrow
+                    if panelWindow.isSearching {
+                        panelWindow.navigationState.shouldCloseSearch = true
+                    }
                     panelWindow.navigationState.moveRight()
                     return nil
                 case 126: // Up arrow
+                    if panelWindow.isSearching {
+                        panelWindow.navigationState.shouldCloseSearch = true
+                    }
                     panelWindow.navigationState.moveLeft()
                     return nil
                 case 36: // Return/Enter
@@ -252,7 +269,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     panelWindow.navigationState.focusSearch()
                     return nil
                 case 51: // Backspace key - delete selected item
-                    // Don't delete if user is editing text
+                    // Don't delete if user is searching
+                    if panelWindow.isSearching {
+                        return event // Allow backspace in search field
+                    }
+                    // Don't delete if user is editing text in preview
                     if let previewPanel = self.previewWindow as? PreviewPanel,
                        previewPanel.editingState.isEditing {
                         return event // Allow backspace to delete characters in editor
@@ -275,6 +296,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     if let previewPanel = self.previewWindow as? PreviewPanel,
                        previewPanel.editingState.isEditing {
                         return event // Allow space to be typed in the text editor
+                    }
+
+                    // Don't handle if user is searching
+                    if panelWindow.isSearching {
+                        return event // Allow space to be typed in the search field
                     }
 
                     // Ignore key repeat; we use a timer for hold-to-edit
@@ -325,10 +351,28 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     }
                     return nil
                 default:
+                    // Type-to-search: if printable character and not editing, capture keystrokes
+                    // Keep capturing until search field is actually focused
+                    if !panelWindow.isEditingPinboard && !panelWindow.isSearchFieldFocused,
+                       let chars = event.characters,
+                       !chars.isEmpty,
+                       let first = chars.first,
+                       first.isLetter || first.isNumber {
+                        // Don't trigger search for modifier keys (except shift which is common for typing)
+                        if !event.modifierFlags.contains(.command) &&
+                           !event.modifierFlags.contains(.control) &&
+                           !event.modifierFlags.contains(.option) {
+                            panelWindow.navigationState.pendingSearchText += chars
+                            if !panelWindow.isSearching {
+                                panelWindow.navigationState.shouldFocusSearch = true
+                            }
+                            return nil
+                        }
+                    }
                     return event
                 }
             }
-            
+
             if event.type == .keyUp && event.keyCode == 49 {
                 // Space key up - handle hold release (rebound) or consume after completed hold
                 guard let panel = self.contentWindow as? ContentPanel else { return event }

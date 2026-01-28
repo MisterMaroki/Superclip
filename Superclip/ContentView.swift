@@ -30,6 +30,8 @@ struct ContentView: View {
     var onPreview: ((ClipboardItem, Int) -> Void)?  // Item and index
     var onEditingPinboardChanged: ((Bool) -> Void)?  // Called when editing state changes
     var onTextSnipe: (() -> Void)?  // Called when text sniper button is tapped
+    var onSearchingChanged: ((Bool) -> Void)?  // Called when search field visibility changes
+    var onSearchFocusChanged: ((Bool) -> Void)?  // Called when search field gains/loses actual focus
     
     @FocusState private var isSearchFocused: Bool
     @State private var searchText: String = ""
@@ -165,10 +167,39 @@ struct ContentView: View {
         .onChange(of: navigationState.shouldFocusSearch) { shouldFocus in
             if shouldFocus {
                 showSearchField = true
+                navigationState.shouldFocusSearch = false
+                // Focus with small delay for UI to render
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                     isSearchFocused = true
                 }
-                navigationState.shouldFocusSearch = false
+            }
+        }
+        .onChange(of: showSearchField) { isShowing in
+            onSearchingChanged?(isShowing)
+        }
+        .onChange(of: isSearchFocused) { isFocused in
+            onSearchFocusChanged?(isFocused)
+            // When focus is gained, append any accumulated pending text
+            if isFocused && !navigationState.pendingSearchText.isEmpty {
+                searchText += navigationState.pendingSearchText
+                navigationState.pendingSearchText = ""
+            }
+        }
+        .onChange(of: navigationState.shouldCloseSearch) { shouldClose in
+            if shouldClose {
+                navigationState.shouldCloseSearch = false
+                // Close search if empty (arrow navigation with empty search)
+                if searchText.isEmpty {
+                    showSearchField = false
+                }
+            }
+        }
+        .onChange(of: navigationState.shouldClearAndCloseSearch) { shouldClose in
+            if shouldClose {
+                navigationState.shouldClearAndCloseSearch = false
+                searchText = ""
+                showSearchField = false
+                isSearchFocused = false
             }
         }
         .onChange(of: navigationState.shouldShowPreview) { shouldShow in

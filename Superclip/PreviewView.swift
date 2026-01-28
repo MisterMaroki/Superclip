@@ -11,6 +11,7 @@ struct PreviewView: View {
     let item: ClipboardItem
     let clipboardManager: ClipboardManager
     @ObservedObject var editingState: PreviewEditingState
+    let arrowXPosition: CGFloat // X position of the arrow within the view
     let onDismiss: () -> Void
     let onPaste: (String) -> Void
     var onOpenEditor: ((ClipboardItem, NSRect) -> Void)?
@@ -19,6 +20,9 @@ struct PreviewView: View {
     @State private var editableContent: String
     @State private var originalContent: String
     @FocusState private var isTextEditorFocused: Bool
+
+    private let arrowHeight: CGFloat = 10
+    private let arrowWidth: CGFloat = 20
 
     private var isEditing: Bool {
         get { editingState.isEditing }
@@ -41,10 +45,11 @@ struct PreviewView: View {
         setEditing(false)
     }
 
-    init(item: ClipboardItem, clipboardManager: ClipboardManager, editingState: PreviewEditingState, onDismiss: @escaping () -> Void, onPaste: @escaping (String) -> Void, onOpenEditor: ((ClipboardItem, NSRect) -> Void)? = nil, onCloseAll: (() -> Void)? = nil) {
+    init(item: ClipboardItem, clipboardManager: ClipboardManager, editingState: PreviewEditingState, arrowXPosition: CGFloat = 250, onDismiss: @escaping () -> Void, onPaste: @escaping (String) -> Void, onOpenEditor: ((ClipboardItem, NSRect) -> Void)? = nil, onCloseAll: (() -> Void)? = nil) {
         self.item = item
         self.clipboardManager = clipboardManager
         self.editingState = editingState
+        self.arrowXPosition = arrowXPosition
         self.onDismiss = onDismiss
         self.onPaste = onPaste
         self.onOpenEditor = onOpenEditor
@@ -68,7 +73,7 @@ struct PreviewView: View {
     }
     
     var appColor: Color {
-        item.sourceApp?.accentColor ?? Color(nsColor: .systemGray)
+        Color(nsColor: .systemGray)
     }
     
     var body: some View {
@@ -80,7 +85,38 @@ struct PreviewView: View {
                 onDismiss: onDismiss
             )
         } else {
-            regularPreviewView
+            previewWithArrow
+        }
+    }
+
+    var previewWithArrow: some View {
+        ZStack {
+            // Explicit transparent base
+            Color.clear
+
+            VStack(spacing: 0) {
+                regularPreviewView
+
+                // Stylized arrow pointing down to the card
+                GeometryReader { geometry in
+                    let clampedX = max(arrowWidth / 2 + 16, min(arrowXPosition, geometry.size.width - arrowWidth / 2 - 16))
+
+                    ZStack {
+                     
+                        // Main arrow body with gradient
+                        ArrowShape()
+                            .fill(
+                                Color.black.opacity(0.3)
+                                
+                            )
+                            .frame(width: arrowWidth, height: arrowHeight)
+
+                       
+                    }
+                    .position(x: clampedX, y: arrowHeight / 2)
+                }
+                .frame(height: arrowHeight)
+            }
         }
     }
     
@@ -276,6 +312,12 @@ struct PreviewView: View {
             }
         )
         .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.white.opacity(0.15), lineWidth: 1)
+        )
+        // subtle lighter shadow below
+        .shadow(color: Color.black.opacity(0.05), radius: 20, x: 0, y: -15)
     }
     
     var textPreview: some View {
@@ -668,7 +710,7 @@ struct AttributedTextView: NSViewRepresentable {
 struct WebView: NSViewRepresentable {
     let url: URL
     @State private var isLoading = true
-    
+
     func makeNSView(context: Context) -> WKWebView {
         let webView = WKWebView()
         webView.navigationDelegate = context.coordinator
@@ -676,25 +718,72 @@ struct WebView: NSViewRepresentable {
         webView.allowsMagnification = false
         return webView
     }
-    
+
     func updateNSView(_ nsView: WKWebView, context: Context) {
         if nsView.url != url {
             let request = URLRequest(url: url)
             nsView.load(request)
         }
     }
-    
+
     func makeCoordinator() -> Coordinator {
         Coordinator()
     }
-    
+
     class Coordinator: NSObject, WKNavigationDelegate {
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             // Page loaded
         }
-        
+
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
             // Handle error if needed
         }
+    }
+}
+
+// MARK: - Arrow Shape
+
+struct ArrowShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+
+        // Elegant tapered arrow with curved sides
+        let tipY = rect.maxY
+        let baseY = rect.minY
+        let midX = rect.midX
+        let halfWidth = rect.width / 2
+
+        // Start at the tip (bottom center)
+        path.move(to: CGPoint(x: midX, y: tipY))
+
+        // Curve up to left corner with inward bow
+        path.addQuadCurve(
+            to: CGPoint(x: rect.minX, y: baseY),
+            control: CGPoint(x: midX - halfWidth * 0.4, y: rect.midY)
+        )
+
+        // Flat top with rounded corners
+        path.addQuadCurve(
+            to: CGPoint(x: rect.minX + 4, y: baseY),
+            control: CGPoint(x: rect.minX, y: baseY)
+        )
+
+        // Line across top
+        path.addLine(to: CGPoint(x: rect.maxX - 4, y: baseY))
+
+        // Right corner
+        path.addQuadCurve(
+            to: CGPoint(x: rect.maxX, y: baseY),
+            control: CGPoint(x: rect.maxX, y: baseY)
+        )
+
+        // Curve down to tip with inward bow
+        path.addQuadCurve(
+            to: CGPoint(x: midX, y: tipY),
+            control: CGPoint(x: midX + halfWidth * 0.4, y: rect.midY)
+        )
+
+        path.closeSubpath()
+        return path
     }
 }

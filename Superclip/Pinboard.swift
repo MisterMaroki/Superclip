@@ -20,7 +20,10 @@ struct Pinboard: Identifiable, Codable, Equatable {
     }
     
     static func == (lhs: Pinboard, rhs: Pinboard) -> Bool {
-        lhs.id == rhs.id
+        lhs.id == rhs.id &&
+        lhs.name == rhs.name &&
+        lhs.color == rhs.color &&
+        lhs.itemIds == rhs.itemIds
     }
 }
 

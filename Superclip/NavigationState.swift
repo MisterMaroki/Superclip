@@ -27,6 +27,9 @@ class NavigationState: ObservableObject {
     /// Signal to clear search text and close search field (e.g., ESC key)
     @Published var shouldClearAndCloseSearch: Bool = false
 
+    /// Whether the preview panel is currently visible (set by AppDelegate)
+    @Published var isPreviewVisible: Bool = false
+
     var itemCount: Int = 0
 
     /// Select item by quick-access digit (1-9 for first 9 items, 0 for 10th item)

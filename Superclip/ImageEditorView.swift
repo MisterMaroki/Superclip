@@ -234,6 +234,12 @@ struct ImageEditorView: View {
             }
         )
         .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.white.opacity(0.15), lineWidth: 1)
+        )
+        // subtle lighter shadow below
+        .shadow(color: Color.black.opacity(0.05), radius: 20, x: 0, y: -15)
     }
     
     private func resetEdits() {

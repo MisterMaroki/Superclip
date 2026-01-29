@@ -85,9 +85,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     contentWindow = contentPanel
 
-    contentPanel.makeKeyAndOrderFront(nil)
-    contentPanel.makeKey()
-
     // Start monitoring for clicks outside the panel and ESC key
     startClickMonitoring()
   }
@@ -538,15 +535,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // Close preview window if open
     closePreviewWindow()
 
-    if let window = contentWindow {
+    if let panel = contentWindow as? ContentPanel {
+      panel.animateClose { [weak self] in
+        panel.close()
+        self?.contentWindow = nil
+
+        if shouldPaste {
+          self?.simulatePaste()
+        }
+      }
+    } else if let window = contentWindow {
       window.close()
       contentWindow = nil
-    }
-
-    // If we should paste, do it after a brief delay to let the previous app regain focus
-    if shouldPaste {
-      DispatchQueue.main.asyncAfter(deadline: .now()) {
-        self.simulatePaste()
+      if shouldPaste {
+        simulatePaste()
       }
     }
   }
@@ -621,7 +623,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     let pinboardManager = (contentWindow as? ContentPanel)?.pinboardManager ?? PinboardManager()
     let previewPanel = PreviewPanel(
-      item: item, clipboardManager: clipboardManager, pinboardManager: pinboardManager, arrowTargetX: arrowTargetX)
+      item: item, clipboardManager: clipboardManager, pinboardManager: pinboardManager,
+      arrowTargetX: arrowTargetX)
     previewPanel.appDelegate = self
     previewPanel.onDismiss = { [weak self] in
       self?.closePreviewWindow()

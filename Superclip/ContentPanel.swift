@@ -39,6 +39,7 @@ class ContentPanel: NSPanel {
     isMovableByWindowBackground = false  // Don't allow moving the bottom bar
     titlebarAppearsTransparent = true
     titleVisibility = .hidden
+    animationBehavior = .none  // Disable default macOS window animations
 
     collectionBehavior = [
       .canJoinAllSpaces,
@@ -91,17 +92,45 @@ class ContentPanel: NSPanel {
       // Set the hosting view size first
       hostingView.setFrameSize(NSSize(width: panelWidth, height: panelHeight))
 
-      // Set the window frame
-      setFrame(
-        NSRect(
-          x: xPosition,
-          y: yPosition,
-          width: panelWidth,
-          height: panelHeight
-        ),
-        display: false
-      )
+      let finalFrame = NSRect(x: xPosition, y: yPosition, width: panelWidth, height: panelHeight)
+      let offscreenY = screenFrame.minY - panelHeight
+      let offscreenFrame = NSRect(x: xPosition, y: offscreenY, width: panelWidth, height: panelHeight)
+
+      // Show window at final position first to ensure it's rendered
+      setFrame(finalFrame, display: true)
+      alphaValue = 1.0
+      orderFront(nil)
+      makeKey()
+
+      // Instantly move to offscreen position (no animation)
+      CATransaction.begin()
+      CATransaction.setDisableActions(true)
+      setFrame(offscreenFrame, display: true)
+      CATransaction.commit()
+
+      // Animate up to final position
+      NSAnimationContext.runAnimationGroup { context in
+        context.duration = 0.2
+        context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        self.animator().setFrame(finalFrame, display: true)
+      }
     }
+  }
+
+  func animateClose(completion: @escaping () -> Void) {
+    guard let screen = NSScreen.main else {
+      completion()
+      return
+    }
+
+    let offscreenY = screen.visibleFrame.minY - frame.height
+    let offscreenFrame = NSRect(x: frame.origin.x, y: offscreenY, width: frame.width, height: frame.height)
+
+    NSAnimationContext.runAnimationGroup({ context in
+      context.duration = 0.2
+      context.timingFunction = CAMediaTimingFunction(name: .easeIn)
+      self.animator().setFrame(offscreenFrame, display: true)
+    }, completionHandler: completion)
   }
 }
 

@@ -140,6 +140,11 @@ extension ContentPanel: NSWindowDelegate {
     DispatchQueue.main.asyncAfter(deadline: .now()) { [weak self] in
       guard let self = self else { return }
 
+      // Don't close if a drag is in progress
+      if DragState.shared.draggedItemId != nil {
+        return
+      }
+
       // Check which window is now key
       let keyWindow = NSApplication.shared.keyWindow
 

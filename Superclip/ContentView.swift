@@ -43,6 +43,7 @@ struct ContentView: View {
   @FocusState private var isEditingPinboard: Bool
   @State private var dragLocation: CGPoint? = nil
   @State private var dragMonitorTimer: Timer? = nil
+  @State private var dragMouseUpMonitor: Any? = nil
   @State private var cardCenterXPositions: [Int: CGFloat] = [:]  // index -> center X in screen coords
 
   var currentItems: [ClipboardItem] {
@@ -257,33 +258,22 @@ struct ContentView: View {
 
     let dismissCallback = dismiss
 
-    // Get the actual window frame - look for ContentPanel specifically
-    // Try multiple ways to find the window
-    var window: NSWindow?
-    for w in NSApp.windows {
-      if w is ContentPanel {
-        window = w
-        break
-      }
-    }
-    if window == nil {
-      window = NSApp.windows.first(where: { $0.isKeyWindow })
-    }
-    if window == nil {
-      window = NSApp.windows.first(where: { $0.isMainWindow })
-    }
-    if window == nil {
-      window = NSApp.windows.first
-    }
-
-    guard let window = window else {
-      return
-    }
-
-    let windowFrame = window.frame
-
     dragMonitorTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { timer in
       guard DragState.shared.draggedItemId != nil else {
+        timer.invalidate()
+        return
+      }
+
+      // Get current window frame dynamically (in case window moved)
+      var currentWindow: NSWindow?
+      for w in NSApp.windows {
+        if w is ContentPanel && w.isVisible {
+          currentWindow = w
+          break
+        }
+      }
+
+      guard let windowFrame = currentWindow?.frame else {
         timer.invalidate()
         return
       }
@@ -309,6 +299,16 @@ struct ContentView: View {
     // Make sure timer runs on main run loop in common mode
     if let timer = dragMonitorTimer {
       RunLoop.main.add(timer, forMode: .common)
+    }
+
+    // Monitor for mouse up to detect when drag ends (cancelled or completed)
+    dragMouseUpMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseUp) { [self] event in
+      // When mouse is released, clear drag state after a brief delay
+      // (allows drop handlers to process first)
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+        DragState.shared.draggedItemId = nil
+      }
+      return event
     }
   }
 
@@ -342,6 +342,10 @@ struct ContentView: View {
   private func stopDragMonitoring() {
     dragMonitorTimer?.invalidate()
     dragMonitorTimer = nil
+    if let monitor = dragMouseUpMonitor {
+      NSEvent.removeMonitor(monitor)
+      dragMouseUpMonitor = nil
+    }
   }
 
   // MARK: - Pinboard Navigation
@@ -398,32 +402,22 @@ struct ContentView: View {
 
     let dismissCallback = dismiss
 
-    // Get the actual window frame - look for ContentPanel specifically
-    var window: NSWindow?
-    for w in NSApp.windows {
-      if w is ContentPanel {
-        window = w
-        break
-      }
-    }
-    if window == nil {
-      window = NSApp.windows.first(where: { $0.isKeyWindow })
-    }
-    if window == nil {
-      window = NSApp.windows.first(where: { $0.isMainWindow })
-    }
-    if window == nil {
-      window = NSApp.windows.first
-    }
-
-    guard let window = window else {
-      return
-    }
-
-    let windowFrame = window.frame
-
     dragMonitorTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { timer in
       guard DragState.shared.draggedItemId != nil else {
+        timer.invalidate()
+        return
+      }
+
+      // Get current window frame dynamically (in case window moved)
+      var currentWindow: NSWindow?
+      for w in NSApp.windows {
+        if w is ContentPanel && w.isVisible {
+          currentWindow = w
+          break
+        }
+      }
+
+      guard let windowFrame = currentWindow?.frame else {
         timer.invalidate()
         return
       }
@@ -449,6 +443,16 @@ struct ContentView: View {
     // Make sure timer runs on main run loop in common mode
     if let timer = dragMonitorTimer {
       RunLoop.main.add(timer, forMode: .common)
+    }
+
+    // Monitor for mouse up to detect when drag ends (cancelled or completed)
+    dragMouseUpMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseUp) { [self] event in
+      // When mouse is released, clear drag state after a brief delay
+      // (allows drop handlers to process first)
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+        DragState.shared.draggedItemId = nil
+      }
+      return event
     }
   }
 

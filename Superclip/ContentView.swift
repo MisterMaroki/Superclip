@@ -39,7 +39,6 @@ struct ContentView: View {
   @State private var viewMode: ViewMode = .clipboard
   @State private var editingPinboard: Pinboard?
   @State private var editingPinboardName: String = ""
-  @State private var editingPinboardColor: PinboardColor = .red
   @FocusState private var isEditingPinboard: Bool
   @State private var dragLocation: CGPoint? = nil
   @State private var dragMonitorTimer: Timer? = nil
@@ -525,12 +524,11 @@ struct ContentView: View {
             // Editing mode (only when not searching)
             PinboardEditView(
               name: $editingPinboardName,
-              color: $editingPinboardColor,
+              color: pinboard.color,
               isFocused: $isEditingPinboard,
               onSave: {
                 var updated = pinboard
                 updated.name = editingPinboardName.isEmpty ? "Untitled" : editingPinboardName
-                updated.color = editingPinboardColor
 
                 pinboardManager.updatePinboard(updated)
 
@@ -565,7 +563,6 @@ struct ContentView: View {
               onEdit: {
                 editingPinboard = pinboard
                 editingPinboardName = pinboard.name
-                editingPinboardColor = pinboard.color
                 isEditingPinboard = true
                 onEditingPinboardChanged?(true)
               },
@@ -574,6 +571,14 @@ struct ContentView: View {
                   viewMode = .clipboard
                 }
                 pinboardManager.deletePinboard(pinboard)
+              },
+              onColorChange: { newColor in
+                var updated = pinboard
+                updated.color = newColor
+                pinboardManager.updatePinboard(updated)
+                if case .pinboard(let current) = viewMode, current.id == pinboard.id {
+                  viewMode = .pinboard(updated)
+                }
               },
               onDrop: { itemId in
                 pinboardManager.addItem(itemId, to: pinboard)
@@ -595,7 +600,6 @@ struct ContentView: View {
             let newPinboard = pinboardManager.createPinboard(name: "Untitled", color: .red)
             editingPinboard = newPinboard
             editingPinboardName = "Untitled"
-            editingPinboardColor = .red
             isEditingPinboard = true
             onEditingPinboardChanged?(true)
             viewMode = .pinboard(newPinboard)
@@ -1379,6 +1383,7 @@ struct PinboardTabButton: View {
   let onSelect: () -> Void
   let onEdit: () -> Void
   let onDelete: () -> Void
+  let onColorChange: (PinboardColor) -> Void
   let onDrop: (UUID) -> Void
 
   @State private var isDragOver = false
@@ -1496,14 +1501,50 @@ struct PinboardTabButton: View {
       return false
     }
     .contextMenu {
-      Button("Edit") {
+      Button("Rename") {
         onEdit()
       }
+
       Divider()
+      PinboardColorPicker(currentColor: pinboard.color, onColorChange: onColorChange)
       Button(role: .destructive) {
         onDelete()
       } label: {
-        Text("Delete")
+        Text("Delete \(pinboard.name)")
+          .foregroundStyle(.red)
+      }
+    }
+  }
+}
+
+struct PinboardColorPicker: View {
+  let currentColor: PinboardColor
+  let onColorChange: (PinboardColor) -> Void
+
+  private let colors = PinboardColor.allCases
+  private let colorsPerRow = 4
+
+  var body: some View {
+    VStack(spacing: 4) {
+      ForEach(0..<2, id: \.self) { row in
+        ControlGroup {
+          ForEach(0..<colorsPerRow, id: \.self) { col in
+            let index = row * colorsPerRow + col
+            if index < colors.count {
+              Button {
+                onColorChange(colors[index])
+              } label: {
+                Image(
+                  systemName: currentColor == colors[index]
+                    ? "smallcircle.filled.circle.fill" : "circle.fill"
+                )
+                .symbolRenderingMode(.monochrome)
+              }
+              .tint(colors[index].color)
+            }
+          }
+        }
+        .controlGroupStyle(.palette)
       }
     }
   }
@@ -1511,40 +1552,17 @@ struct PinboardTabButton: View {
 
 struct PinboardEditView: View {
   @Binding var name: String
-  @Binding var color: PinboardColor
+  let color: PinboardColor
   @FocusState.Binding var isFocused: Bool
   let onSave: () -> Void
   let onCancel: () -> Void
 
-  @State private var showingColorPicker = false
-
   var body: some View {
     HStack(spacing: 6) {
-      // Color picker
-      Menu {
-        ForEach(PinboardColor.allCases, id: \.self) { pinboardColor in
-          Button {
-            color = pinboardColor
-          } label: {
-            HStack {
-              Circle()
-                .fill(pinboardColor.color)
-                .frame(width: 12, height: 12)
-              Text(pinboardColor.rawValue.capitalized)
-              if color == pinboardColor {
-                Image(systemName: "checkmark")
-              }
-            }
-          }
-        }
-      } label: {
-        Circle()
-          .fill(color.color)
-          .frame(width: 8, height: 8)
-      }
-      .menuStyle(.borderlessButton)
+      Circle()
+        .fill(color.color)
+        .frame(width: 6, height: 6)
 
-      // Name text field
       TextField("Untitled", text: $name)
         .textFieldStyle(.plain)
         .font(.system(size: 12))

@@ -1,5 +1,5 @@
 //
-//  WelcomeView.swift
+//  ContentPanel.swift
 //  Superclip
 //
 

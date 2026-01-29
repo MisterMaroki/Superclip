@@ -496,4 +496,55 @@ class ClipboardManager: ObservableObject {
             self.history.removeAll()
         }
     }
+
+    // MARK: - Tutorial Items
+
+    /// Seed the clipboard history with tutorial cards that teach first-time users
+    /// how to use Superclip. Called after onboarding completes.
+    func seedTutorialItems() {
+        // Only seed if history is empty (first launch)
+        guard history.isEmpty else { return }
+
+        let superclipSource = SourceApp(
+            bundleIdentifier: Bundle.main.bundleIdentifier,
+            name: "Superclip",
+            icon: NSApp.applicationIconImage
+        )
+
+        // Items are inserted in reverse order so the first tip appears leftmost
+        let tutorials: [(String, String)] = [
+            (
+                "Welcome to your clipboard drawer! When you copy something, it appears right here. Press ⌘⇧A from anywhere to toggle this view.",
+                "tip-welcome"
+            ),
+            (
+                "Press Space on any card to preview it. Hold Space on a text card to open the rich text editor.",
+                "tip-preview"
+            ),
+            (
+                "Use arrow keys to navigate, Enter to paste. Hold ⌘ and press 1–9 to quick-paste by position.",
+                "tip-keyboard"
+            ),
+            (
+                "Drag cards onto pinboard tabs above to save your favorites. Double-click a pinboard to rename it.",
+                "tip-pinboards"
+            ),
+            (
+                "Press ⌘⇧` anywhere to snipe text from your screen — even from images or videos!",
+                "tip-ocr"
+            ),
+        ]
+
+        DispatchQueue.main.async {
+            for (index, (content, _)) in tutorials.reversed().enumerated() {
+                let item = ClipboardItem(
+                    content: content,
+                    timestamp: Date().addingTimeInterval(TimeInterval(-index)),
+                    type: .text,
+                    sourceApp: superclipSource
+                )
+                self.history.insert(item, at: 0)
+            }
+        }
+    }
 }

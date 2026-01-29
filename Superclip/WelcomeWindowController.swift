@@ -8,30 +8,44 @@ import ApplicationServices
 import SwiftUI
 
 final class WelcomeWindowController: NSWindowController, NSWindowDelegate {
-    static let hasSeenWelcomeKey = "Superclip.hasSeenWelcome"
+    static let hasSeenOnboardingKey = "Superclip.hasSeenOnboarding"
 
-    override init(window: NSWindow?) {
-        let win = window ?? NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 420, height: 420),
-            styleMask: [.titled, .closable],
+    private var onComplete: (() -> Void)?
+
+    convenience init(onComplete: @escaping () -> Void) {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 560, height: 520),
+            styleMask: [.titled, .closable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
-        win.title = "Superclip"
-        win.isReleasedWhenClosed = false
-        super.init(window: win)
-        win.delegate = self
+        self.init(window: window)
+        self.onComplete = onComplete
+
+        window.title = "Welcome to Superclip"
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.isReleasedWhenClosed = false
+        window.isMovableByWindowBackground = true
+        window.backgroundColor = .windowBackgroundColor
+        window.delegate = self
+
+        let onboardingView = OnboardingView {
+            self.finishOnboarding()
+        }
+        window.contentViewController = NSHostingController(rootView: onboardingView)
     }
 
-    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-
-    func windowWillClose(_ notification: Notification) {
-        UserDefaults.standard.set(true, forKey: Self.hasSeenWelcomeKey)
+    override init(window: NSWindow?) {
+        super.init(window: window)
     }
 
-    func configure(dismiss: @escaping () -> Void, openAccessibility: @escaping () -> Void) {
-        let view = WelcomeView(onDismiss: dismiss, onOpenAccessibility: openAccessibility)
-        window?.contentViewController = NSHostingController(rootView: view)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    static var needsOnboarding: Bool {
+        !UserDefaults.standard.bool(forKey: hasSeenOnboardingKey)
     }
 
     func show() {
@@ -40,8 +54,15 @@ final class WelcomeWindowController: NSWindowController, NSWindowDelegate {
         window?.makeKeyAndOrderFront(nil)
     }
 
-    func openAccessibility() {
-        let opts = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
-        AXIsProcessTrustedWithOptions(opts)
+    private func finishOnboarding() {
+        // close() triggers windowWillClose which handles the rest
+        window?.close()
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        guard let callback = onComplete else { return }
+        onComplete = nil  // Prevent double-call if close is triggered multiple ways
+        UserDefaults.standard.set(true, forKey: Self.hasSeenOnboardingKey)
+        callback()
     }
 }

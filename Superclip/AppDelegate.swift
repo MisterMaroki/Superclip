@@ -25,6 +25,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   let clipboardManager = ClipboardManager()
   lazy var pasteStackManager = PasteStackManager(clipboardManager: clipboardManager)
   private var shouldPasteAfterClose = false
+  private var welcomeController: WelcomeWindowController?
 
   // Hold-to-edit: timer-based progress, rebound on early release
   private var holdProgressTimer: Timer?
@@ -39,9 +40,38 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     setupHotkey()
     setupPasteStackHotkey()
     setupOCRHotkey()
+
+    if WelcomeWindowController.needsOnboarding {
+      showOnboarding()
+    }
+  }
+
+  // MARK: - Onboarding
+
+  private func showOnboarding() {
+    // Temporarily become a regular app so the onboarding window is visible
+    NSApp.setActivationPolicy(.regular)
+
+    welcomeController = WelcomeWindowController { [weak self] in
+      guard let self = self else { return }
+      // Go back to accessory (no dock icon) after onboarding
+      NSApp.setActivationPolicy(.accessory)
+      self.welcomeController = nil
+
+      // Seed tutorial cards and open the drawer so the user sees the app working
+      self.clipboardManager.seedTutorialItems()
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+        self.showContentWindow()
+      }
+    }
+    welcomeController?.show()
   }
 
   func applicationDidResignActive(_ notification: Notification) {
+    // Don't close during onboarding (user may switch to System Settings for permissions)
+    if welcomeController != nil {
+      return
+    }
     // Don't close if rich text editor windows are open
     if richTextEditorWindows.contains(where: { $0.isVisible }) {
       return

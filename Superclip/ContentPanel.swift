@@ -110,7 +110,7 @@ class ContentPanel: NSPanel {
 
       // Animate up to final position
       NSAnimationContext.runAnimationGroup { context in
-        context.duration = 0.2
+        context.duration = 0.1
         context.timingFunction = CAMediaTimingFunction(name: .easeOut)
         self.animator().setFrame(finalFrame, display: true)
       }
@@ -127,7 +127,7 @@ class ContentPanel: NSPanel {
     let offscreenFrame = NSRect(x: frame.origin.x, y: offscreenY, width: frame.width, height: frame.height)
 
     NSAnimationContext.runAnimationGroup({ context in
-      context.duration = 0.2
+      context.duration = 0.1
       context.timingFunction = CAMediaTimingFunction(name: .easeIn)
       self.animator().setFrame(offscreenFrame, display: true)
     }, completionHandler: completion)

@@ -4,79 +4,112 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Superclip is a native macOS menu bar clipboard manager built with SwiftUI. It runs as an accessory app (no dock icon) and is activated via global hotkeys.
+Superclip is a native macOS menu-bar clipboard manager built with SwiftUI and AppKit. It runs as an accessory app (no Dock icon) and is activated via global hotkeys.
 
 **Global Hotkeys:**
 
 - `Cmd+Shift+A` - Open clipboard history drawer
-- `Cmd+Shift+C` - Open paste stack (sequential pasting mode)
+- `Cmd+C` - Copy to clipboard (standard)
+- `Cmd+Shift+C` - Copy and open in paste stack
+- `Cmd+V` - Simulated paste (used by paste stack)
 
 ## Architecture
 
 ### Key Components
 
-**AppDelegate** (`AppDelegate.swift`) - Central coordinator managing:
+**AppDelegate** (`AppDelegate.swift`) - Central coordinator:
 
 - Window lifecycle (ContentPanel, PreviewPanel, RichTextEditorPanel)
-- Global hotkey registration via HotKey package
-- System-wide click/key event monitoring
-- Clipboard item selection and paste simulation
+- Global hotkey registration via HotKey
+- Global event monitors for clicks/keys and paste simulation
+- Entry points for automation hooks (open panels, seed clipboard)
 
 **ClipboardManager** (`ClipboardManager.swift`) - Core clipboard functionality:
 
-- Polls system pasteboard every 0.5 seconds
-- Detects text, images, files, and URLs
-- Maintains history (max 100 items) with deduplication
-- Supports undo (30-second window) and link metadata fetching
+- Polls `NSPasteboard` every 0.5s
+- Detects: images, files, URLs, plain text, RTF
+- Maintains history (max 100) with deduplication
+- Stores source app metadata
+- Undo window for deletions (~30s)
+- Link metadata fetching (title, description, favicon)
 
-**NavigationState** (`NavigationState.swift`) - Keyboard navigation state:
+**NavigationState** (`NavigationState.swift`) - Keyboard navigation:
 
-- Arrow keys to navigate, Enter to select, Space for preview
-- Backspace to delete, Cmd+Z to undo, "/" to search
+- Arrow keys to navigate items; Enter to select
+- Cmd+Arrow keys to navigate pinboards
+- Space to open preview; hold Space to open editor
+- Backspace/Delete to remove; Cmd+Z to undo
+- Typing any character enters search
+- Esc clears search / closes panels
 
-**PasteStackManager** (`PasteStackManager.swift`) - Sequential paste workflow:
+**PasteStackManager** (`PasteStackManager.swift`) - Sequential paste:
 
-- Tracks items copied during session
-- Auto-advances after each Cmd+V paste
+- Session-scoped stack of captured items
+- Auto-advance after each simulated paste (`Cmd+V`)
+- Actions: copy item, paste current, remove item
+
+**PinboardManager** (`PinboardManager.swift`) - Favorites:
+
+- Pin/unpin items; persisted across launches
+- Quick access UI and navigation
+
+**OCRManager** (`OCRManager.swift`) - OCR support:
+
+- Extract text from images/screenshots
+- Actions: copy OCR result, open in editor
+
+**ImageEditorView / ScreenCaptureView** - Image workflows:
+
+- Image editing (crop, annotate), save, copy
+- Screen capture integration and editing pipeline
 
 ### Window System
 
 All windows are `NSPanel` subclasses with `borderless` + `nonactivatingPanel` style masks:
 
-- **ContentPanel** - Main drawer at screen bottom (280px height)
+- **ContentPanel** - Main drawer at screen bottom
 - **PreviewPanel** - Floating preview above selected card
-- **RichTextEditorPanel** - Standalone editor windows (no title bar)
+- **RichTextEditorPanel** - Standalone editor window
 
-Panels use `floatingLevel` and `canJoinAllSpaces` for cross-space visibility.
+Panels use `floatingLevel` and `canJoinAllSpaces`.
 
 ### Data Model
 
-`ClipboardItem` struct stores:
+`ClipboardItem` includes:
 
-- `content: String` - Plain text content
-- `rtfData: Data?` - Rich text formatting (RTF)
-- `imageData: Data?` - Image data for image items
-- `fileURLs: [URL]?` - File references
-- `linkMetadata: LinkMetadata?` - Cached URL preview data
-- `sourceApp: SourceApp?` - App that originated the copy
+- `content: String`
+- `rtfData: Data?`
+- `imageData: Data?`
+- `fileURLs: [URL]?`
+- `linkMetadata: LinkMetadata?`
+- `sourceApp: SourceApp?`
 
-### Content Type Detection Order
+### Content Detection Order
 
-1. Images (PNG/TIFF data)
-2. Files (with special handling for single image files)
-3. URLs (with metadata fetching)
-4. Plain text (with URL detection from strings)
+1. Images
+2. Files (special-case single-image files)
+3. URLs (with metadata)
+4. Plain text
 
 ## Dependencies
 
-Single external dependency managed via Swift Package Manager:
+Managed via Swift Package Manager:
 
-- **HotKey** (https://github.com/soffes/HotKey) - Global keyboard shortcut support
+- **HotKey** - Global keyboard shortcuts
 
-## Key Patterns
+## Key Patterns & Conventions
 
-- Use `[weak self]` in all closures to prevent retain cycles
-- Invalidate timers in `deinit`
-- Use `DispatchQueue.main.async` for UI updates from clipboard monitoring
-- Panels use `NSHostingView` to bridge SwiftUI views into AppKit windows
-- `NSViewRepresentable` wraps AppKit views (NSTextView) for rich text editing
+- Use `[weak self]` in closures to avoid retain cycles
+- Invalidate timers and remove observers in `deinit`
+- Use `@MainActor` / `DispatchQueue.main.async` for UI updates
+- Prefer actors for shared mutable state where appropriate
+- Use `NSHostingView` to embed SwiftUI in AppKit panels
+- Wrap `NSTextView` with `NSViewRepresentable` for rich editing
+
+## Automation Hooks & Targets
+
+- Build & archive + notarize pipeline
+- CI: linting (SwiftLint), formatting (swift-format), unit tests
+- Export/import: pins, history, preferences
+- App Store packaging: screenshots, metadata, upload helper
+- Developer helpers: seed clipboard, open panels, toggle feature flags

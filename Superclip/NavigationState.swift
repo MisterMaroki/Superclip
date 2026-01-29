@@ -30,6 +30,12 @@ class NavigationState: ObservableObject {
     /// Whether the preview panel is currently visible (set by AppDelegate)
     @Published var isPreviewVisible: Bool = false
 
+    /// Signal to navigate to the previous pinboard (Cmd+Left)
+    @Published var shouldMovePinboardLeft: Bool = false
+
+    /// Signal to navigate to the next pinboard (Cmd+Right)
+    @Published var shouldMovePinboardRight: Bool = false
+
     var itemCount: Int = 0
 
     /// Select item by quick-access digit (1-9 for first 9 items, 0 for 10th item)
@@ -64,6 +70,8 @@ class NavigationState: ObservableObject {
         pendingSearchText = ""
         shouldCloseSearch = false
         shouldClearAndCloseSearch = false
+        shouldMovePinboardLeft = false
+        shouldMovePinboardRight = false
     }
     
     func focusSearch() {
@@ -76,5 +84,13 @@ class NavigationState: ObservableObject {
     
     func deleteCurrentItem() {
         shouldDeleteCurrent = true
+    }
+
+    func movePinboardLeft() {
+        shouldMovePinboardLeft = true
+    }
+
+    func movePinboardRight() {
+        shouldMovePinboardRight = true
     }
 }

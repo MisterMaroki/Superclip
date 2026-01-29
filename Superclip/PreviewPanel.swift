@@ -20,15 +20,17 @@ class PreviewPanel: NSPanel {
   weak var appDelegate: AppDelegate?
   private(set) var item: ClipboardItem
   let clipboardManager: ClipboardManager
+  let pinboardManager: PinboardManager
   var onDismiss: (() -> Void)?
   let editingState = PreviewEditingState()
 
   /// The X position where the arrow should point (relative to screen)
   var arrowTargetX: CGFloat = 0
 
-  init(item: ClipboardItem, clipboardManager: ClipboardManager, arrowTargetX: CGFloat = 0) {
+  init(item: ClipboardItem, clipboardManager: ClipboardManager, pinboardManager: PinboardManager, arrowTargetX: CGFloat = 0) {
     self.item = item
     self.clipboardManager = clipboardManager
+    self.pinboardManager = pinboardManager
     self.arrowTargetX = arrowTargetX
 
     super.init(
@@ -97,6 +99,7 @@ class PreviewPanel: NSPanel {
     let previewView = PreviewView(
       item: newItem,
       clipboardManager: clipboardManager,
+      pinboardManager: pinboardManager,
       editingState: editingState,
       arrowXPosition: arrowXInPanel,
       onDismiss: { [weak self] in

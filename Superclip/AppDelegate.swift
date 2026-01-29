@@ -9,6 +9,8 @@ import QuartzCore
 import ScreenCaptureKit
 
 class AppDelegate: NSObject, NSApplicationDelegate {
+  static var isShareSheetActive = false
+
   var contentWindow: NSWindow?
   var pasteStackWindow: NSWindow?
   var previewWindow: NSWindow?
@@ -241,12 +243,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
           }
           return nil
         case 123:  // Left arrow
+          if event.modifierFlags.contains(.command) {
+            // Cmd+Left: navigate to previous pinboard
+            panelWindow.navigationState.movePinboardLeft()
+            return nil
+          }
           if panelWindow.isSearching {
             panelWindow.navigationState.shouldCloseSearch = true
           }
           panelWindow.navigationState.moveLeft()
           return nil
         case 124:  // Right arrow
+          if event.modifierFlags.contains(.command) {
+            // Cmd+Right: navigate to next pinboard
+            panelWindow.navigationState.movePinboardRight()
+            return nil
+          }
           if panelWindow.isSearching {
             panelWindow.navigationState.shouldCloseSearch = true
           }
@@ -415,8 +427,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
       }
 
       // If click is in a different window (or nil), close the drawer panel
-      // But don't close if clicking on the preview window, paste stack window, or rich text editor windows
+      // But don't close if clicking on the preview window, paste stack window, rich text editor windows, or share sheet
       if event.type == .leftMouseDown || event.type == .rightMouseDown {
+        // Don't close if share sheet is active
+        if AppDelegate.isShareSheetActive {
+          return event
+        }
         let isRichTextEditorWindow = self.richTextEditorWindows.contains { $0 === event.window }
         if event.window != panelWindow && event.window != self.previewWindow
           && event.window != self.pasteStackWindow && !isRichTextEditorWindow
@@ -473,6 +489,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
           if previewFrame.contains(mouseLocation) {
             return
           }
+        }
+        // Don't close if share sheet is active
+        if AppDelegate.isShareSheetActive {
+          return
         }
         // Otherwise, close both preview and drawer (clicked outside the app)
         self.closeReviewWindow(andPaste: false)
@@ -599,8 +619,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     closePreviewWindow()
 
+    let pinboardManager = (contentWindow as? ContentPanel)?.pinboardManager ?? PinboardManager()
     let previewPanel = PreviewPanel(
-      item: item, clipboardManager: clipboardManager, arrowTargetX: arrowTargetX)
+      item: item, clipboardManager: clipboardManager, pinboardManager: pinboardManager, arrowTargetX: arrowTargetX)
     previewPanel.appDelegate = self
     previewPanel.onDismiss = { [weak self] in
       self?.closePreviewWindow()
@@ -648,6 +669,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
       guard let self = self,
         self.previewWindow?.isVisible == true
       else { return }
+
+      // Don't close if share sheet is active
+      if AppDelegate.isShareSheetActive {
+        return
+      }
 
       // Get the window that received the click
       let clickWindow = event.window

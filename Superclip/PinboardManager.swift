@@ -75,4 +75,17 @@ class PinboardManager: ObservableObject {
     func getItems(for pinboard: Pinboard, from allItems: [ClipboardItem]) -> [ClipboardItem] {
         return allItems.filter { pinboard.itemIds.contains($0.id) }
     }
+
+    // MARK: - Aggregate Helpers
+
+    var totalPinnedItemCount: Int {
+        pinboards.reduce(0) { $0 + $1.itemIds.count }
+    }
+
+    func clearAllPinboards() {
+        for i in pinboards.indices {
+            pinboards[i].itemIds.removeAll()
+        }
+        savePinboards()
+    }
 }

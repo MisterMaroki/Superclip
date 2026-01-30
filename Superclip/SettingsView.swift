@@ -4,6 +4,7 @@
 //
 
 import SwiftUI
+import UniformTypeIdentifiers
 
 // MARK: - Settings Sections
 
@@ -11,6 +12,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     case general = "General"
     case appearance = "Appearance"
     case shortcuts = "Shortcuts"
+    case privacy = "Privacy"
     case storage = "Storage"
     case about = "About"
 
@@ -21,6 +23,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .general: return "gearshape.fill"
         case .appearance: return "paintbrush.fill"
         case .shortcuts: return "keyboard.fill"
+        case .privacy: return "hand.raised.fill"
         case .storage: return "internaldrive.fill"
         case .about: return "info.circle.fill"
         }
@@ -31,6 +34,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .general: return .gray
         case .appearance: return .purple
         case .shortcuts: return .orange
+        case .privacy: return .red
         case .storage: return .blue
         case .about: return .green
         }
@@ -41,6 +45,9 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 
 struct SettingsView: View {
     var onClose: () -> Void
+    @ObservedObject var settings: SettingsManager
+    @ObservedObject var clipboardManager: ClipboardManager
+    @ObservedObject var pinboardManager: PinboardManager
 
     @State private var selectedSection: SettingsSection = .general
 
@@ -127,13 +134,19 @@ struct SettingsView: View {
     var detailPane: some View {
         switch selectedSection {
         case .general:
-            GeneralSettingsPane()
+            GeneralSettingsPane(settings: settings)
         case .appearance:
-            AppearanceSettingsPane()
+            AppearanceSettingsPane(settings: settings)
         case .shortcuts:
             ShortcutsSettingsPane()
+        case .privacy:
+            PrivacySettingsPane(settings: settings)
         case .storage:
-            StorageSettingsPane()
+            StorageSettingsPane(
+                settings: settings,
+                clipboardManager: clipboardManager,
+                pinboardManager: pinboardManager
+            )
         case .about:
             AboutSettingsPane()
         }
@@ -214,12 +227,12 @@ struct SettingsGroupBox<Content: View>: View {
 struct SettingsToggleRow: View {
     let title: String
     let subtitle: String?
-    @State var isOn: Bool = false
+    @Binding var isOn: Bool
 
-    init(title: String, subtitle: String? = nil, isOn: Bool = false) {
+    init(title: String, subtitle: String? = nil, isOn: Binding<Bool>) {
         self.title = title
         self.subtitle = subtitle
-        self._isOn = State(initialValue: isOn)
+        self._isOn = isOn
     }
 
     var body: some View {
@@ -250,12 +263,12 @@ struct SettingsToggleRow: View {
 struct SettingsPickerRow<T: Hashable & CustomStringConvertible>: View {
     let title: String
     let options: [T]
-    @State var selection: T
+    @Binding var selection: T
 
-    init(title: String, options: [T], selection: T) {
+    init(title: String, options: [T], selection: Binding<T>) {
         self.title = title
         self.options = options
-        self._selection = State(initialValue: selection)
+        self._selection = selection
     }
 
     var body: some View {
@@ -388,6 +401,8 @@ struct SettingsDivider: View {
 // MARK: - General Settings Pane
 
 struct GeneralSettingsPane: View {
+    @ObservedObject var settings: SettingsManager
+
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 20) {
@@ -401,13 +416,7 @@ struct GeneralSettingsPane: View {
                     SettingsToggleRow(
                         title: "Launch at login",
                         subtitle: "Start Superclip when you log in",
-                        isOn: true
-                    )
-                    SettingsDivider()
-                    SettingsToggleRow(
-                        title: "Show in menu bar",
-                        subtitle: "Display Superclip icon in the menu bar",
-                        isOn: true
+                        isOn: $settings.launchAtLogin
                     )
                 }
 
@@ -415,19 +424,19 @@ struct GeneralSettingsPane: View {
                     SettingsToggleRow(
                         title: "Monitor clipboard",
                         subtitle: "Automatically capture clipboard changes",
-                        isOn: true
+                        isOn: $settings.monitorClipboard
                     )
                     SettingsDivider()
                     SettingsToggleRow(
                         title: "Deduplicate items",
                         subtitle: "Avoid saving duplicate clipboard entries",
-                        isOn: true
+                        isOn: $settings.deduplicateItems
                     )
                     SettingsDivider()
                     SettingsToggleRow(
                         title: "Detect links",
                         subtitle: "Fetch metadata for copied URLs",
-                        isOn: true
+                        isOn: $settings.detectLinks
                     )
                 }
 
@@ -435,18 +444,12 @@ struct GeneralSettingsPane: View {
                     SettingsToggleRow(
                         title: "Paste after selecting",
                         subtitle: "Automatically paste when selecting an item",
-                        isOn: true
-                    )
-                    SettingsDivider()
-                    SettingsToggleRow(
-                        title: "Close after pasting",
-                        subtitle: "Dismiss the window after pasting",
-                        isOn: true
+                        isOn: $settings.pasteAfterSelecting
                     )
                     SettingsDivider()
                     SettingsToggleRow(
                         title: "Play sound effects",
-                        isOn: false
+                        isOn: $settings.playSoundEffects
                     )
                 }
             }
@@ -458,7 +461,7 @@ struct GeneralSettingsPane: View {
 // MARK: - Appearance Settings Pane
 
 struct AppearanceSettingsPane: View {
-    @State private var selectedTheme = "System"
+    @ObservedObject var settings: SettingsManager
     private let themes = ["System", "Light", "Dark"]
 
     var body: some View {
@@ -480,15 +483,15 @@ struct AppearanceSettingsPane: View {
                         HStack(spacing: 0) {
                             ForEach(themes, id: \.self) { theme in
                                 Button {
-                                    selectedTheme = theme
+                                    settings.theme = theme
                                 } label: {
                                     Text(theme)
-                                        .font(.system(size: 12, weight: selectedTheme == theme ? .medium : .regular))
-                                        .foregroundStyle(.white.opacity(selectedTheme == theme ? 1.0 : 0.5))
+                                        .font(.system(size: 12, weight: settings.theme == theme ? .medium : .regular))
+                                        .foregroundStyle(.white.opacity(settings.theme == theme ? 1.0 : 0.5))
                                         .padding(.horizontal, 12)
                                         .padding(.vertical, 5)
                                         .background(
-                                            selectedTheme == theme ? Color.white.opacity(0.15) : Color.clear
+                                            settings.theme == theme ? Color.white.opacity(0.15) : Color.clear
                                         )
                                 }
                                 .buttonStyle(.plain)
@@ -509,19 +512,19 @@ struct AppearanceSettingsPane: View {
                     SettingsToggleRow(
                         title: "Show item count",
                         subtitle: "Display number of items in the header",
-                        isOn: true
+                        isOn: $settings.showItemCount
                     )
                     SettingsDivider()
                     SettingsToggleRow(
                         title: "Show source app icons",
                         subtitle: "Display which app copied the item",
-                        isOn: true
+                        isOn: $settings.showSourceAppIcons
                     )
                     SettingsDivider()
                     SettingsToggleRow(
                         title: "Show timestamps",
                         subtitle: "Display when items were copied",
-                        isOn: true
+                        isOn: $settings.showTimestamps
                     )
                 }
 
@@ -529,13 +532,13 @@ struct AppearanceSettingsPane: View {
                     SettingsToggleRow(
                         title: "Show link previews",
                         subtitle: "Fetch and display thumbnails for URLs",
-                        isOn: true
+                        isOn: $settings.showLinkPreviews
                     )
                     SettingsDivider()
                     SettingsToggleRow(
                         title: "Syntax highlighting",
                         subtitle: "Highlight code snippets in preview",
-                        isOn: true
+                        isOn: $settings.syntaxHighlighting
                     )
                 }
             }
@@ -586,9 +589,337 @@ struct ShortcutsSettingsPane: View {
     }
 }
 
+// MARK: - Privacy Settings Pane
+
+struct PrivacySettingsPane: View {
+    @ObservedObject var settings: SettingsManager
+
+    var body: some View {
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 20) {
+                Text("Privacy")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.bottom, 4)
+
+                SettingsGroupBox(title: "Content Filtering") {
+                    SettingsToggleRow(
+                        title: "Ignore confidential content",
+                        subtitle: "Do not save passwords and sensitive data when detected",
+                        isOn: $settings.ignoreConfidentialContent
+                    )
+                    SettingsDivider()
+                    SettingsToggleRow(
+                        title: "Ignore transient content",
+                        subtitle: "Do not save temporary data generated by other apps",
+                        isOn: $settings.ignoreTransientContent
+                    )
+                }
+
+                IgnoredAppsSection(settings: settings)
+            }
+            .padding(24)
+        }
+    }
+}
+
+// MARK: - Ignored Apps Section
+
+struct IgnoredAppInfo: Identifiable {
+    let id: String // bundle identifier
+    let name: String
+    let icon: NSImage?
+}
+
+struct IgnoredAppsSection: View {
+    @ObservedObject var settings: SettingsManager
+    @State private var selectedAppID: String?
+    @State private var showingAppPicker = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("IGNORED APPLICATIONS")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.white.opacity(0.5))
+                .tracking(0.5)
+
+            Text("Do not save content copied from the applications below.")
+                .font(.system(size: 12))
+                .foregroundStyle(.white.opacity(0.4))
+
+            VStack(spacing: 0) {
+                appListContent
+
+                SettingsDivider()
+
+                appListToolbar
+            }
+            .background(Color.white.opacity(0.06))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Color.white.opacity(0.08), lineWidth: 1)
+            )
+        }
+        .popover(isPresented: $showingAppPicker, arrowEdge: .bottom) {
+            InstalledAppPickerView(settings: settings, isPresented: $showingAppPicker)
+        }
+    }
+
+    @ViewBuilder
+    private var appListContent: some View {
+        let apps = resolveApps()
+        if apps.isEmpty {
+            emptyState
+        } else {
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: 0) {
+                    ForEach(apps) { app in
+                        appRow(app)
+                        if app.id != apps.last?.id {
+                            SettingsDivider()
+                        }
+                    }
+                }
+            }
+            .frame(maxHeight: 180)
+        }
+    }
+
+    private func resolveApps() -> [IgnoredAppInfo] {
+        settings.ignoredAppBundleIDs.map { bundleID in
+            guard let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
+                return IgnoredAppInfo(id: bundleID, name: bundleID, icon: nil)
+            }
+            let name = Bundle(url: appURL)?
+                .object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
+                ?? Bundle(url: appURL)?
+                    .object(forInfoDictionaryKey: "CFBundleName") as? String
+                ?? appURL.deletingPathExtension().lastPathComponent
+            let icon = NSWorkspace.shared.icon(forFile: appURL.path)
+            return IgnoredAppInfo(id: bundleID, name: name, icon: icon)
+        }
+    }
+
+    private var emptyState: some View {
+        HStack {
+            Spacer()
+            VStack(spacing: 6) {
+                Image(systemName: "app.dashed")
+                    .font(.system(size: 24))
+                    .foregroundStyle(.white.opacity(0.2))
+                Text("No ignored applications")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.white.opacity(0.3))
+            }
+            .padding(.vertical, 20)
+            Spacer()
+        }
+    }
+
+    private func appRow(_ app: IgnoredAppInfo) -> some View {
+        HStack(spacing: 10) {
+            appIcon(app)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(app.name)
+                    .font(.system(size: 13))
+                    .foregroundStyle(.white.opacity(0.9))
+                Text(app.id)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.white.opacity(0.3))
+            }
+
+            Spacer()
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(selectedAppID == app.id ? Color.accentColor.opacity(0.3) : Color.clear)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            selectedAppID = selectedAppID == app.id ? nil : app.id
+        }
+    }
+
+    @ViewBuilder
+    private func appIcon(_ app: IgnoredAppInfo) -> some View {
+        if let icon = app.icon {
+            Image(nsImage: icon)
+                .resizable()
+                .frame(width: 24, height: 24)
+                .cornerRadius(5)
+        } else {
+            Image(systemName: "app.fill")
+                .font(.system(size: 18))
+                .foregroundStyle(.white.opacity(0.4))
+                .frame(width: 24, height: 24)
+        }
+    }
+
+    private var appListToolbar: some View {
+        HStack(spacing: 0) {
+            Button {
+                showingAppPicker = true
+            } label: {
+                Image(systemName: "plus")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.7))
+                    .frame(width: 36, height: 28)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            Divider()
+                .frame(height: 18)
+                .background(Color.white.opacity(0.1))
+
+            Button {
+                if let id = selectedAppID {
+                    settings.removeIgnoredApp(id)
+                    selectedAppID = nil
+                }
+            } label: {
+                let opacity: Double = selectedAppID != nil ? 0.7 : 0.25
+                Image(systemName: "minus")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.white.opacity(opacity))
+                    .frame(width: 36, height: 28)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(selectedAppID == nil)
+
+            Spacer()
+        }
+        .padding(.horizontal, 2)
+        .padding(.vertical, 1)
+    }
+}
+
+// MARK: - Installed App Picker (popover)
+
+private struct InstalledAppPickerView: View {
+    @ObservedObject var settings: SettingsManager
+    @Binding var isPresented: Bool
+    @State private var searchText = ""
+    @State private var installedApps: [IgnoredAppInfo] = []
+
+    var body: some View {
+        VStack(spacing: 0) {
+            searchField
+            Divider()
+            appList
+        }
+        .frame(width: 280, height: 320)
+        .onAppear { loadInstalledApps() }
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+            TextField("Search applications", text: $searchText)
+                .textFieldStyle(.plain)
+                .font(.system(size: 13))
+        }
+        .padding(8)
+    }
+
+    private var filteredApps: [IgnoredAppInfo] {
+        let excluded = Set(settings.ignoredAppBundleIDs)
+        let available = installedApps.filter { !excluded.contains($0.id) }
+        if searchText.isEmpty { return available }
+        let query = searchText.lowercased()
+        return available.filter {
+            $0.name.lowercased().contains(query) || $0.id.lowercased().contains(query)
+        }
+    }
+
+    private var appList: some View {
+        ScrollView(.vertical) {
+            LazyVStack(spacing: 0) {
+                ForEach(filteredApps) { app in
+                    pickerRow(app)
+                }
+            }
+        }
+    }
+
+    private func pickerRow(_ app: IgnoredAppInfo) -> some View {
+        Button {
+            settings.addIgnoredApp(app.id)
+            isPresented = false
+        } label: {
+            HStack(spacing: 8) {
+                if let icon = app.icon {
+                    Image(nsImage: icon)
+                        .resizable()
+                        .frame(width: 20, height: 20)
+                        .cornerRadius(4)
+                } else {
+                    Image(systemName: "app.fill")
+                        .font(.system(size: 14))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 20, height: 20)
+                }
+
+                Text(app.name)
+                    .font(.system(size: 12))
+                    .lineLimit(1)
+
+                Spacer()
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func loadInstalledApps() {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let fm = FileManager.default
+            var apps: [IgnoredAppInfo] = []
+            let dirs = ["/Applications", "/System/Applications"]
+            for dir in dirs {
+                guard let urls = try? fm.contentsOfDirectory(
+                    at: URL(fileURLWithPath: dir),
+                    includingPropertiesForKeys: nil,
+                    options: [.skipsHiddenFiles]
+                ) else { continue }
+                for url in urls where url.pathExtension == "app" {
+                    guard let bundle = Bundle(url: url),
+                          let bundleID = bundle.bundleIdentifier else { continue }
+                    let name = bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
+                        ?? bundle.object(forInfoDictionaryKey: "CFBundleName") as? String
+                        ?? url.deletingPathExtension().lastPathComponent
+                    let icon = NSWorkspace.shared.icon(forFile: url.path)
+                    apps.append(IgnoredAppInfo(id: bundleID, name: name, icon: icon))
+                }
+            }
+            apps.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+            DispatchQueue.main.async {
+                installedApps = apps
+            }
+        }
+    }
+}
+
 // MARK: - Storage Settings Pane
 
 struct StorageSettingsPane: View {
+    @ObservedObject var settings: SettingsManager
+    @ObservedObject var clipboardManager: ClipboardManager
+    @ObservedObject var pinboardManager: PinboardManager
+
+    @State private var showClearHistoryAlert = false
+    @State private var showClearPinboardsAlert = false
+    @State private var showExportAlert = false
+    @State private var showImportAlert = false
+
+    private let historySizeOptions = [25, 50, 100, 200, 500]
+
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 20) {
@@ -598,11 +929,15 @@ struct StorageSettingsPane: View {
                     .padding(.bottom, 4)
 
                 SettingsGroupBox(title: "History") {
-                    SettingsInfoRow(title: "History size", value: "100 items")
+                    SettingsPickerRow(
+                        title: "Max history size",
+                        options: historySizeOptions,
+                        selection: $settings.maxHistorySize
+                    )
                     SettingsDivider()
-                    SettingsInfoRow(title: "Items stored", value: "0 items")
+                    SettingsInfoRow(title: "Items stored", value: "\(clipboardManager.history.count) items")
                     SettingsDivider()
-                    SettingsInfoRow(title: "Pinned items", value: "0 items")
+                    SettingsInfoRow(title: "Pinned items", value: "\(pinboardManager.totalPinnedItemCount) items")
                 }
 
                 SettingsGroupBox(title: "Data") {
@@ -610,28 +945,28 @@ struct StorageSettingsPane: View {
                         title: "Clear clipboard history",
                         subtitle: "Remove all items from history",
                         buttonTitle: "Clear",
-                        action: {}
+                        action: { showClearHistoryAlert = true }
                     )
                     SettingsDivider()
                     SettingsButtonRow(
                         title: "Clear pinboards",
                         subtitle: "Remove all pinned items",
                         buttonTitle: "Clear",
-                        action: {}
+                        action: { showClearPinboardsAlert = true }
                     )
                     SettingsDivider()
                     SettingsButtonRow(
                         title: "Export data",
                         subtitle: "Export history and pins to a file",
                         buttonTitle: "Export",
-                        action: {}
+                        action: { showExportAlert = true }
                     )
                     SettingsDivider()
                     SettingsButtonRow(
                         title: "Import data",
                         subtitle: "Restore from an exported file",
                         buttonTitle: "Import",
-                        action: {}
+                        action: { showImportAlert = true }
                     )
                 }
 
@@ -639,17 +974,43 @@ struct StorageSettingsPane: View {
                     SettingsToggleRow(
                         title: "Exclude sensitive apps",
                         subtitle: "Don't capture from password managers",
-                        isOn: true
+                        isOn: $settings.excludeSensitiveApps
                     )
                     SettingsDivider()
                     SettingsToggleRow(
                         title: "Clear on quit",
                         subtitle: "Erase history when Superclip quits",
-                        isOn: false
+                        isOn: $settings.clearOnQuit
                     )
                 }
             }
             .padding(24)
+        }
+        .alert("Clear History", isPresented: $showClearHistoryAlert) {
+            Button("Cancel", role: .cancel) {}
+            Button("Clear", role: .destructive) {
+                clipboardManager.clearHistory()
+            }
+        } message: {
+            Text("This will remove all \(clipboardManager.history.count) items from your clipboard history. This cannot be undone.")
+        }
+        .alert("Clear Pinboards", isPresented: $showClearPinboardsAlert) {
+            Button("Cancel", role: .cancel) {}
+            Button("Clear", role: .destructive) {
+                pinboardManager.clearAllPinboards()
+            }
+        } message: {
+            Text("This will remove all pinned items from every pinboard. This cannot be undone.")
+        }
+        .alert("Export Not Available", isPresented: $showExportAlert) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Export functionality is coming in a future update.")
+        }
+        .alert("Import Not Available", isPresented: $showImportAlert) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Import functionality is coming in a future update.")
         }
     }
 }
@@ -657,6 +1018,8 @@ struct StorageSettingsPane: View {
 // MARK: - About Settings Pane
 
 struct AboutSettingsPane: View {
+    @State private var showUpToDateAlert = false
+
     var body: some View {
         VStack(spacing: 0) {
             Spacer()
@@ -701,19 +1064,28 @@ struct AboutSettingsPane: View {
                     SettingsButtonRow(
                         title: "Check for updates",
                         buttonTitle: "Check",
-                        action: {}
+                        action: { showUpToDateAlert = true }
                     )
                     SettingsDivider()
                     SettingsButtonRow(
                         title: "Rate on App Store",
                         buttonTitle: "Rate",
-                        action: {}
+                        action: {
+                            // Replace with actual App Store ID when available
+                            if let url = URL(string: "macappstore://apps.apple.com/app/id0000000000?action=write-review") {
+                                NSWorkspace.shared.open(url)
+                            }
+                        }
                     )
                     SettingsDivider()
                     SettingsButtonRow(
                         title: "Send feedback",
                         buttonTitle: "Email",
-                        action: {}
+                        action: {
+                            if let url = URL(string: "mailto:feedback@superclip.app?subject=Superclip%20Feedback") {
+                                NSWorkspace.shared.open(url)
+                            }
+                        }
                     )
                 }
             }
@@ -742,6 +1114,11 @@ struct AboutSettingsPane: View {
             }
             .buttonStyle(.plain)
             .padding(.bottom, 24)
+        }
+        .alert("Up to Date", isPresented: $showUpToDateAlert) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("You're running the latest version of Superclip.")
         }
     }
 

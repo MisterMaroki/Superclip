@@ -26,6 +26,7 @@ struct ContentView: View {
   @ObservedObject var clipboardManager: ClipboardManager
   @ObservedObject var navigationState: NavigationState
   @ObservedObject var pinboardManager: PinboardManager
+  @ObservedObject var settings: SettingsManager
   var dismiss: (Bool) -> Void  // Bool indicates whether to paste after dismiss
   var onPreview: ((ClipboardItem, Int, CGFloat) -> Void)?  // Item, index, and card center X
   var onEditingPinboardChanged: ((Bool) -> Void)?  // Called when editing state changes
@@ -163,9 +164,10 @@ struct ContentView: View {
     .onChange(of: navigationState.shouldSelectAndDismiss) { shouldSelect in
       if shouldSelect, let item = selectedItem {
         clipboardManager.copyToClipboard(item)
+        settings.playSound()
         navigationState.shouldSelectAndDismiss = false
         DispatchQueue.main.asyncAfter(deadline: .now()) {
-          dismiss(true)
+          dismiss(settings.pasteAfterSelecting)
         }
       }
     }
@@ -513,6 +515,7 @@ struct ContentView: View {
             return false
           }(),
           isCompact: showSearchField,
+          itemCount: settings.showItemCount ? clipboardManager.history.count : nil,
           onSelect: {
             showSearchField = false
             searchText = ""
@@ -667,11 +670,16 @@ struct ContentView: View {
                   quickAccessNumber: navigationState.isCommandHeld && index < 10
                     ? (index == 9 ? 0 : index + 1) : nil,
                   holdProgress: navigationState.holdProgress,
+                  showSourceAppIcons: settings.showSourceAppIcons,
+                  showTimestamps: settings.showTimestamps,
+                  showLinkPreviews: settings.showLinkPreviews,
+                  syntaxHighlighting: settings.syntaxHighlighting,
                   onSelect: {
                     navigationState.selectedIndex = index
                     clipboardManager.copyToClipboard(item)
+                    settings.playSound()
                     DispatchQueue.main.asyncAfter(deadline: .now()) {
-                      dismiss(true)
+                      dismiss(settings.pasteAfterSelecting)
                     }
                   },
                   onDragStart: {
@@ -771,6 +779,10 @@ struct ClipboardItemCard: View {
   let isSelected: Bool
   let quickAccessNumber: Int?  // 1-9 for first 9, 0 for 10th, nil if not in first 10 or command not held
   let holdProgress: Double  // 0...1 for hold-to-edit progress
+  var showSourceAppIcons: Bool = true
+  var showTimestamps: Bool = true
+  var showLinkPreviews: Bool = true
+  var syntaxHighlighting: Bool = true
   let onSelect: () -> Void
   var onDragStart: (() -> Void)? = nil
   var onDragEnd: (() -> Void)? = nil
@@ -793,15 +805,17 @@ struct ClipboardItemCard: View {
           .font(.system(size: 11, weight: .semibold))
           .foregroundStyle(.white.opacity(0.9))
 
-        // Time ago
-        Text(item.timeAgo)
-          .font(.system(size: 10))
-          .foregroundStyle(.white.opacity(0.6))
+        // Time ago (conditional)
+        if showTimestamps {
+          Text(item.timeAgo)
+            .font(.system(size: 10))
+            .foregroundStyle(.white.opacity(0.6))
+        }
 
         Spacer()
 
-        // Source app icon on right
-        if let icon = item.sourceApp?.icon {
+        // Source app icon on right (conditional)
+        if showSourceAppIcons, let icon = item.sourceApp?.icon {
           Image(nsImage: icon)
             .resizable()
             .frame(width: 18, height: 18)
@@ -1013,6 +1027,11 @@ struct ClipboardItemCard: View {
         RichTextCardPreview(attributedString: attributedString)
           .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
           .padding(10)
+      } else if syntaxHighlighting, let highlighted = SyntaxHighlighter.highlight(item.content) {
+        // Display syntax-highlighted code preview
+        RichTextCardPreview(attributedString: highlighted)
+          .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+          .padding(10)
       } else {
         Text(item.content)
           .font(.system(size: 12))
@@ -1172,7 +1191,7 @@ struct ClipboardItemCard: View {
   var urlContentView: some View {
     VStack(alignment: .leading, spacing: 0) {
       // Link metadata image or placeholder
-      if let metadata = item.linkMetadata, let image = metadata.image {
+      if showLinkPreviews, let metadata = item.linkMetadata, let image = metadata.image {
         Image(nsImage: image)
           .resizable()
           .aspectRatio(contentMode: .fit)
@@ -1475,6 +1494,7 @@ struct HeaderIconButton: View {
 struct ClipboardTabButton: View {
   let isSelected: Bool
   let isCompact: Bool
+  var itemCount: Int? = nil
   let onSelect: () -> Void
 
   @State private var isHovered = false
@@ -1482,14 +1502,22 @@ struct ClipboardTabButton: View {
   var body: some View {
     Button(action: onSelect) {
       if isCompact {
-        Image(systemName: "sparkle.text.clipboard")
-          .font(.system(size: 11))
-          .foregroundStyle(.white)
-          .frame(width: 24, height: 24)
-          .background(
-            isSelected ? Color(white: 0.3) : (isHovered ? Color.white.opacity(0.1) : Color.clear)
-          )
-          .cornerRadius(6)
+        HStack(spacing: 4) {
+          Image(systemName: "sparkle.text.clipboard")
+            .font(.system(size: 11))
+            .foregroundStyle(.white)
+          if let count = itemCount {
+            Text("\(count)")
+              .font(.system(size: 10, weight: .medium, design: .rounded))
+              .foregroundStyle(.white.opacity(0.6))
+          }
+        }
+        .frame(minWidth: 24, minHeight: 24)
+        .padding(.horizontal, 4)
+        .background(
+          isSelected ? Color(white: 0.3) : (isHovered ? Color.white.opacity(0.1) : Color.clear)
+        )
+        .cornerRadius(6)
       } else {
         HStack(spacing: 6) {
           Image(systemName: "sparkle.text.clipboard")
@@ -1498,6 +1526,15 @@ struct ClipboardTabButton: View {
           Text("Clipboard")
             .font(.system(size: 12, weight: .medium))
             .foregroundStyle(.white)
+          if let count = itemCount {
+            Text("\(count)")
+              .font(.system(size: 10, weight: .medium, design: .rounded))
+              .foregroundStyle(.white.opacity(0.5))
+              .padding(.horizontal, 5)
+              .padding(.vertical, 1)
+              .background(Color.white.opacity(0.1))
+              .cornerRadius(4)
+          }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)

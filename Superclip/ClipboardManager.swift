@@ -85,34 +85,67 @@ struct DeletedItemRecord {
 
 class ClipboardManager: ObservableObject {
     @Published var history: [ClipboardItem] = []
-    
+
     private var pasteboard: NSPasteboard
     private var changeCount: Int
     private var timer: Timer?
-    private let maxHistorySize: Int = 100
-    
+    let settings: SettingsManager
+    private var cancellables = Set<AnyCancellable>()
+
     // Undo support - keep deleted items for a short period
     private var deletedItems: [DeletedItemRecord] = []
     private let undoTimeout: TimeInterval = 30.0 // 30 seconds to undo
     private var undoCleanupTimer: Timer?
-    
-    init() {
+
+    init(settings: SettingsManager) {
+        self.settings = settings
         pasteboard = NSPasteboard.general
         changeCount = pasteboard.changeCount
-        
-        // Start monitoring clipboard changes
-        startMonitoring()
-        
+
+        // Start monitoring clipboard changes (if enabled)
+        if settings.monitorClipboard {
+            startMonitoring()
+        }
+
         // Start undo cleanup timer
         startUndoCleanupTimer()
-        
+
         // Load initial clipboard content
         loadCurrentClipboard()
+
+        // Observe settings changes
+        observeSettings()
     }
     
     deinit {
         stopMonitoring()
         undoCleanupTimer?.invalidate()
+        cancellables.removeAll()
+    }
+
+    private func observeSettings() {
+        settings.$monitorClipboard
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] enabled in
+                if enabled {
+                    self?.startMonitoring()
+                } else {
+                    self?.stopMonitoring()
+                }
+            }
+            .store(in: &cancellables)
+
+        settings.$maxHistorySize
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] newSize in
+                guard let self = self else { return }
+                if self.history.count > newSize {
+                    self.history = Array(self.history.prefix(newSize))
+                }
+            }
+            .store(in: &cancellables)
     }
     
     private func startUndoCleanupTimer() {
@@ -177,7 +210,29 @@ class ClipboardManager: ObservableObject {
     private func loadCurrentClipboard() {
         let types = pasteboard.types ?? []
         let sourceApp = getFrontmostApp()
-        
+
+        // Check if the source app should be excluded
+        if settings.shouldExcludeApp(bundleIdentifier: sourceApp?.bundleIdentifier) {
+            return
+        }
+
+        // Check if the source app is in the user's ignored list
+        if settings.isAppIgnored(bundleIdentifier: sourceApp?.bundleIdentifier) {
+            return
+        }
+
+        // Check for confidential content (e.g. password manager entries)
+        if settings.ignoreConfidentialContent,
+           types.contains(NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")) {
+            return
+        }
+
+        // Check for transient content (e.g. auto-generated temporary data)
+        if settings.ignoreTransientContent,
+           types.contains(NSPasteboard.PasteboardType("org.nspasteboard.TransientType")) {
+            return
+        }
+
         // Check for images first (PNG, TIFF, etc.) - before files, since copied images
         // often have both image data and a file URL reference
         if types.contains(.png) || types.contains(.tiff) {
@@ -261,15 +316,16 @@ class ClipboardManager: ObservableObject {
     
     private func addToHistory(item: ClipboardItem) {
         let identifier = item.uniqueIdentifier
-        
+
         // Check if already at front
         if let firstItem = history.first, firstItem.uniqueIdentifier == identifier {
             return
         }
-        
+
         DispatchQueue.main.async {
-            // Check if content already exists in history
-            if let existingIndex = self.history.firstIndex(where: { $0.uniqueIdentifier == identifier }) {
+            // Check if content already exists in history (dedup logic)
+            if self.settings.deduplicateItems,
+               let existingIndex = self.history.firstIndex(where: { $0.uniqueIdentifier == identifier }) {
                 // Remove existing item and move to front with updated timestamp
                 let existingItem = self.history.remove(at: existingIndex)
                 let updatedItem = ClipboardItem(
@@ -287,15 +343,16 @@ class ClipboardManager: ObservableObject {
             } else {
                 // New item - insert at beginning
                 self.history.insert(item, at: 0)
-                
-                // If it's a URL, fetch link metadata
-                if item.type == .url {
+
+                // If it's a URL, fetch link metadata (if enabled)
+                if item.type == .url && self.settings.detectLinks {
                     self.fetchLinkMetadata(for: item)
                 }
-                
+
                 // Limit history size
-                if self.history.count > self.maxHistorySize {
-                    self.history = Array(self.history.prefix(self.maxHistorySize))
+                let maxSize = self.settings.maxHistorySize
+                if self.history.count > maxSize {
+                    self.history = Array(self.history.prefix(maxSize))
                 }
             }
         }

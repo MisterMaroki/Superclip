@@ -9,14 +9,17 @@ import SwiftUI
 class ContentPanel: NSPanel {
   weak var appDelegate: AppDelegate?
   let clipboardManager: ClipboardManager
-  let pinboardManager = PinboardManager()
+  let pinboardManager: PinboardManager
+  let settings: SettingsManager
   let navigationState = NavigationState()
   var isEditingPinboard: Bool = false
   var isSearching: Bool = false
   var isSearchFieldFocused: Bool = false
 
-  init(clipboardManager: ClipboardManager) {
+  init(clipboardManager: ClipboardManager, pinboardManager: PinboardManager, settings: SettingsManager) {
     self.clipboardManager = clipboardManager
+    self.pinboardManager = pinboardManager
+    self.settings = settings
 
     super.init(
       contentRect: .zero,
@@ -55,6 +58,7 @@ class ContentPanel: NSPanel {
       clipboardManager: clipboardManager,
       navigationState: navigationState,
       pinboardManager: pinboardManager,
+      settings: settings,
       dismiss: { shouldPaste in
         self.appDelegate?.closeReviewWindow(andPaste: shouldPaste)
       },

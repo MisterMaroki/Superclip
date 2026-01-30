@@ -8,8 +8,15 @@ import SwiftUI
 
 class SettingsPanel: NSPanel {
     weak var appDelegate: AppDelegate?
+    let settings: SettingsManager
+    let clipboardManager: ClipboardManager
+    let pinboardManager: PinboardManager
 
-    init() {
+    init(settings: SettingsManager, clipboardManager: ClipboardManager, pinboardManager: PinboardManager) {
+        self.settings = settings
+        self.clipboardManager = clipboardManager
+        self.pinboardManager = pinboardManager
+
         super.init(
             contentRect: NSRect(x: 0, y: 0, width: 680, height: 480),
             styleMask: [.borderless, .nonactivatingPanel, .titled],
@@ -56,7 +63,10 @@ class SettingsPanel: NSPanel {
         let settingsView = SettingsView(
             onClose: { [weak self] in
                 self?.appDelegate?.closeSettingsWindow()
-            }
+            },
+            settings: settings,
+            clipboardManager: clipboardManager,
+            pinboardManager: pinboardManager
         )
 
         let hostingView = NSHostingView(rootView: settingsView)

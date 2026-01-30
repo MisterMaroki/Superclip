@@ -23,7 +23,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   var clickMonitor: Any?
   var pasteStackKeyMonitor: Any?
   var previewClickMonitor: Any?
-  let clipboardManager = ClipboardManager()
+  let settingsManager = SettingsManager()
+  let pinboardManager = PinboardManager()
+  lazy var clipboardManager = ClipboardManager(settings: settingsManager)
   lazy var pasteStackManager = PasteStackManager(clipboardManager: clipboardManager)
   private var shouldPasteAfterClose = false
 
@@ -37,9 +39,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   func applicationDidFinishLaunching(_ notification: Notification) {
     NSApp.setActivationPolicy(.accessory)
 
+    settingsManager.applyTheme()
+
     setupHotkey()
     setupPasteStackHotkey()
     setupOCRHotkey()
+  }
+
+  func applicationWillTerminate(_ notification: Notification) {
+    if settingsManager.clearOnQuit {
+      clipboardManager.clearHistory()
+    }
   }
 
   func applicationDidResignActive(_ notification: Notification) {
@@ -81,7 +91,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   func showContentWindow() {
     self.closeReviewWindow(andPaste: false)
 
-    let contentPanel = ContentPanel(clipboardManager: clipboardManager)
+    let contentPanel = ContentPanel(
+      clipboardManager: clipboardManager,
+      pinboardManager: pinboardManager,
+      settings: settingsManager
+    )
     contentPanel.appDelegate = self
 
     contentWindow = contentPanel
@@ -633,7 +647,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     closePreviewWindow()
 
-    let pinboardManager = (contentWindow as? ContentPanel)?.pinboardManager ?? PinboardManager()
     let previewPanel = PreviewPanel(
       item: item, clipboardManager: clipboardManager, pinboardManager: pinboardManager,
       arrowTargetX: arrowTargetX)
@@ -814,7 +827,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
       return
     }
 
-    let settingsPanel = SettingsPanel()
+    let settingsPanel = SettingsPanel(
+      settings: settingsManager,
+      clipboardManager: clipboardManager,
+      pinboardManager: pinboardManager
+    )
     settingsPanel.appDelegate = self
     settingsWindow = settingsPanel
     settingsPanel.makeKeyAndOrderFront(nil)

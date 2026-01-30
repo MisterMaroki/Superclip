@@ -1,0 +1,248 @@
+//
+//  SettingsManager.swift
+//  Superclip
+//
+
+import AppKit
+import Combine
+import ServiceManagement
+
+class SettingsManager: ObservableObject {
+
+    // MARK: - Startup
+
+    @Published var launchAtLogin: Bool {
+        didSet {
+            defaults.set(launchAtLogin, forKey: Keys.launchAtLogin)
+            updateLaunchAtLogin()
+        }
+    }
+
+    // MARK: - Clipboard
+
+    @Published var monitorClipboard: Bool {
+        didSet { defaults.set(monitorClipboard, forKey: Keys.monitorClipboard) }
+    }
+
+    @Published var deduplicateItems: Bool {
+        didSet { defaults.set(deduplicateItems, forKey: Keys.deduplicateItems) }
+    }
+
+    @Published var detectLinks: Bool {
+        didSet { defaults.set(detectLinks, forKey: Keys.detectLinks) }
+    }
+
+    // MARK: - Behavior
+
+    @Published var pasteAfterSelecting: Bool {
+        didSet { defaults.set(pasteAfterSelecting, forKey: Keys.pasteAfterSelecting) }
+    }
+
+    @Published var playSoundEffects: Bool {
+        didSet { defaults.set(playSoundEffects, forKey: Keys.playSoundEffects) }
+    }
+
+    // MARK: - Appearance
+
+    @Published var theme: String {
+        didSet {
+            defaults.set(theme, forKey: Keys.theme)
+            applyTheme()
+        }
+    }
+
+    @Published var showSourceAppIcons: Bool {
+        didSet { defaults.set(showSourceAppIcons, forKey: Keys.showSourceAppIcons) }
+    }
+
+    @Published var showTimestamps: Bool {
+        didSet { defaults.set(showTimestamps, forKey: Keys.showTimestamps) }
+    }
+
+    @Published var showLinkPreviews: Bool {
+        didSet { defaults.set(showLinkPreviews, forKey: Keys.showLinkPreviews) }
+    }
+
+    @Published var showItemCount: Bool {
+        didSet { defaults.set(showItemCount, forKey: Keys.showItemCount) }
+    }
+
+    @Published var syntaxHighlighting: Bool {
+        didSet { defaults.set(syntaxHighlighting, forKey: Keys.syntaxHighlighting) }
+    }
+
+    // MARK: - Privacy
+
+    @Published var ignoreConfidentialContent: Bool {
+        didSet { defaults.set(ignoreConfidentialContent, forKey: Keys.ignoreConfidentialContent) }
+    }
+
+    @Published var ignoreTransientContent: Bool {
+        didSet { defaults.set(ignoreTransientContent, forKey: Keys.ignoreTransientContent) }
+    }
+
+    @Published var ignoredAppBundleIDs: [String] {
+        didSet { defaults.set(ignoredAppBundleIDs, forKey: Keys.ignoredAppBundleIDs) }
+    }
+
+    // MARK: - Storage
+
+    @Published var maxHistorySize: Int {
+        didSet { defaults.set(maxHistorySize, forKey: Keys.maxHistorySize) }
+    }
+
+    @Published var excludeSensitiveApps: Bool {
+        didSet { defaults.set(excludeSensitiveApps, forKey: Keys.excludeSensitiveApps) }
+    }
+
+    @Published var clearOnQuit: Bool {
+        didSet { defaults.set(clearOnQuit, forKey: Keys.clearOnQuit) }
+    }
+
+    // MARK: - Private
+
+    private let defaults = UserDefaults.standard
+
+    private enum Keys {
+        static let launchAtLogin = "Superclip.launchAtLogin"
+        static let monitorClipboard = "Superclip.monitorClipboard"
+        static let deduplicateItems = "Superclip.deduplicateItems"
+        static let detectLinks = "Superclip.detectLinks"
+        static let pasteAfterSelecting = "Superclip.pasteAfterSelecting"
+        static let playSoundEffects = "Superclip.playSoundEffects"
+        static let theme = "Superclip.theme"
+        static let showSourceAppIcons = "Superclip.showSourceAppIcons"
+        static let showTimestamps = "Superclip.showTimestamps"
+        static let showLinkPreviews = "Superclip.showLinkPreviews"
+        static let showItemCount = "Superclip.showItemCount"
+        static let syntaxHighlighting = "Superclip.syntaxHighlighting"
+        static let ignoreConfidentialContent = "Superclip.ignoreConfidentialContent"
+        static let ignoreTransientContent = "Superclip.ignoreTransientContent"
+        static let ignoredAppBundleIDs = "Superclip.ignoredAppBundleIDs"
+        static let maxHistorySize = "Superclip.maxHistorySize"
+        static let excludeSensitiveApps = "Superclip.excludeSensitiveApps"
+        static let clearOnQuit = "Superclip.clearOnQuit"
+    }
+
+    // Bundle identifiers of apps whose clipboard content should be excluded
+    private static let sensitiveAppBundleIDs: Set<String> = [
+        "com.agilebits.onepassword7",
+        "com.agilebits.onepassword-osx",
+        "com.1password.1password",
+        "org.keepassxc.keepassxc",
+        "com.lastpass.LastPass",
+        "com.dashlane.DashlaneMacExtension",
+        "com.bitwarden.desktop",
+        "com.apple.keychainaccess",
+        "com.nordpass.NordPass",
+        "com.roboform.roboform",
+        "com.enpass.Enpass",
+    ]
+
+    // MARK: - Init
+
+    init() {
+        let d = UserDefaults.standard
+
+        // Register defaults for first launch
+        d.register(defaults: [
+            Keys.launchAtLogin: true,
+            Keys.monitorClipboard: true,
+            Keys.deduplicateItems: true,
+            Keys.detectLinks: true,
+            Keys.pasteAfterSelecting: true,
+            Keys.playSoundEffects: false,
+            Keys.theme: "System",
+            Keys.showSourceAppIcons: true,
+            Keys.showTimestamps: true,
+            Keys.showLinkPreviews: true,
+            Keys.showItemCount: true,
+            Keys.syntaxHighlighting: true,
+            Keys.ignoreConfidentialContent: true,
+            Keys.ignoreTransientContent: true,
+            Keys.ignoredAppBundleIDs: [String](),
+            Keys.maxHistorySize: 100,
+            Keys.excludeSensitiveApps: true,
+            Keys.clearOnQuit: false,
+        ])
+
+        self.launchAtLogin = d.bool(forKey: Keys.launchAtLogin)
+        self.monitorClipboard = d.bool(forKey: Keys.monitorClipboard)
+        self.deduplicateItems = d.bool(forKey: Keys.deduplicateItems)
+        self.detectLinks = d.bool(forKey: Keys.detectLinks)
+        self.pasteAfterSelecting = d.bool(forKey: Keys.pasteAfterSelecting)
+        self.playSoundEffects = d.bool(forKey: Keys.playSoundEffects)
+        self.theme = d.string(forKey: Keys.theme) ?? "System"
+        self.showSourceAppIcons = d.bool(forKey: Keys.showSourceAppIcons)
+        self.showTimestamps = d.bool(forKey: Keys.showTimestamps)
+        self.showLinkPreviews = d.bool(forKey: Keys.showLinkPreviews)
+        self.showItemCount = d.bool(forKey: Keys.showItemCount)
+        self.syntaxHighlighting = d.bool(forKey: Keys.syntaxHighlighting)
+        self.ignoreConfidentialContent = d.bool(forKey: Keys.ignoreConfidentialContent)
+        self.ignoreTransientContent = d.bool(forKey: Keys.ignoreTransientContent)
+        self.ignoredAppBundleIDs = d.stringArray(forKey: Keys.ignoredAppBundleIDs) ?? []
+        self.maxHistorySize = d.integer(forKey: Keys.maxHistorySize)
+        self.excludeSensitiveApps = d.bool(forKey: Keys.excludeSensitiveApps)
+        self.clearOnQuit = d.bool(forKey: Keys.clearOnQuit)
+    }
+
+    // MARK: - Theme
+
+    func applyTheme() {
+        switch theme {
+        case "Light":
+            NSApp.appearance = NSAppearance(named: .aqua)
+        case "Dark":
+            NSApp.appearance = NSAppearance(named: .darkAqua)
+        default:
+            NSApp.appearance = nil // System default
+        }
+    }
+
+    // MARK: - Launch at Login
+
+    func updateLaunchAtLogin() {
+        if #available(macOS 13.0, *) {
+            do {
+                if launchAtLogin {
+                    try SMAppService.mainApp.register()
+                } else {
+                    try SMAppService.mainApp.unregister()
+                }
+            } catch {
+                // Registration may fail if entitlement is missing; silently ignore
+            }
+        }
+    }
+
+    // MARK: - Sound Effects
+
+    func playSound() {
+        guard playSoundEffects else { return }
+        NSSound(named: "Tink")?.play()
+    }
+
+    // MARK: - Ignored Apps
+
+    func isAppIgnored(bundleIdentifier: String?) -> Bool {
+        guard let id = bundleIdentifier else { return false }
+        return ignoredAppBundleIDs.contains(id)
+    }
+
+    func addIgnoredApp(_ bundleID: String) {
+        if !ignoredAppBundleIDs.contains(bundleID) {
+            ignoredAppBundleIDs.append(bundleID)
+        }
+    }
+
+    func removeIgnoredApp(_ bundleID: String) {
+        ignoredAppBundleIDs.removeAll { $0 == bundleID }
+    }
+
+    // MARK: - Sensitive App Check
+
+    func shouldExcludeApp(bundleIdentifier: String?) -> Bool {
+        guard excludeSensitiveApps, let id = bundleIdentifier else { return false }
+        return Self.sensitiveAppBundleIDs.contains(id)
+    }
+}

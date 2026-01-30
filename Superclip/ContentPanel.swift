@@ -73,6 +73,7 @@ class ContentPanel: NSPanel {
       onSearchFocusChanged: { [weak self] isFocused in
         self?.isSearchFieldFocused = isFocused
       },
+    
       onEditItem: { [weak self] item in
         guard let self = self, let appDelegate = self.appDelegate else { return }
         let drawerFrame = self.frame
@@ -92,7 +93,9 @@ class ContentPanel: NSPanel {
         let editorY = drawerFrame.maxY + 12
         let editorFrame = NSRect(x: editorX, y: editorY, width: panelWidth, height: panelHeight)
         appDelegate.showRichTextEditorWindow(for: item, fromPreviewFrame: editorFrame)
-      }
+      },  onOpenSettings: { [weak self] in
+          self?.appDelegate?.openSettingsWindow()
+        },
     )
 
     let hostingView = NSHostingView(rootView: contentView)
@@ -177,6 +180,12 @@ extension ContentPanel: NSWindowDelegate {
       // If preview is becoming key, don't close (user clicked on preview)
       if let previewWindow = self.appDelegate?.previewWindow,
         previewWindow.isVisible && keyWindow === previewWindow
+      {
+        return
+      }
+      // If settings window is becoming key, don't close
+      if let settingsWindow = self.appDelegate?.settingsWindow,
+        settingsWindow.isVisible && keyWindow === settingsWindow
       {
         return
       }

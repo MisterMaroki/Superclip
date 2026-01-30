@@ -33,6 +33,7 @@ struct ContentView: View {
   var onSearchingChanged: ((Bool) -> Void)?  // Called when search field visibility changes
   var onSearchFocusChanged: ((Bool) -> Void)?  // Called when search field gains/loses actual focus
   var onEditItem: ((ClipboardItem) -> Void)?  // Called to open rich text editor for an item
+  var onOpenSettings: (() -> Void)?  // Called to open settings window
 
   @FocusState private var isSearchFocused: Bool
   @State private var searchText: String = ""
@@ -615,37 +616,16 @@ struct ContentView: View {
           }, helpText: "Text Sniper (Cmd+Shift+`)")
       }
 
-      // App menu (3 dots) - far right
+      // Settings button - far right
       HStack {
         Spacer()
-        Menu {
-          Button {
-            NSApp.orderFrontStandardAboutPanel(nil)
-          } label: {
-            Label("About Superclip", systemImage: "info.circle")
-          }
-
-          Button {
-            NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-          } label: {
-            Label("Settings...", systemImage: "gearshape")
-          }
-
-          Divider()
-
-          Button {
-            NSApp.terminate(nil)
-          } label: {
-            Label("Quit Superclip", systemImage: "power")
-          }
-        } label: {
-          Image(systemName: "ellipsis")
-            .font(.system(size: 14))
-            .foregroundStyle(.white)
-            .frame(width: 28, height: 28)
-        }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
+        HeaderIconButton(
+          icon: "gearshape",
+          action: {
+            onOpenSettings?()
+          },
+          helpText: "Settings"
+        )
         .padding(.trailing, 8)
       }
     }
@@ -1273,13 +1253,13 @@ struct ItemContextMenu: View {
 
     Divider()
 
-      // Preview
-      Button {
-        onPreview?()
-      } label: {
-        Text("Preview")
-      }
-      .keyboardShortcut(.space, modifiers: [])
+    // Preview
+    Button {
+      onPreview?()
+    } label: {
+      Text("Preview")
+    }
+    .keyboardShortcut(.space, modifiers: [])
 
     // Edit (hold space) - only for text/url
     if item.type == .text || item.type == .url {
@@ -1338,7 +1318,6 @@ struct ItemContextMenu: View {
       Label("Pin", systemImage: "pin")
     }
 
-   
   }
 }
 

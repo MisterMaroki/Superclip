@@ -14,6 +14,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   var contentWindow: NSWindow?
   var pasteStackWindow: NSWindow?
   var previewWindow: NSWindow?
+  var settingsWindow: NSWindow?
   var richTextEditorWindows: [RichTextEditorPanel] = []
   var hotKey: HotKey?
   var pasteStackHotKey: HotKey?
@@ -431,8 +432,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
           return event
         }
         let isRichTextEditorWindow = self.richTextEditorWindows.contains { $0 === event.window }
+        let isSettingsWindow = event.window === self.settingsWindow
         if event.window != panelWindow && event.window != self.previewWindow
           && event.window != self.pasteStackWindow && !isRichTextEditorWindow
+          && !isSettingsWindow
         {
           DispatchQueue.main.async {
             // Close both preview and drawer when clicking outside the app
@@ -477,6 +480,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         // If rich text editor is becoming key, don't close
         if let keyWin = keyWindow, self.richTextEditorWindows.contains(where: { $0 === keyWin }) {
+          return
+        }
+        // If settings window is becoming key, don't close
+        if let settings = self.settingsWindow, settings.isVisible && keyWindow === settings {
           return
         }
         // If preview is becoming key, don't close (user clicked on preview)
@@ -691,9 +698,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
       let isDrawerWindow = clickWindow === self.contentWindow
       let isPasteStackWindow = clickWindow === self.pasteStackWindow
       let isRichTextEditorWindow = self.richTextEditorWindows.contains { $0 === clickWindow }
+      let isSettingsWindow = clickWindow === self.settingsWindow
 
       // If click is outside all our windows, close both preview and drawer
-      if !isPreviewWindow && !isDrawerWindow && !isPasteStackWindow && !isRichTextEditorWindow {
+      if !isPreviewWindow && !isDrawerWindow && !isPasteStackWindow && !isRichTextEditorWindow
+        && !isSettingsWindow
+      {
         DispatchQueue.main.async {
           self.closeReviewWindow(andPaste: false)
         }
@@ -792,6 +802,28 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
   func removeRichTextEditorWindow(_ panel: RichTextEditorPanel) {
     richTextEditorWindows.removeAll { $0 === panel }
+  }
+
+  // MARK: - Settings Window
+
+  func openSettingsWindow() {
+    // If already open, bring to front
+    if let settingsWindow = settingsWindow, settingsWindow.isVisible {
+      settingsWindow.makeKeyAndOrderFront(nil)
+      NSApp.activate(ignoringOtherApps: true)
+      return
+    }
+
+    let settingsPanel = SettingsPanel()
+    settingsPanel.appDelegate = self
+    settingsWindow = settingsPanel
+    settingsPanel.makeKeyAndOrderFront(nil)
+    NSApp.activate(ignoringOtherApps: true)
+  }
+
+  func closeSettingsWindow() {
+    settingsWindow?.close()
+    settingsWindow = nil
   }
 
   // MARK: - OCR Screen Capture

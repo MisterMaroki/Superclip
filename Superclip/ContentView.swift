@@ -32,6 +32,7 @@ struct ContentView: View {
   var onTextSnipe: (() -> Void)?  // Called when text sniper button is tapped
   var onSearchingChanged: ((Bool) -> Void)?  // Called when search field visibility changes
   var onSearchFocusChanged: ((Bool) -> Void)?  // Called when search field gains/loses actual focus
+  var onEditItem: ((ClipboardItem) -> Void)?  // Called to open rich text editor for an item
 
   @FocusState private var isSearchFocused: Bool
   @State private var searchText: String = ""
@@ -695,14 +696,39 @@ struct ContentView: View {
                   },
                   onDragStart: {
                     DragState.shared.draggedItemId = item.id
-                    // Immediately start monitoring when drag begins
                     startDragMonitoringFromDrag()
                   },
                   onDragEnd: {
                     DispatchQueue.main.asyncAfter(deadline: .now()) {
                       DragState.shared.draggedItemId = nil
                     }
-                  }
+                  },
+                  onCopy: {
+                    clipboardManager.copyToClipboard(item)
+                  },
+                  onPasteAsPlainText: {
+                    clipboardManager.copyToClipboardAsPlainText(item)
+                    DispatchQueue.main.asyncAfter(deadline: .now()) {
+                      dismiss(true)
+                    }
+                  },
+                  onDelete: {
+                    clipboardManager.deleteItem(item)
+                  },
+                  onEdit: {
+                    navigationState.selectedIndex = index
+                    onEditItem?(item)
+                  },
+                  onPreview: {
+                    navigationState.selectedIndex = index
+                    let centerX = cardCenterXPositions[index] ?? 0
+                    onPreview?(item, index, centerX)
+                  },
+                  onPinTo: { pinboard in
+                    pinboardManager.addItem(item.id, to: pinboard)
+                  },
+                  pinboards: pinboardManager.pinboards,
+                  currentAppName: "Current App"
                 )
                 .id("\(item.id)-\(index == navigationState.selectedIndex)")
                 .background(
@@ -768,6 +794,15 @@ struct ClipboardItemCard: View {
   let onSelect: () -> Void
   var onDragStart: (() -> Void)? = nil
   var onDragEnd: (() -> Void)? = nil
+  // Context menu callbacks
+  var onCopy: (() -> Void)? = nil
+  var onPasteAsPlainText: (() -> Void)? = nil
+  var onDelete: (() -> Void)? = nil
+  var onEdit: (() -> Void)? = nil
+  var onPreview: (() -> Void)? = nil
+  var onPinTo: ((Pinboard) -> Void)? = nil
+  var pinboards: [Pinboard] = []
+  var currentAppName: String = "Application"
 
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
@@ -896,6 +931,20 @@ struct ClipboardItemCard: View {
       if newValue == nil {
         onDragEnd?()
       }
+    }
+    .contextMenu {
+      ItemContextMenu(
+        item: item,
+        currentAppName: currentAppName,
+        pinboards: pinboards,
+        onSelect: onSelect,
+        onCopy: onCopy,
+        onPasteAsPlainText: onPasteAsPlainText,
+        onEdit: onEdit,
+        onDelete: onDelete,
+        onPreview: onPreview,
+        onPinTo: onPinTo
+      )
     }
   }
 
@@ -1180,6 +1229,116 @@ struct ClipboardItemCard: View {
       .frame(maxWidth: .infinity, alignment: .leading)
       .background(Color(nsColor: .controlBackgroundColor))
     }
+  }
+}
+
+// MARK: - Item Context Menu
+
+struct ItemContextMenu: View {
+  let item: ClipboardItem
+  let currentAppName: String
+  let pinboards: [Pinboard]
+  let onSelect: () -> Void
+  var onCopy: (() -> Void)?
+  var onPasteAsPlainText: (() -> Void)?
+  var onEdit: (() -> Void)?
+  var onDelete: (() -> Void)?
+  var onPreview: (() -> Void)?
+  var onPinTo: ((Pinboard) -> Void)?
+
+  var body: some View {
+    // Paste to current app
+    Button {
+      onSelect()
+    } label: {
+      Text("Paste to \(currentAppName)")
+    }
+    .keyboardShortcut(.return, modifiers: [])
+
+    // Paste as Plain Text
+    Button {
+      onPasteAsPlainText?()
+    } label: {
+      Text("Paste as Plain Text")
+    }
+    .keyboardShortcut(.return, modifiers: .shift)
+
+    // Copy
+    Button {
+      onCopy?()
+    } label: {
+      Text("Copy")
+    }
+    .keyboardShortcut("c", modifiers: .command)
+
+    Divider()
+
+      // Preview
+      Button {
+        onPreview?()
+      } label: {
+        Text("Preview")
+      }
+      .keyboardShortcut(.space, modifiers: [])
+
+    // Edit (hold space) - only for text/url
+    if item.type == .text || item.type == .url {
+      Button {
+        onEdit?()
+      } label: {
+        Text("Edit — hold ␣")
+      }
+    }
+
+    // Writing Tools (not implemented)
+    Menu {
+      Text("Coming soon")
+    } label: {
+      Label("Writing Tools", systemImage: "pencil.and.outline")
+    }
+
+    // Rename (not implemented)
+    Button {
+      // TODO: Implement rename
+    } label: {
+      Text("Rename")
+    }
+    .keyboardShortcut("r", modifiers: .command)
+    .disabled(true)
+
+    // Delete
+    Button(role: .destructive) {
+      onDelete?()
+    } label: {
+      Text("Delete")
+    }
+    .keyboardShortcut(.delete, modifiers: [])
+
+    Divider()
+
+    // Pin submenu
+    Menu {
+      ForEach(pinboards) { pinboard in
+        Button {
+          onPinTo?(pinboard)
+        } label: {
+          Label {
+            Text(pinboard.name)
+          } icon: {
+            Image(systemName: "circle.fill")
+              .symbolRenderingMode(.monochrome)
+              .foregroundStyle(pinboard.color.color)
+          }
+        }
+      }
+      if pinboards.isEmpty {
+        Text("No pinboards")
+      }
+    } label: {
+      Label("Pin", systemImage: "pin")
+    }
+
+   
   }
 }
 
@@ -1507,6 +1666,7 @@ struct PinboardTabButton: View {
 
       Divider()
       PinboardColorPicker(currentColor: pinboard.color, onColorChange: onColorChange)
+      Divider()
       Button(role: .destructive) {
         onDelete()
       } label: {

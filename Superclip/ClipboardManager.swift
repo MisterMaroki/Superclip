@@ -315,6 +315,28 @@ class ClipboardManager: ObservableObject {
         }
     }
     
+    func copyAsPlainText(_ item: ClipboardItem) {
+        pasteboard.clearContents()
+        pasteboard.setString(item.content, forType: .string)
+        changeCount = pasteboard.changeCount
+
+        DispatchQueue.main.async {
+            self.history.removeAll { $0.id == item.id }
+            let updatedItem = ClipboardItem(
+                id: item.id,
+                content: item.content,
+                timestamp: Date(),
+                type: item.type,
+                imageData: item.imageData,
+                fileURLs: item.fileURLs,
+                sourceApp: item.sourceApp,
+                linkMetadata: item.linkMetadata,
+                rtfData: item.rtfData
+            )
+            self.history.insert(updatedItem, at: 0)
+        }
+    }
+
     func copyToClipboard(_ item: ClipboardItem) {
         pasteboard.clearContents()
         
@@ -367,6 +389,12 @@ class ClipboardManager: ObservableObject {
         }
     }
     
+    func copyToClipboardAsPlainText(_ item: ClipboardItem) {
+        pasteboard.clearContents()
+        pasteboard.setString(item.content, forType: .string)
+        changeCount = pasteboard.changeCount
+    }
+
     func deleteItem(_ item: ClipboardItem) {
         DispatchQueue.main.async {
             // Find the index before removing

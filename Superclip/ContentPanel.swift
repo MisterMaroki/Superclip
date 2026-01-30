@@ -72,6 +72,26 @@ class ContentPanel: NSPanel {
       },
       onSearchFocusChanged: { [weak self] isFocused in
         self?.isSearchFieldFocused = isFocused
+      },
+      onEditItem: { [weak self] item in
+        guard let self = self, let appDelegate = self.appDelegate else { return }
+        let drawerFrame = self.frame
+        let panelWidth: CGFloat = 500
+        let panelHeight: CGFloat = 400
+        let idx = self.navigationState.selectedIndex
+        let cardWidth: CGFloat = 220
+        let cardSpacing: CGFloat = 14
+        let horizontalPadding: CGFloat = 20
+        let cardStartX = drawerFrame.minX + horizontalPadding
+        let cardCenterX = cardStartX + (CGFloat(idx) * (cardWidth + cardSpacing)) + (cardWidth / 2)
+        var editorX = cardCenterX - (panelWidth / 2)
+        if let screen = NSScreen.main {
+          let screenFrame = screen.visibleFrame
+          editorX = max(screenFrame.minX + 16, min(editorX, screenFrame.maxX - panelWidth - 16))
+        }
+        let editorY = drawerFrame.maxY + 12
+        let editorFrame = NSRect(x: editorX, y: editorY, width: panelWidth, height: panelHeight)
+        appDelegate.showRichTextEditorWindow(for: item, fromPreviewFrame: editorFrame)
       }
     )
 

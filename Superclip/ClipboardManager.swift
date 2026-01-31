@@ -349,7 +349,13 @@ class ClipboardManager: ObservableObject {
       // Detect if it's a URL
       // Real URLs don't contain unencoded whitespace, so skip URL detection if string has spaces
       let containsWhitespace = string.rangeOfCharacter(from: .whitespaces) != nil
-      if !containsWhitespace, let url = URL(string: string),
+      // Email addresses like user@example.com parse as valid URLs (user@ becomes HTTP auth)
+      // but should be treated as text, not links
+      let looksLikeEmail =
+        string.range(
+          of: #"^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$"#,
+          options: .regularExpression) != nil
+      if !containsWhitespace, !looksLikeEmail, let url = URL(string: string),
         url.scheme != nil || string.contains(".")
       {
         // Has a scheme (http://...) or looks like a domain (google.com)
@@ -566,6 +572,13 @@ class ClipboardManager: ObservableObject {
     // Real URLs don't contain unencoded whitespace
     let containsWhitespace = trimmed.rangeOfCharacter(from: .whitespaces) != nil
     guard !containsWhitespace else { return false }
+
+    // Email addresses parse as valid URLs (user@ becomes HTTP auth) but are not URLs
+    let looksLikeEmail =
+      trimmed.range(
+        of: #"^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$"#,
+        options: .regularExpression) != nil
+    guard !looksLikeEmail else { return false }
 
     if let url = URL(string: trimmed), url.scheme != nil || trimmed.contains(".") {
       // Has a scheme (http://...) or looks like a domain (google.com)

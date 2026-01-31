@@ -335,7 +335,7 @@ class ClipboardManager: ObservableObject {
     // Check for URLs
     if types.contains(.URL) {
       if let url = pasteboard.string(forType: .URL)?.trimmingCharacters(
-        in: .whitespacesAndNewlines), !url.isEmpty
+        in: .whitespacesAndNewlines), !url.isEmpty, isValidURL(url)
       {
         addToHistory(item: ClipboardItem(content: url, type: .url, sourceApp: sourceApp))
         return
@@ -355,20 +355,8 @@ class ClipboardManager: ObservableObject {
         string.range(
           of: #"^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$"#,
           options: .regularExpression) != nil
-      if !containsWhitespace, !looksLikeEmail, let url = URL(string: string),
-        url.scheme != nil || string.contains(".")
-      {
-        // Has a scheme (http://...) or looks like a domain (google.com)
-        // Validate domain-like strings by checking they have valid URL structure
-        // Reject schemeless strings starting with "." (e.g. ".hidden-file") — not valid domains
-        let urlString = url.scheme != nil ? string : "https://\(string)"
-        if url.scheme != nil || !string.hasPrefix("."),
-          let validatedURL = URL(string: urlString), validatedURL.host != nil
-        {
-          addToHistory(item: ClipboardItem(content: string, type: .url, sourceApp: sourceApp))
-        } else {
-          addToHistory(item: ClipboardItem(content: string, type: .text, sourceApp: sourceApp))
-        }
+      if !containsWhitespace, !looksLikeEmail, isValidURL(string) {
+        addToHistory(item: ClipboardItem(content: string, type: .url, sourceApp: sourceApp))
       } else {
         addToHistory(item: ClipboardItem(content: string, type: .text, sourceApp: sourceApp))
       }
@@ -584,13 +572,20 @@ class ClipboardManager: ObservableObject {
     guard !looksLikeEmail else { return false }
 
     if let url = URL(string: trimmed), url.scheme != nil || trimmed.contains(".") {
-      // Has a scheme (http://...) or looks like a domain (google.com)
-      // Reject schemeless strings starting with "." (e.g. ".hidden-file") — not valid domains
-      let urlString = url.scheme != nil ? trimmed : "https://\(trimmed)"
-      if url.scheme != nil || !trimmed.hasPrefix("."),
-        let validatedURL = URL(string: urlString), validatedURL.host != nil
-      {
-        return true
+      if let scheme = url.scheme, !scheme.isEmpty {
+        // Has an explicit scheme (http://..., ftp://..., etc.) — validate host
+        if let validatedURL = URL(string: trimmed), validatedURL.host != nil {
+          return true
+        }
+      } else {
+        // Schemeless: must look like a real domain (e.g. "google.com")
+        // Reject dot-prefixed strings (.hidden-file), dot-only strings, trailing dots
+        let domainPattern = #"^[A-Za-z0-9]([A-Za-z0-9\-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9\-]*[A-Za-z0-9])?)+(/.*)?$"#
+        if trimmed.range(of: domainPattern, options: .regularExpression) != nil,
+          let validatedURL = URL(string: "https://\(trimmed)"), validatedURL.host != nil
+        {
+          return true
+        }
       }
     }
     return false

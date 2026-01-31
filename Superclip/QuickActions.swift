@@ -76,7 +76,9 @@ enum QuickActionAnalyzer {
 
     // Color rgb/rgba — e.g. rgb(100, 200, 50)
     if let match = firstMatch(pattern: rgbColorPattern, in: text) {
-      let nums = match.components(separatedBy: CharacterSet.decimalDigits.inverted).compactMap { Int($0) }
+      let nums = match.components(separatedBy: CharacterSet.decimalDigits.inverted).compactMap {
+        Int($0)
+      }
       if nums.count >= 3, nums[0] <= 255, nums[1] <= 255, nums[2] <= 255 {
         results.append(.colorRGB(raw: match, r: nums[0], g: nums[1], b: nums[2]))
       }
@@ -84,9 +86,12 @@ enum QuickActionAnalyzer {
 
     // Color hsl/hsla — e.g. hsl(210, 80%, 50%)
     if let match = firstMatch(pattern: hslColorPattern, in: text) {
-      let nums = match.components(separatedBy: CharacterSet.decimalDigits.inverted).compactMap { Int($0) }
+      let nums = match.components(separatedBy: CharacterSet.decimalDigits.inverted).compactMap {
+        Int($0)
+      }
       if nums.count >= 3 {
-        let (r, g, b) = hslToRGB(h: Double(nums[0]), s: Double(nums[1]) / 100.0, l: Double(nums[2]) / 100.0)
+        let (r, g, b) = hslToRGB(
+          h: Double(nums[0]), s: Double(nums[1]) / 100.0, l: Double(nums[2]) / 100.0)
         results.append(.colorHSL(raw: match, r: r, g: g, b: b))
       }
     }
@@ -147,7 +152,9 @@ enum QuickActionAnalyzer {
 
     // RGB colors
     for match in allMatches(pattern: rgbColorPattern, in: trimmed) {
-      let nums = match.components(separatedBy: CharacterSet.decimalDigits.inverted).compactMap { Int($0) }
+      let nums = match.components(separatedBy: CharacterSet.decimalDigits.inverted).compactMap {
+        Int($0)
+      }
       if nums.count >= 3, nums[0] <= 255, nums[1] <= 255, nums[2] <= 255 {
         let key = "\(nums[0]),\(nums[1]),\(nums[2])"
         if !seen.contains(key) {
@@ -159,9 +166,12 @@ enum QuickActionAnalyzer {
 
     // HSL colors
     for match in allMatches(pattern: hslColorPattern, in: trimmed) {
-      let nums = match.components(separatedBy: CharacterSet.decimalDigits.inverted).compactMap { Int($0) }
+      let nums = match.components(separatedBy: CharacterSet.decimalDigits.inverted).compactMap {
+        Int($0)
+      }
       if nums.count >= 3 {
-        let (r, g, b) = hslToRGB(h: Double(nums[0]), s: Double(nums[1]) / 100.0, l: Double(nums[2]) / 100.0)
+        let (r, g, b) = hslToRGB(
+          h: Double(nums[0]), s: Double(nums[1]) / 100.0, l: Double(nums[2]) / 100.0)
         let key = "\(r),\(g),\(b)"
         if !seen.contains(key) {
           seen.insert(key)
@@ -236,12 +246,12 @@ enum QuickActionAnalyzer {
     let m = l - c / 2
     let (r1, g1, b1): (Double, Double, Double)
     switch h {
-    case 0..<60:   (r1, g1, b1) = (c, x, 0)
-    case 60..<120:  (r1, g1, b1) = (x, c, 0)
+    case 0..<60: (r1, g1, b1) = (c, x, 0)
+    case 60..<120: (r1, g1, b1) = (x, c, 0)
     case 120..<180: (r1, g1, b1) = (0, c, x)
     case 180..<240: (r1, g1, b1) = (0, x, c)
     case 240..<300: (r1, g1, b1) = (x, 0, c)
-    default:        (r1, g1, b1) = (c, 0, x)
+    default: (r1, g1, b1) = (c, 0, x)
     }
     return (Int(round((r1 + m) * 255)), Int(round((g1 + m) * 255)), Int(round((b1 + m) * 255)))
   }
@@ -615,9 +625,9 @@ class QuickActionFeedback: ObservableObject {
 // MARK: - Color Spectrum View
 
 struct ColorSpectrumView: View {
-  @Binding var hue: Double        // 0...360
-  @Binding var saturation: Double // 0...1
-  var brightness: Double          // 0...1
+  @Binding var hue: Double  // 0...360
+  @Binding var saturation: Double  // 0...1
+  var brightness: Double  // 0...1
 
   var body: some View {
     GeometryReader { geo in
@@ -625,9 +635,10 @@ struct ColorSpectrumView: View {
       ZStack {
         // Hue gradient (horizontal)
         LinearGradient(
-          gradient: Gradient(colors: stride(from: 0.0, through: 360.0, by: 30.0).map { h in
-            Color(hue: h / 360.0, saturation: 1.0, brightness: brightness)
-          }),
+          gradient: Gradient(
+            colors: stride(from: 0.0, through: 360.0, by: 30.0).map { h in
+              Color(hue: h / 360.0, saturation: 1.0, brightness: brightness)
+            }),
           startPoint: .leading,
           endPoint: .trailing
         )
@@ -842,7 +853,10 @@ class ColorEditorState: ObservableObject, Identifiable {
       blue: CGFloat(adjustedB) / 255.0,
       alpha: 1.0
     )
-    var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+    var h: CGFloat = 0
+    var s: CGFloat = 0
+    var b: CGFloat = 0
+    var a: CGFloat = 0
     nsColor.getHue(&h, saturation: &s, brightness: &b, alpha: &a)
     adjustedHue = Double(h) * 360.0
     adjustedSaturation = Double(s)
@@ -859,7 +873,10 @@ class ColorEditorState: ObservableObject, Identifiable {
       brightness: CGFloat(adjustedBrightness / 100.0),
       alpha: 1.0
     )
-    var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+    var r: CGFloat = 0
+    var g: CGFloat = 0
+    var b: CGFloat = 0
+    var a: CGFloat = 0
     nsColor.getRed(&r, green: &g, blue: &b, alpha: &a)
     adjustedR = Double(r) * 255.0
     adjustedG = Double(g) * 255.0
@@ -1065,9 +1082,10 @@ struct ColorChipView: View {
   let isSelected: Bool
 
   private var chipColor: Color {
-    Color(nsColor: QuickActionAnalyzer.nsColor(
-      r: Int(state.adjustedR), g: Int(state.adjustedG), b: Int(state.adjustedB)
-    ))
+    Color(
+      nsColor: QuickActionAnalyzer.nsColor(
+        r: Int(state.adjustedR), g: Int(state.adjustedG), b: Int(state.adjustedB)
+      ))
   }
 
   var body: some View {

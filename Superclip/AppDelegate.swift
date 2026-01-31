@@ -11,6 +11,7 @@ import ScreenCaptureKit
 class AppDelegate: NSObject, NSApplicationDelegate {
   static var isShareSheetActive = false
 
+  var welcomeController: WelcomeWindowController?
   var contentWindow: NSWindow?
   var pasteStackWindow: NSWindow?
   var previewWindow: NSWindow?
@@ -44,6 +45,39 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     setupHotkey()
     setupPasteStackHotkey()
     setupOCRHotkey()
+
+    if !UserDefaults.standard.bool(forKey: WelcomeWindowController.hasSeenWelcomeKey) {
+      // Seed tutorial cards and pinboard immediately so they're ready before the drawer ever opens
+      let pinCardId = clipboardManager.seedTutorialItems()
+      if pinboardManager.pinboards.isEmpty {
+        let board = pinboardManager.createPinboard(name: "Favorites", color: .blue)
+        if let id = pinCardId {
+          pinboardManager.addItem(id, to: board)
+        }
+      }
+
+      showOnboarding()
+    }
+  }
+
+  // MARK: - Onboarding
+
+  func showOnboarding() {
+    NSApp.setActivationPolicy(.regular)
+
+    let controller = WelcomeWindowController()
+    controller.configure { [weak self] in
+      guard let self = self else { return }
+      self.welcomeController = nil
+      NSApp.setActivationPolicy(.accessory)
+
+      // Open the drawer after a short delay so the user sees the tutorial cards
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+        self.showContentWindow()
+      }
+    }
+    welcomeController = controller
+    controller.show()
   }
 
   func applicationWillTerminate(_ notification: Notification) {
@@ -53,6 +87,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   func applicationDidResignActive(_ notification: Notification) {
+    // Don't close panels while onboarding is visible (user may switch to System Settings)
+    if welcomeController?.window?.isVisible == true {
+      return
+    }
     // Don't close if rich text editor windows are open
     if richTextEditorWindows.contains(where: { $0.isVisible }) {
       return
@@ -612,9 +650,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     let drawerFrame = contentWindow.frame
 
-    // Use larger size for image editor
-    let panelWidth: CGFloat = item.type == .image ? 600 : 500
-    let panelHeight: CGFloat = item.type == .image ? 500 : 412  // Extra 12 for arrow
+    // Use larger size for images and links
+    let panelWidth: CGFloat
+    let panelHeight: CGFloat
+    switch item.type {
+    case .image:
+      panelWidth = 600; panelHeight = 500
+    case .url:
+      panelWidth = 800; panelHeight = 650
+    default:
+      panelWidth = 500; panelHeight = 412  // Extra 12 for arrow
+    }
 
     // Center preview horizontally above the card
     var previewX = cardCenterX - (panelWidth / 2)

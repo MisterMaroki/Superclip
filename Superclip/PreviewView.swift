@@ -140,7 +140,7 @@ struct PreviewView: View {
         } label: {
           Image(systemName: "xmark.circle.fill")
             .font(.system(size: 16))
-            .foregroundStyle(.white.opacity(0.6))
+            .foregroundStyle(.primary.opacity(0.6))
         }
         .buttonStyle(.plain)
 
@@ -153,7 +153,7 @@ struct PreviewView: View {
           }
           Text(item.type.rawValue.capitalized)
             .font(.system(size: 13, weight: .medium))
-            .foregroundStyle(.white)
+            .foregroundStyle(.primary)
         }
 
         Spacer()
@@ -163,16 +163,18 @@ struct PreviewView: View {
           // Move to pinboard dropdown
           Menu {
             ForEach(pinboardManager.pinboards) { pinboard in
-              Toggle(isOn: Binding(
-                get: { pinboard.itemIds.contains(item.id) },
-                set: { isOn in
-                  if isOn {
-                    pinboardManager.addItem(item.id, to: pinboard)
-                  } else {
-                    pinboardManager.removeItem(item.id, from: pinboard)
+              Toggle(
+                isOn: Binding(
+                  get: { pinboard.itemIds.contains(item.id) },
+                  set: { isOn in
+                    if isOn {
+                      pinboardManager.addItem(item.id, to: pinboard)
+                    } else {
+                      pinboardManager.removeItem(item.id, from: pinboard)
+                    }
                   }
-                }
-              )) {
+                )
+              ) {
                 Label {
                   Text(pinboard.name)
                 } icon: {
@@ -209,10 +211,10 @@ struct PreviewView: View {
             } label: {
               Text("Edit")
                 .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.white)
+                .foregroundStyle(.primary)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 4)
-                .background(Color.white.opacity(0.1))
+                .background(Color.primary.opacity(0.1))
                 .cornerRadius(4)
             }
             .buttonStyle(.plain)
@@ -245,7 +247,7 @@ struct PreviewView: View {
             if let url = URL(string: item.content) {
               Text(url.absoluteString)
                 .font(.system(size: 11))
-                .foregroundStyle(.white)
+                .foregroundStyle(.primary)
                 .lineLimit(1)
                 .truncationMode(.middle)
             }
@@ -261,7 +263,7 @@ struct PreviewView: View {
                 Text("Open in \(defaultBrowserName)")
                   .font(.system(size: 11, weight: .medium))
               }
-              .foregroundStyle(.white)
+              .foregroundStyle(.primary)
               .padding(.horizontal, 12)
               .padding(.vertical, 6)
               .background(appColor)
@@ -306,7 +308,7 @@ struct PreviewView: View {
                   Text("Show in Finder")
                     .font(.system(size: 11, weight: .medium))
                 }
-                .foregroundStyle(.white)
+                .foregroundStyle(.primary)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
                 .background(appColor)
@@ -331,7 +333,7 @@ struct PreviewView: View {
     .clipShape(RoundedRectangle(cornerRadius: 12))
     .overlay(
       RoundedRectangle(cornerRadius: 12)
-        .stroke(Color.white.opacity(0.15), lineWidth: 1)
+        .stroke(Color.primary.opacity(0.15), lineWidth: 1)
     )
     // subtle lighter shadow below
     .shadow(color: Color.black.opacity(0.05), radius: 20, x: 0, y: -15)
@@ -841,23 +843,28 @@ private struct PinboardDropdownLabel: View {
       if containingPinboards.isEmpty {
         Image(systemName: "circle")
           .font(.system(size: 8))
-          .foregroundStyle(.white.opacity(0.6))
+          .foregroundStyle(.primary.opacity(0.6))
       } else {
-              Image(nsImage: combinedPinboardCircles(pinboards: containingPinboards, circleSize: 14, spacing: 6))
-              .padding(.horizontal, 6)
+        Image(
+          nsImage: combinedPinboardCircles(
+            pinboards: containingPinboards, circleSize: 14, spacing: 6)
+        )
+        .padding(.horizontal, 6)
       }
       Image(systemName: "chevron.down")
         .font(.system(size: 8))
-        .foregroundStyle(.white.opacity(0.6))
+        .foregroundStyle(.primary.opacity(0.6))
     }
     .padding(.horizontal, 8)
     .padding(.vertical, 4)
-    .background(Color.white.opacity(0.1))
+    .background(Color.primary.opacity(0.1))
     .cornerRadius(4)
   }
 }
 
-private func combinedPinboardCircles(pinboards: [Pinboard], circleSize: CGFloat = 12, spacing: CGFloat = 4) -> NSImage {
+private func combinedPinboardCircles(
+  pinboards: [Pinboard], circleSize: CGFloat = 12, spacing: CGFloat = 4
+) -> NSImage {
   let count = pinboards.count
   guard count > 0 else {
     return NSImage(size: .zero)
@@ -886,7 +893,8 @@ struct ShareButtonView: NSViewRepresentable {
 
   func makeNSView(context: Context) -> NSButton {
     let button = NSButton(frame: NSRect(x: 0, y: 0, width: 20, height: 20))
-    button.image = NSImage(systemSymbolName: "square.and.arrow.up", accessibilityDescription: "Share")?
+    button.image = NSImage(
+      systemSymbolName: "square.and.arrow.up", accessibilityDescription: "Share")?
       .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 12, weight: .regular))
     button.imageScaling = .scaleProportionallyDown
     button.imagePosition = .imageOnly
@@ -927,7 +935,9 @@ struct ShareButtonView: NSViewRepresentable {
       picker.show(relativeTo: sender.bounds, of: sender, preferredEdge: .minY)
     }
 
-    func sharingServicePicker(_ sharingServicePicker: NSSharingServicePicker, didChoose service: NSSharingService?) {
+    func sharingServicePicker(
+      _ sharingServicePicker: NSSharingServicePicker, didChoose service: NSSharingService?
+    ) {
       // Clean up after selection
       AppDelegate.isShareSheetActive = false
       self.picker = nil

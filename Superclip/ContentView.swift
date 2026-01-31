@@ -469,12 +469,12 @@ struct ContentView: View {
         if showSearchField {
           HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
-              .font(.system(size: 12))
-              .foregroundStyle(.white.opacity(0.5))
+              .font(.system(size: 13))
+              .foregroundStyle(.primary.opacity(0.5))
             TextField("Search...", text: $searchText)
               .textFieldStyle(.plain)
-              .font(.system(size: 13))
-              .foregroundStyle(.white)
+              .font(.system(size: 14))
+              .foregroundStyle(.primary)
               .focused($isSearchFocused)
               .onChange(of: searchText) { _ in
                 navigationState.selectedIndex = 0
@@ -486,17 +486,17 @@ struct ContentView: View {
               } label: {
                 Image(systemName: "xmark.circle.fill")
                   .font(.system(size: 12))
-                  .foregroundStyle(.white.opacity(0.5))
+                  .foregroundStyle(.primary.opacity(0.5))
               }
               .buttonStyle(.plain)
             }
 
           }
           .padding(.horizontal, 12)
-          .padding(.vertical, 6)
-          .background(Color.white.opacity(0.1))
-          .cornerRadius(6)
-          .frame(width: 200)
+          .padding(.vertical, 7)
+          .background(Color.primary.opacity(0.1))
+          .cornerRadius(8)
+          .frame(width: 220)
         } else {
           HeaderIconButton(icon: "magnifyingglass") {
             showSearchField = true
@@ -645,16 +645,16 @@ struct ContentView: View {
               ? "doc.on.clipboard" : "magnifyingglass"
           )
           .font(.system(size: 40))
-          .foregroundStyle(.white.opacity(0.3))
+          .foregroundStyle(.primary.opacity(0.3))
 
           Text(emptyStateMessage)
             .font(.system(size: 13))
-            .foregroundStyle(.white.opacity(0.5))
+            .foregroundStyle(.primary.opacity(0.5))
 
           if viewMode == .clipboard && clipboardManager.history.isEmpty {
             Text("Copy something to get started")
-              .font(.system(size: 11))
-              .foregroundStyle(.white.opacity(0.3))
+              .font(.system(size: 12))
+              .foregroundStyle(.primary.opacity(0.35))
           }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -802,14 +802,14 @@ struct ClipboardItemCard: View {
       HStack(spacing: 6) {
         // Type label
         Text(item.typeLabel)
-          .font(.system(size: 11, weight: .semibold))
-          .foregroundStyle(.white.opacity(0.9))
+          .font(.system(size: 12, weight: .semibold))
+          .foregroundStyle(.primary.opacity(0.95))
 
         // Time ago (conditional)
         if showTimestamps {
           Text(item.timeAgo)
-            .font(.system(size: 10))
-            .foregroundStyle(.white.opacity(0.6))
+            .font(.system(size: 11))
+            .foregroundStyle(.primary.opacity(0.5))
         }
 
         Spacer()
@@ -824,7 +824,7 @@ struct ClipboardItemCard: View {
       }
       .padding(.horizontal, 10)
       .padding(.vertical, 8)
-      .background(Color(white: 0.15))
+      .background(headerBackground)
 
       // Content area
       ZStack(alignment: .bottomTrailing) {
@@ -834,8 +834,8 @@ struct ClipboardItemCard: View {
         // Floating char count for text only
         if item.type == .text {
           Text("\(item.content.count)")
-            .font(.system(size: 9, weight: .medium, design: .monospaced))
-            .foregroundStyle(.white.opacity(0.7))
+            .font(.system(size: 10, weight: .medium, design: .monospaced))
+            .foregroundStyle(.primary.opacity(0.6))
             .padding(.horizontal, 6)
             .padding(.vertical, 3)
             .background(Color.black.opacity(0.5))
@@ -844,19 +844,19 @@ struct ClipboardItemCard: View {
         }
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity)
-      .background(Color(nsColor: .controlBackgroundColor))
+      .background(contentBackground)
     }
     .aspectRatio(1, contentMode: .fit)
     .clipShape(RoundedRectangle(cornerRadius: 10))
     .overlay(
       RoundedRectangle(cornerRadius: 10)
-        .stroke(isSelected ? Color.white.opacity(0.8) : Color.clear, lineWidth: 2)
+        .stroke(isSelected ? Color.primary.opacity(0.8) : Color.clear, lineWidth: 2)
     )
     .overlay(alignment: .bottomLeading) {
       if let number = quickAccessNumber {
         Text(number == 0 ? "0" : "\(number)")
           .font(.system(size: 11, weight: .bold, design: .rounded))
-          .foregroundStyle(.white)
+          .foregroundStyle(.primary)
           .frame(width: 20, height: 20)
           .background(Color.accentColor.opacity(0.9))
           .cornerRadius(5)
@@ -870,14 +870,14 @@ struct ClipboardItemCard: View {
         ZStack {
           // Background ring (subtle)
           Circle()
-            .stroke(Color.white.opacity(0.2), lineWidth: 3)
+            .stroke(Color.primary.opacity(0.2), lineWidth: 3)
             .frame(width: 50, height: 50)
 
           // Progress ring (fills clockwise)
           Circle()
             .trim(from: 0, to: holdProgress)
             .stroke(
-              Color.white.opacity(0.9),
+              Color.primary.opacity(0.9),
               style: StrokeStyle(lineWidth: 3, lineCap: .round)
             )
             .frame(width: 50, height: 50)
@@ -886,7 +886,7 @@ struct ClipboardItemCard: View {
           // Edit icon in center
           Image(systemName: "pencil")
             .font(.system(size: 18, weight: .medium))
-            .foregroundStyle(.white)
+            .foregroundStyle(.primary)
             .opacity(0.7 + holdProgress * 0.3)
         }
         .animation(.spring(response: 0.35, dampingFraction: 0.65), value: holdProgress)
@@ -895,7 +895,7 @@ struct ClipboardItemCard: View {
     .animation(.easeOut(duration: 0.15), value: quickAccessNumber != nil)
     // Hold-to-edit glow effect (layered for soft bloom) - only for selected card
     .shadow(
-      color: Color.white.opacity(isSelected ? holdProgress * 0.5 : 0),
+      color: Color.primary.opacity(isSelected ? holdProgress * 0.5 : 0),
       radius: isSelected ? 6 * holdProgress : 0
     )
     .shadow(
@@ -1006,6 +1006,30 @@ struct ClipboardItemCard: View {
     return provider
   }
 
+  // MARK: - Dynamic card colors
+
+  /// Header tinted by source app accent color
+  private var headerBackground: Color {
+    if let accentColor = item.sourceApp?.accentColor {
+      return accentColor.opacity(0.18)
+    }
+    return Color.primary.opacity(0.08)
+  }
+
+  /// Content area tinted by content type
+  private var contentBackground: Color {
+    switch item.type {
+    case .image:
+      return Color.primary.opacity(0.02)
+    case .url:
+      return Color.blue.opacity(0.04)
+    case .file:
+      return Color.orange.opacity(0.03)
+    case .text:
+      return Color.primary.opacity(0.04)
+    }
+  }
+
   @ViewBuilder
   var contentView: some View {
     switch item.type {
@@ -1034,8 +1058,8 @@ struct ClipboardItemCard: View {
           .padding(10)
       } else {
         Text(item.content)
-          .font(.system(size: 12))
-          .foregroundStyle(.primary)
+          .font(.system(size: 13))
+          .foregroundStyle(.primary.opacity(0.85))
           .lineLimit(8)
           .multilineTextAlignment(.leading)
           .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -1112,7 +1136,8 @@ struct ClipboardItemCard: View {
                 fileThumbnail(for: url)
 
                 Text(url.lastPathComponent)
-                  .font(.system(size: 11))
+                  .font(.system(size: 12))
+                  .foregroundStyle(.primary.opacity(0.85))
                   .lineLimit(1)
                   .truncationMode(.middle)
               }
@@ -1120,8 +1145,8 @@ struct ClipboardItemCard: View {
 
             if urls.count > 4 {
               Text("+ \(urls.count - 4) more...")
-                .font(.system(size: 10))
-                .foregroundStyle(.secondary)
+                .font(.system(size: 11))
+                .foregroundStyle(.primary.opacity(0.45))
             }
           }
           .padding(10)
@@ -1140,7 +1165,8 @@ struct ClipboardItemCard: View {
           .frame(width: 48, height: 48)
       }
       Text(url.lastPathComponent)
-        .font(.system(size: 11))
+        .font(.system(size: 12))
+        .foregroundStyle(.primary.opacity(0.85))
         .lineLimit(2)
         .multilineTextAlignment(.center)
     }
@@ -1164,7 +1190,7 @@ struct ClipboardItemCard: View {
           .cornerRadius(3)
         Image(systemName: "play.fill")
           .font(.system(size: 8))
-          .foregroundStyle(.white)
+          .foregroundStyle(.primary)
       }
     } else if isAudioFile(url) {
       ZStack {
@@ -1194,39 +1220,59 @@ struct ClipboardItemCard: View {
       if showLinkPreviews, let metadata = item.linkMetadata, let image = metadata.image {
         Image(nsImage: image)
           .resizable()
-          .aspectRatio(contentMode: .fit)
+          .aspectRatio(contentMode: .fill)
           .frame(maxWidth: .infinity, maxHeight: .infinity)
           .clipped()
-          .background(Color(nsColor: .separatorColor).opacity(0.1))
-      } else {
-        // Placeholder with link icon
-        VStack {
-          Image(systemName: "link.circle.fill")
-            .font(.system(size: 40))
-            .foregroundStyle(.secondary.opacity(0.5))
+      } else if showLinkPreviews, let metadata = item.linkMetadata, let icon = metadata.icon {
+        // Favicon / site icon fallback
+        VStack(spacing: 6) {
+          Image(nsImage: icon)
+            .resizable()
+            .aspectRatio(contentMode: .fit)
+            .frame(width: 36, height: 36)
+            .cornerRadius(6)
+          Text(metadata.displayURL)
+            .font(.system(size: 10))
+            .foregroundStyle(.primary.opacity(0.3))
+            .lineLimit(1)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(nsColor: .separatorColor).opacity(0.2))
+        .background(Color.blue.opacity(0.04))
+      } else {
+        // Placeholder with link symbol
+        VStack(spacing: 6) {
+          Image(systemName: "link.circle.fill")
+            .font(.system(size: 36))
+            .foregroundStyle(.blue.opacity(0.35))
+          if let displayURL = item.linkMetadata?.displayURL {
+            Text(displayURL)
+              .font(.system(size: 10))
+              .foregroundStyle(.primary.opacity(0.3))
+              .lineLimit(1)
+          }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.blue.opacity(0.04))
       }
 
       // Footer with title and URL
-      VStack(alignment: .leading, spacing: 2) {
+      VStack(alignment: .leading, spacing: 3) {
         if let metadata = item.linkMetadata, let title = metadata.title, !title.isEmpty {
           Text(title)
-            .font(.system(size: 11, weight: .medium))
-            .foregroundStyle(.primary)
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(.primary.opacity(0.9))
             .lineLimit(1)
         }
 
         Text(item.linkMetadata?.displayURL ?? item.content)
-          .font(.system(size: 10))
-          .foregroundStyle(.secondary)
+          .font(.system(size: 11))
+          .foregroundStyle(.blue.opacity(0.55))
           .lineLimit(1)
       }
       .padding(.horizontal, 10)
       .padding(.vertical, 8)
       .frame(maxWidth: .infinity, alignment: .leading)
-      .background(Color(nsColor: .controlBackgroundColor))
+      .background(Color.blue.opacity(0.06))
     }
   }
 }
@@ -1361,12 +1407,12 @@ struct VideoThumbnailView: View {
       VStack {
         Image(systemName: "play.circle.fill")
           .font(.system(size: 36))
-          .foregroundStyle(.white.opacity(0.9))
+          .foregroundStyle(.primary.opacity(0.9))
           .shadow(color: .black.opacity(0.3), radius: 4)
 
         Text("VIDEO")
           .font(.system(size: 10, weight: .semibold))
-          .foregroundStyle(.white.opacity(0.8))
+          .foregroundStyle(.primary.opacity(0.8))
           .padding(.horizontal, 8)
           .padding(.vertical, 2)
           .background(Color.black.opacity(0.5))
@@ -1477,11 +1523,12 @@ struct HeaderIconButton: View {
   var body: some View {
     Button(action: action) {
       Image(systemName: icon)
-        .font(.system(size: 14))
-        .foregroundStyle(.white)
-        .frame(width: 28, height: 28)
-        .background(isHovered ? Color.white.opacity(0.15) : Color.clear)
-        .cornerRadius(6)
+        .font(.system(size: 15))
+        .foregroundStyle(.primary.opacity(0.85))
+        .frame(width: 32, height: 32)
+        .background(isHovered ? Color.primary.opacity(0.12) : Color.clear)
+        .cornerRadius(8)
+        .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
     .onHover { hovering in
@@ -1502,46 +1549,46 @@ struct ClipboardTabButton: View {
   var body: some View {
     Button(action: onSelect) {
       if isCompact {
-        HStack(spacing: 4) {
+        HStack(spacing: 5) {
           Image(systemName: "sparkle.text.clipboard")
-            .font(.system(size: 11))
-            .foregroundStyle(.white)
+            .font(.system(size: 12))
+            .foregroundStyle(.primary)
           if let count = itemCount {
             Text("\(count)")
-              .font(.system(size: 10, weight: .medium, design: .rounded))
-              .foregroundStyle(.white.opacity(0.6))
+              .font(.system(size: 11, weight: .medium, design: .rounded))
+              .foregroundStyle(.primary.opacity(0.6))
           }
         }
-        .frame(minWidth: 24, minHeight: 24)
-        .padding(.horizontal, 4)
+        .frame(minWidth: 28, minHeight: 28)
+        .padding(.horizontal, 6)
         .background(
-          isSelected ? Color(white: 0.3) : (isHovered ? Color.white.opacity(0.1) : Color.clear)
+          isSelected ? Color.primary.opacity(0.18) : (isHovered ? Color.primary.opacity(0.1) : Color.clear)
         )
-        .cornerRadius(6)
+        .cornerRadius(8)
       } else {
-        HStack(spacing: 6) {
+        HStack(spacing: 7) {
           Image(systemName: "sparkle.text.clipboard")
-            .font(.system(size: 11))
-            .foregroundStyle(.white)
+            .font(.system(size: 12))
+            .foregroundStyle(.primary)
           Text("Clipboard")
-            .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(.white)
+            .font(.system(size: 13, weight: .medium))
+            .foregroundStyle(.primary)
           if let count = itemCount {
             Text("\(count)")
-              .font(.system(size: 10, weight: .medium, design: .rounded))
-              .foregroundStyle(.white.opacity(0.5))
-              .padding(.horizontal, 5)
-              .padding(.vertical, 1)
-              .background(Color.white.opacity(0.1))
+              .font(.system(size: 11, weight: .medium, design: .rounded))
+              .foregroundStyle(.primary.opacity(0.5))
+              .padding(.horizontal, 6)
+              .padding(.vertical, 2)
+              .background(Color.primary.opacity(0.1))
               .cornerRadius(4)
           }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 7)
         .background(
-          isSelected ? Color(white: 0.3) : (isHovered ? Color.white.opacity(0.1) : Color.clear)
+          isSelected ? Color.primary.opacity(0.18) : (isHovered ? Color.primary.opacity(0.1) : Color.clear)
         )
-        .cornerRadius(12)
+        .cornerRadius(10)
       }
     }
     .buttonStyle(.plain)
@@ -1567,13 +1614,13 @@ struct PinboardTabButton: View {
 
   private var backgroundColor: Color {
     if isDragOver {
-      return Color.white.opacity(0.4)
+      return Color.primary.opacity(0.4)
     } else if dragState.draggedItemId != nil {
-      return Color.white.opacity(0.2)
+      return Color.primary.opacity(0.2)
     } else if isSelected {
-      return Color.white.opacity(0.15)
+      return Color.primary.opacity(0.15)
     } else if isHovered {
-      return Color.white.opacity(0.1)
+      return Color.primary.opacity(0.1)
     } else {
       return Color.clear
     }
@@ -1584,23 +1631,23 @@ struct PinboardTabButton: View {
       if isCompact {
         Circle()
           .fill(pinboard.color.color)
-          .frame(width: 8, height: 8)
-          .padding(8)
+          .frame(width: 9, height: 9)
+          .padding(10)
           .background(backgroundColor)
-          .cornerRadius(6)
+          .cornerRadius(8)
       } else {
-        HStack(spacing: 6) {
+        HStack(spacing: 7) {
           Circle()
             .fill(pinboard.color.color)
-            .frame(width: 6, height: 6)
+            .frame(width: 8, height: 8)
           Text(pinboard.name)
-            .font(.system(size: 12))
-            .foregroundStyle(.white)
+            .font(.system(size: 13, weight: .medium))
+            .foregroundStyle(.primary.opacity(0.9))
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
         .background(backgroundColor)
-        .cornerRadius(6)
+        .cornerRadius(10)
       }
     }
     .contentShape(Rectangle())
@@ -1742,7 +1789,7 @@ struct PinboardEditView: View {
       TextField("Untitled", text: $name)
         .textFieldStyle(.plain)
         .font(.system(size: 12))
-        .foregroundStyle(.white)
+        .foregroundStyle(.primary)
         .focused($isFocused)
         .frame(width: 120)
         .onSubmit {
@@ -1759,7 +1806,7 @@ struct PinboardEditView: View {
     }
     .padding(.horizontal, 8)
     .padding(.vertical, 6)
-    .background(Color(white: 0.25))
+    .background(Color.primary.opacity(0.15))
     .cornerRadius(6)
     .onAppear {
       isFocused = true

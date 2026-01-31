@@ -171,7 +171,7 @@ struct ImageEditorView: View {
                             Text(showingSaveConfirmation ? "Copied!" : "Copy to Clipboard")
                                 .font(.system(size: 11, weight: .medium))
                         }
-                        .foregroundStyle(.white)
+                        .foregroundStyle(.primary)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
                         .background(showingSaveConfirmation ? Color.green : Color.blue)
@@ -192,7 +192,7 @@ struct ImageEditorView: View {
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 16))
-                        .foregroundStyle(.white.opacity(0.6))
+                        .foregroundStyle(.primary.opacity(0.6))
                 }
                 .buttonStyle(.plain)
                 
@@ -201,7 +201,7 @@ struct ImageEditorView: View {
                         .font(.system(size: 12))
                     Text("Image Editor")
                         .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(.primary)
                 }
                 
                 Spacer()
@@ -212,10 +212,10 @@ struct ImageEditorView: View {
                 } label: {
                     Text("Reset")
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.6))
+                        .foregroundStyle(.primary.opacity(0.6))
                         .padding(.horizontal, 12)
                         .padding(.vertical, 4)
-                        .background(Color.white.opacity(0.1))
+                        .background(Color.primary.opacity(0.1))
                         .cornerRadius(4)
                 }
                 .buttonStyle(.plain)
@@ -236,7 +236,7 @@ struct ImageEditorView: View {
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.white.opacity(0.15), lineWidth: 1)
+                .stroke(Color.primary.opacity(0.15), lineWidth: 1)
         )
         // subtle lighter shadow below
         .shadow(color: Color.black.opacity(0.05), radius: 20, x: 0, y: -15)
@@ -392,7 +392,7 @@ struct ToolButton: View {
                     .foregroundStyle(isActive ? .white : .white.opacity(0.5))
             }
             .frame(width: 50, height: 44)
-            .background(isActive ? Color.blue.opacity(0.5) : Color.white.opacity(0.05))
+            .background(isActive ? Color.blue.opacity(0.5) : Color.primary.opacity(0.05))
             .cornerRadius(8)
         }
         .buttonStyle(.plain)
@@ -506,7 +506,7 @@ struct CropOverlayView: View {
                         path.move(to: CGPoint(x: cropRect.minX, y: cropRect.minY + cropRect.height * 2 / 3))
                         path.addLine(to: CGPoint(x: cropRect.maxX, y: cropRect.minY + cropRect.height * 2 / 3))
                     }
-                    .stroke(Color.white.opacity(0.4), lineWidth: 1)
+                    .stroke(Color.primary.opacity(0.4), lineWidth: 1)
                 }
                 
                 // Corner handles
@@ -533,7 +533,7 @@ struct CropOverlayView: View {
                             Text("Apply Crop")
                                 .font(.system(size: 12, weight: .medium))
                         }
-                        .foregroundStyle(.white)
+                        .foregroundStyle(.primary)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
                         .background(Color.blue)
@@ -549,10 +549,10 @@ struct CropOverlayView: View {
                 VStack(spacing: 8) {
                     Image(systemName: "crop")
                         .font(.system(size: 32))
-                        .foregroundStyle(.white.opacity(0.6))
+                        .foregroundStyle(.primary.opacity(0.6))
                     Text("Drag to select crop area")
                         .font(.system(size: 13))
-                        .foregroundStyle(.white.opacity(0.6))
+                        .foregroundStyle(.primary.opacity(0.6))
                 }
             }
         }

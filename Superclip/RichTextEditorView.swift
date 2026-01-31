@@ -44,10 +44,10 @@ struct RichTextEditorView: View {
                 } label: {
                     Text("Cancel")
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.8))
+                        .foregroundStyle(.primary.opacity(0.8))
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
-                        .background(Color.white.opacity(0.1))
+                        .background(Color.primary.opacity(0.1))
                         .cornerRadius(6)
                 }
                 .buttonStyle(.plain)
@@ -63,7 +63,7 @@ struct RichTextEditorView: View {
 
                     Divider()
                         .frame(height: 16)
-                        .background(Color.white.opacity(0.2))
+                        .background(Color.primary.opacity(0.2))
 
                     FormatButton(icon: "text.alignleft", action: { setAlignment(.left) })
                     FormatButton(icon: "text.aligncenter", action: { setAlignment(.center) })
@@ -71,7 +71,7 @@ struct RichTextEditorView: View {
                 }
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
-                .background(Color.white.opacity(0.05))
+                .background(Color.primary.opacity(0.05))
                 .cornerRadius(6)
 
                 Spacer()
@@ -84,10 +84,10 @@ struct RichTextEditorView: View {
                         Text("Save")
                         Text("\u{2318}\u{21A9}")
                             .font(.system(size: 10))
-                            .foregroundStyle(.white.opacity(0.6))
+                            .foregroundColor(.white.opacity(0.7))
                     }
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.white)
+                    .foregroundColor(.white)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
                     .background(Color.green)
@@ -97,7 +97,7 @@ struct RichTextEditorView: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
-            .background(Color.black.opacity(0.3))
+            .background(.ultraThinMaterial)
 
             // Rich text editor
             RichTextViewRepresentable(
@@ -141,7 +141,7 @@ struct RichTextEditorView: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
-            .background(Color.black.opacity(0.3))
+            .background(.ultraThinMaterial)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(
@@ -250,7 +250,7 @@ struct FormatButton: View {
         Button(action: action) {
             Image(systemName: icon)
                 .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.white.opacity(0.8))
+                .foregroundStyle(.primary.opacity(0.8))
                 .frame(width: 28, height: 24)
                 .contentShape(Rectangle())
         }

@@ -60,21 +60,21 @@ struct PasteStackView: View {
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 14))
-                        .foregroundStyle(.white.opacity(0.6))
+                        .foregroundStyle(.primary.opacity(0.6))
                 }
                 .buttonStyle(.plain)
                 .help("Close paste stack")
 
                 Text("Paste Stack")
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.9))
+                    .foregroundStyle(.primary.opacity(0.9))
                 
                 Spacer()
                 
                 if !pasteStackManager.stackItems.isEmpty {
                     Text("\(pasteStackManager.stackItems.count) items")
                         .font(.system(size: 10))
-                        .foregroundStyle(.white.opacity(0.5))
+                        .foregroundStyle(.primary.opacity(0.5))
                 }
                 
                 // Sort button
@@ -95,7 +95,7 @@ struct PasteStackView: View {
                         }
                         .padding(.horizontal, 6)
                         .padding(.vertical, 4)
-                        .background(Color.white.opacity(0.1))
+                        .background(Color.primary.opacity(0.1))
                         .cornerRadius(4)
                     }
                     .buttonStyle(.plain)
@@ -109,7 +109,7 @@ struct PasteStackView: View {
                     } label: {
                         Image(systemName: "trash")
                             .font(.system(size: 11))
-                            .foregroundStyle(.white.opacity(0.5))
+                            .foregroundStyle(.primary.opacity(0.5))
                     }
                     .buttonStyle(.plain)
                     .help("Clear stack")
@@ -125,15 +125,15 @@ struct PasteStackView: View {
                 VStack(spacing: 10) {
                     Image(systemName: "doc.on.doc")
                         .font(.system(size: 28))
-                        .foregroundStyle(.white.opacity(0.3))
+                        .foregroundStyle(.primary.opacity(0.3))
                     
                     Text("Copy items to add to stack")
                         .font(.system(size: 12))
-                        .foregroundStyle(.white.opacity(0.5))
+                        .foregroundStyle(.primary.opacity(0.5))
                     
                     Text("⌘C to copy, then select to paste in order")
                         .font(.system(size: 10))
-                        .foregroundStyle(.white.opacity(0.3))
+                        .foregroundStyle(.primary.opacity(0.3))
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -315,7 +315,7 @@ struct PasteStackItemRow: View {
             // Index badge
             Text("\(index)")
                 .font(.system(size: 10, weight: .medium, design: .monospaced))
-                .foregroundStyle(.white.opacity(0.7))
+                .foregroundStyle(.primary.opacity(0.7))
                 .frame(width: 20)
                 .padding(.top, 2)
             
@@ -349,7 +349,7 @@ struct PasteStackItemRow: View {
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 12))
-                        .foregroundStyle(.white.opacity(0.5))
+                        .foregroundStyle(.primary.opacity(0.5))
                 }
                 .buttonStyle(.plain)
                 .padding(.top, 2)
@@ -359,11 +359,11 @@ struct PasteStackItemRow: View {
         .padding(.vertical, 6)
         .background(
             RoundedRectangle(cornerRadius: 6)
-                .fill(isSelected ? Color.white.opacity(0.15) : (isHovered ? Color.white.opacity(0.08) : Color.clear))
+                .fill(isSelected ? Color.primary.opacity(0.15) : (isHovered ? Color.primary.opacity(0.08) : Color.clear))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 6)
-                .stroke(isSelected ? Color.white.opacity(0.3) : Color.clear, lineWidth: 1)
+                .stroke(isSelected ? Color.primary.opacity(0.3) : Color.clear, lineWidth: 1)
         )
         .contentShape(Rectangle())
         .onTapGesture {
@@ -451,7 +451,7 @@ struct PasteStackItemRow: View {
                             // Play icon overlay
                             Image(systemName: "play.circle.fill")
                                 .font(.system(size: 14))
-                                .foregroundStyle(.white.opacity(0.9))
+                                .foregroundStyle(.primary.opacity(0.9))
                                 .shadow(radius: 2)
                         }
                         .onAppear {

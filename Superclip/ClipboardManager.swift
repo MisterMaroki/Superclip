@@ -38,38 +38,34 @@ class LinkMetadataService {
                 }
                 return
             }
-            
-            // Fetch the image if available
-            if let imageProvider = metadata.imageProvider {
-                imageProvider.loadObject(ofClass: NSImage.self) { image, _ in
-                    let linkMetadata: LinkMetadata
-                    if let nsImage = image as? NSImage,
-                       let imageData = nsImage.tiffRepresentation {
-                        linkMetadata = LinkMetadata(
-                            title: metadata.title,
-                            url: url,
-                            imageData: imageData
-                        )
+
+            let title = metadata.title
+
+            // Helper to load NSImage data from an NSItemProvider
+            func loadImageData(from provider: NSItemProvider?, completion: @escaping (Data?) -> Void) {
+                guard let provider = provider else { completion(nil); return }
+                provider.loadObject(ofClass: NSImage.self) { object, _ in
+                    if let nsImage = object as? NSImage, let data = nsImage.tiffRepresentation {
+                        completion(data)
                     } else {
-                        linkMetadata = LinkMetadata(
-                            title: metadata.title,
-                            url: url,
-                            imageData: nil
-                        )
+                        completion(nil)
                     }
-                    
+                }
+            }
+
+            // Load image first, then icon as fallback
+            loadImageData(from: metadata.imageProvider) { imageData in
+                loadImageData(from: metadata.iconProvider) { iconData in
+                    let linkMetadata = LinkMetadata(
+                        title: title,
+                        url: url,
+                        imageData: imageData,
+                        iconData: iconData
+                    )
                     self?.cache.setObject(linkMetadata, forKey: url as NSURL)
-                    
                     DispatchQueue.main.async {
                         completion(linkMetadata)
                     }
-                }
-            } else {
-                let linkMetadata = LinkMetadata(title: metadata.title, url: url, imageData: nil)
-                self?.cache.setObject(linkMetadata, forKey: url as NSURL)
-                
-                DispatchQueue.main.async {
-                    completion(linkMetadata)
                 }
             }
         }
@@ -580,5 +576,55 @@ class ClipboardManager: ObservableObject {
         DispatchQueue.main.async {
             self.history.removeAll()
         }
+    }
+
+    /// Seeds tutorial cards into history. Returns the ID of the card that should be pinned to Favorites.
+    @discardableResult
+    func seedTutorialItems() -> UUID? {
+        // Display order is reversed — last element ends up at index 0 (leftmost).
+        // First element in this array ends up rightmost in the drawer.
+        let texts = [
+            // Rightmost — lives in the Favorites pinboard for when they Cmd+Right over
+            "Look at you, nailing it already! This is your Favorites pinboard — your VIP section for clips you want to keep forever. Drag cards here or right-click \u{2192} Pin.",
+            // Tour finale — tells them to hop to the pinboard
+            "Almost done! Now hold Cmd, then press \u{2192} to see your Favorites pinboard. Go on, we\u{2019}ll wait.",
+            "Right-click a pinboard to rename it or change its color",
+            "Drag cards onto a pinboard to save them, or right-click \u{2192} Pin",
+            "Cmd+Shift+C starts a paste stack — paste items one by one with Cmd+V, and it auto-advances",
+            "Cmd+Shift+` opens Text Sniper — grab text from anywhere on screen like magic",
+            // The surprise card — card shows the first line, editor reveals the rest
+            "Hold Space on this card for a surprise\n\n\n\n\nSurprise! This is the rich text editor. Bold, italic, lists — perfect for cleaning up text before you paste it.",
+            "Press Space to preview this card — works for images, links, and files too",
+            "Right-click this card to see quick actions like copy, pin, and delete",
+            "Press Backspace to toss this card — hit Cmd+Z if you change your mind",
+            "Start typing anything to search — no need to click a search box",
+            // Second card — encouragement
+            "Nice one! Keep pressing \u{2192} to continue the tour",
+            // Leftmost — first card the user sees
+            "Welcome to Superclip! Press \u{2192} to start the tour",
+        ]
+
+        let sourceApp = SourceApp(
+            bundleIdentifier: Bundle.main.bundleIdentifier,
+            name: "Superclip",
+            icon: NSApp.applicationIconImage
+        )
+
+        let now = Date()
+        var pinCardId: UUID?
+        for (index, text) in texts.enumerated() {
+            let item = ClipboardItem(
+                content: text,
+                timestamp: now.addingTimeInterval(Double(index)),
+                type: .text,
+                sourceApp: sourceApp
+            )
+            history.insert(item, at: 0)
+            // First element = rightmost card = the one to pin
+            if index == 0 {
+                pinCardId = item.id
+            }
+        }
+        return pinCardId
     }
 }

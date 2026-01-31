@@ -239,6 +239,15 @@ class SettingsManager: ObservableObject {
         ignoredAppBundleIDs.removeAll { $0 == bundleID }
     }
 
+    // MARK: - Reset
+
+    /// Removes all Superclip keys from UserDefaults (settings, onboarding flag, pinboards, etc.)
+    static func resetAllUserDefaults() {
+        guard let domain = Bundle.main.bundleIdentifier else { return }
+        UserDefaults.standard.removePersistentDomain(forName: domain)
+        UserDefaults.standard.synchronize()
+    }
+
     // MARK: - Sensitive App Check
 
     func shouldExcludeApp(bundleIdentifier: String?) -> Bool {

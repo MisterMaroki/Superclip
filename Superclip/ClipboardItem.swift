@@ -74,16 +74,23 @@ class LinkMetadata: NSObject {
     let title: String?
     let url: URL
     let imageData: Data?
-    
-    init(title: String?, url: URL, imageData: Data?) {
+    let iconData: Data?
+
+    init(title: String?, url: URL, imageData: Data?, iconData: Data? = nil) {
         self.title = title
         self.url = url
         self.imageData = imageData
+        self.iconData = iconData
         super.init()
     }
-    
+
     var image: NSImage? {
         guard let data = imageData else { return nil }
+        return NSImage(data: data)
+    }
+
+    var icon: NSImage? {
+        guard let data = iconData else { return nil }
         return NSImage(data: data)
     }
     
@@ -254,6 +261,8 @@ struct ClipboardItem: Identifiable, Equatable {
     }
     
     static func == (lhs: ClipboardItem, rhs: ClipboardItem) -> Bool {
-        return lhs.id == rhs.id
+        lhs.id == rhs.id
+            && lhs.linkMetadata === rhs.linkMetadata
+            && lhs.rtfData == rhs.rtfData
     }
 }

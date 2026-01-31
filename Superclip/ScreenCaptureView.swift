@@ -112,20 +112,20 @@ struct ScreenCaptureView: View {
             }
 
             Text("|")
-                .foregroundStyle(.white.opacity(0.3))
+                .foregroundStyle(.primary.opacity(0.3))
 
             HStack(spacing: 6) {
                 Text("ESC")
                     .font(.system(size: 11, weight: .semibold, design: .monospaced))
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
-                    .background(Color.white.opacity(0.2))
+                    .background(Color.primary.opacity(0.2))
                     .cornerRadius(4)
                 Text("Cancel")
                     .font(.system(size: 13))
             }
         }
-        .foregroundStyle(.white)
+        .foregroundStyle(.primary)
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
         .background(Color.black.opacity(0.6))
@@ -137,7 +137,7 @@ struct ScreenCaptureView: View {
         let text = "\(Int(rect.width)) x \(Int(rect.height))"
         Text(text)
             .font(.system(size: 11, weight: .medium, design: .monospaced))
-            .foregroundStyle(.white)
+            .foregroundStyle(.primary)
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
             .background(Color.black.opacity(0.7))

@@ -59,7 +59,7 @@ struct SettingsView: View {
 
             // Divider
             Rectangle()
-                .fill(Color.white.opacity(0.1))
+                .fill(Color.primary.opacity(0.1))
                 .frame(width: 1)
 
             // Detail pane
@@ -68,15 +68,12 @@ struct SettingsView: View {
         }
         .frame(width: 680, height: 480)
         .background(
-            ZStack {
-                Color.black.opacity(0.85)
-                VisualEffectBlur(material: .hudWindow, blendingMode: .behindWindow)
-            }
+            VisualEffectBlur(material: .hudWindow, blendingMode: .behindWindow)
         )
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.white.opacity(0.15), lineWidth: 1)
+                .stroke(Color.primary.opacity(0.15), lineWidth: 1)
         )
     }
 
@@ -91,20 +88,20 @@ struct SettingsView: View {
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 14))
-                        .foregroundStyle(.white.opacity(0.6))
+                        .foregroundStyle(.primary.opacity(0.6))
                 }
                 .buttonStyle(.plain)
                 .help("Close settings")
 
                 Text("Settings")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.9))
+                    .foregroundStyle(.primary.opacity(0.9))
 
                 Spacer()
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
-            .background(Color.black.opacity(0.3))
+            .background(.ultraThinMaterial)
 
             // Section list
             ScrollView(.vertical, showsIndicators: false) {
@@ -125,7 +122,7 @@ struct SettingsView: View {
                 .padding(.vertical, 8)
             }
         }
-        .background(Color.white.opacity(0.03))
+        .background(Color.primary.opacity(0.05))
     }
 
     // MARK: - Detail Pane
@@ -170,16 +167,16 @@ struct SettingsSidebarItem: View {
                 // Icon with colored background
                 Image(systemName: section.icon)
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.white)
-                    .frame(width: 26, height: 26)
+                    .foregroundColor(.white)
+                    .frame(width: 28, height: 28)
                     .background(
-                        RoundedRectangle(cornerRadius: 6)
+                        RoundedRectangle(cornerRadius: 7)
                             .fill(section.iconColor)
                     )
 
                 Text(section.rawValue)
-                    .font(.system(size: 13, weight: isSelected ? .medium : .regular))
-                    .foregroundStyle(.white.opacity(isSelected ? 1.0 : 0.7))
+                    .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
+                    .foregroundStyle(.primary.opacity(isSelected ? 1.0 : 0.8))
 
                 Spacer()
             }
@@ -187,7 +184,7 @@ struct SettingsSidebarItem: View {
             .padding(.vertical, 6)
             .background(
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(isSelected ? Color.white.opacity(0.15) : (isHovered ? Color.white.opacity(0.08) : Color.clear))
+                    .fill(isSelected ? Color.primary.opacity(0.15) : (isHovered ? Color.primary.opacity(0.08) : Color.clear))
             )
         }
         .buttonStyle(.plain)
@@ -206,19 +203,19 @@ struct SettingsGroupBox<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(title)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.white.opacity(0.5))
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.primary.opacity(0.6))
                 .textCase(.uppercase)
                 .tracking(0.5)
 
             VStack(spacing: 1) {
                 content()
             }
-            .background(Color.white.opacity(0.06))
+            .background(Color.primary.opacity(0.08))
             .clipShape(RoundedRectangle(cornerRadius: 8))
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
-                    .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                    .stroke(Color.primary.opacity(0.08), lineWidth: 1)
             )
         }
     }
@@ -237,15 +234,15 @@ struct SettingsToggleRow: View {
 
     var body: some View {
         HStack {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text(title)
                     .font(.system(size: 13))
-                    .foregroundStyle(.white.opacity(0.9))
+                    .foregroundStyle(.primary.opacity(0.95))
 
                 if let subtitle = subtitle {
                     Text(subtitle)
                         .font(.system(size: 11))
-                        .foregroundStyle(.white.opacity(0.4))
+                        .foregroundStyle(.primary.opacity(0.5))
                 }
             }
 
@@ -275,7 +272,7 @@ struct SettingsPickerRow<T: Hashable & CustomStringConvertible>: View {
         HStack {
             Text(title)
                 .font(.system(size: 13))
-                .foregroundStyle(.white.opacity(0.9))
+                .foregroundStyle(.primary.opacity(0.95))
 
             Spacer()
 
@@ -300,13 +297,13 @@ struct SettingsInfoRow: View {
         HStack {
             Text(title)
                 .font(.system(size: 13))
-                .foregroundStyle(.white.opacity(0.9))
+                .foregroundStyle(.primary.opacity(0.95))
 
             Spacer()
 
             Text(value)
                 .font(.system(size: 13))
-                .foregroundStyle(.white.opacity(0.5))
+                .foregroundStyle(.primary.opacity(0.6))
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
@@ -328,15 +325,15 @@ struct SettingsButtonRow: View {
 
     var body: some View {
         HStack {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text(title)
                     .font(.system(size: 13))
-                    .foregroundStyle(.white.opacity(0.9))
+                    .foregroundStyle(.primary.opacity(0.95))
 
                 if let subtitle = subtitle {
                     Text(subtitle)
                         .font(.system(size: 11))
-                        .foregroundStyle(.white.opacity(0.4))
+                        .foregroundStyle(.primary.opacity(0.5))
                 }
             }
 
@@ -347,11 +344,15 @@ struct SettingsButtonRow: View {
             } label: {
                 Text(buttonTitle)
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.9))
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 5)
-                    .background(Color.white.opacity(0.1))
+                    .foregroundStyle(.primary.opacity(0.95))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 6)
+                    .background(Color.primary.opacity(0.1))
                     .cornerRadius(6)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+                    )
             }
             .buttonStyle(.plain)
         }
@@ -368,20 +369,20 @@ struct SettingsShortcutRow: View {
         HStack {
             Text(title)
                 .font(.system(size: 13))
-                .foregroundStyle(.white.opacity(0.9))
+                .foregroundStyle(.primary.opacity(0.95))
 
             Spacer()
 
             Text(shortcut)
                 .font(.system(size: 12, weight: .medium, design: .monospaced))
-                .foregroundStyle(.white.opacity(0.7))
+                .foregroundStyle(.primary.opacity(0.7))
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
-                .background(Color.white.opacity(0.08))
+                .background(Color.primary.opacity(0.08))
                 .cornerRadius(6)
                 .overlay(
                     RoundedRectangle(cornerRadius: 6)
-                        .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                        .stroke(Color.primary.opacity(0.12), lineWidth: 1)
                 )
         }
         .padding(.horizontal, 12)
@@ -392,7 +393,7 @@ struct SettingsShortcutRow: View {
 struct SettingsDivider: View {
     var body: some View {
         Rectangle()
-            .fill(Color.white.opacity(0.06))
+            .fill(Color.primary.opacity(0.08))
             .frame(height: 1)
             .padding(.leading, 12)
     }
@@ -409,7 +410,7 @@ struct GeneralSettingsPane: View {
                 // Pane title
                 Text("General")
                     .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.primary)
                     .padding(.bottom, 4)
 
                 SettingsGroupBox(title: "Startup") {
@@ -469,14 +470,14 @@ struct AppearanceSettingsPane: View {
             VStack(alignment: .leading, spacing: 20) {
                 Text("Appearance")
                     .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.primary)
                     .padding(.bottom, 4)
 
                 SettingsGroupBox(title: "Theme") {
                     HStack {
                         Text("Theme")
                             .font(.system(size: 13))
-                            .foregroundStyle(.white.opacity(0.9))
+                            .foregroundStyle(.primary.opacity(0.9))
 
                         Spacer()
 
@@ -486,22 +487,22 @@ struct AppearanceSettingsPane: View {
                                     settings.theme = theme
                                 } label: {
                                     Text(theme)
-                                        .font(.system(size: 12, weight: settings.theme == theme ? .medium : .regular))
-                                        .foregroundStyle(.white.opacity(settings.theme == theme ? 1.0 : 0.5))
-                                        .padding(.horizontal, 12)
-                                        .padding(.vertical, 5)
+                                        .font(.system(size: 12, weight: settings.theme == theme ? .semibold : .regular))
+                                        .foregroundStyle(.primary.opacity(settings.theme == theme ? 1.0 : 0.55))
+                                        .padding(.horizontal, 14)
+                                        .padding(.vertical, 6)
                                         .background(
-                                            settings.theme == theme ? Color.white.opacity(0.15) : Color.clear
+                                            settings.theme == theme ? Color.primary.opacity(0.18) : Color.clear
                                         )
                                 }
                                 .buttonStyle(.plain)
                             }
                         }
-                        .background(Color.white.opacity(0.06))
-                        .cornerRadius(6)
+                        .background(Color.primary.opacity(0.08))
+                        .cornerRadius(7)
                         .overlay(
-                            RoundedRectangle(cornerRadius: 6)
-                                .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                            RoundedRectangle(cornerRadius: 7)
+                                .stroke(Color.primary.opacity(0.1), lineWidth: 1)
                         )
                     }
                     .padding(.horizontal, 12)
@@ -555,7 +556,7 @@ struct ShortcutsSettingsPane: View {
             VStack(alignment: .leading, spacing: 20) {
                 Text("Shortcuts")
                     .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.primary)
                     .padding(.bottom, 4)
 
                 SettingsGroupBox(title: "Global Hotkeys") {
@@ -599,7 +600,7 @@ struct PrivacySettingsPane: View {
             VStack(alignment: .leading, spacing: 20) {
                 Text("Privacy")
                     .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.primary)
                     .padding(.bottom, 4)
 
                 SettingsGroupBox(title: "Content Filtering") {
@@ -639,13 +640,13 @@ struct IgnoredAppsSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("IGNORED APPLICATIONS")
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.white.opacity(0.5))
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.primary.opacity(0.6))
                 .tracking(0.5)
 
             Text("Do not save content copied from the applications below.")
                 .font(.system(size: 12))
-                .foregroundStyle(.white.opacity(0.4))
+                .foregroundStyle(.primary.opacity(0.5))
 
             VStack(spacing: 0) {
                 appListContent
@@ -654,11 +655,11 @@ struct IgnoredAppsSection: View {
 
                 appListToolbar
             }
-            .background(Color.white.opacity(0.06))
+            .background(Color.primary.opacity(0.08))
             .clipShape(RoundedRectangle(cornerRadius: 8))
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
-                    .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                    .stroke(Color.primary.opacity(0.08), lineWidth: 1)
             )
         }
         .popover(isPresented: $showingAppPicker, arrowEdge: .bottom) {
@@ -704,15 +705,15 @@ struct IgnoredAppsSection: View {
     private var emptyState: some View {
         HStack {
             Spacer()
-            VStack(spacing: 6) {
+            VStack(spacing: 8) {
                 Image(systemName: "app.dashed")
                     .font(.system(size: 24))
-                    .foregroundStyle(.white.opacity(0.2))
+                    .foregroundStyle(.primary.opacity(0.25))
                 Text("No ignored applications")
                     .font(.system(size: 12))
-                    .foregroundStyle(.white.opacity(0.3))
+                    .foregroundStyle(.primary.opacity(0.4))
             }
-            .padding(.vertical, 20)
+            .padding(.vertical, 24)
             Spacer()
         }
     }
@@ -721,13 +722,13 @@ struct IgnoredAppsSection: View {
         HStack(spacing: 10) {
             appIcon(app)
 
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(app.name)
                     .font(.system(size: 13))
-                    .foregroundStyle(.white.opacity(0.9))
+                    .foregroundStyle(.primary.opacity(0.95))
                 Text(app.id)
                     .font(.system(size: 10))
-                    .foregroundStyle(.white.opacity(0.3))
+                    .foregroundStyle(.primary.opacity(0.4))
             }
 
             Spacer()
@@ -751,7 +752,7 @@ struct IgnoredAppsSection: View {
         } else {
             Image(systemName: "app.fill")
                 .font(.system(size: 18))
-                .foregroundStyle(.white.opacity(0.4))
+                .foregroundStyle(.primary.opacity(0.4))
                 .frame(width: 24, height: 24)
         }
     }
@@ -763,7 +764,7 @@ struct IgnoredAppsSection: View {
             } label: {
                 Image(systemName: "plus")
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.7))
+                    .foregroundStyle(.primary.opacity(0.7))
                     .frame(width: 36, height: 28)
                     .contentShape(Rectangle())
             }
@@ -771,7 +772,7 @@ struct IgnoredAppsSection: View {
 
             Divider()
                 .frame(height: 18)
-                .background(Color.white.opacity(0.1))
+                .background(Color.primary.opacity(0.1))
 
             Button {
                 if let id = selectedAppID {
@@ -782,7 +783,7 @@ struct IgnoredAppsSection: View {
                 let opacity: Double = selectedAppID != nil ? 0.7 : 0.25
                 Image(systemName: "minus")
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.white.opacity(opacity))
+                    .foregroundStyle(.primary.opacity(opacity))
                     .frame(width: 36, height: 28)
                     .contentShape(Rectangle())
             }
@@ -925,7 +926,7 @@ struct StorageSettingsPane: View {
             VStack(alignment: .leading, spacing: 20) {
                 Text("Storage")
                     .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.primary)
                     .padding(.bottom, 4)
 
                 SettingsGroupBox(title: "History") {
@@ -1019,6 +1020,7 @@ struct StorageSettingsPane: View {
 
 struct AboutSettingsPane: View {
     @State private var showUpToDateAlert = false
+    @State private var showResetAlert = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -1035,24 +1037,24 @@ struct AboutSettingsPane: View {
                 } else {
                     Image(systemName: "doc.on.clipboard.fill")
                         .font(.system(size: 48))
-                        .foregroundStyle(.white.opacity(0.7))
+                        .foregroundStyle(.primary.opacity(0.7))
                         .frame(width: 80, height: 80)
                 }
 
                 // App name
                 Text("Superclip")
                     .font(.system(size: 22, weight: .bold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.primary)
 
                 // Version
                 Text("Version \(appVersion)")
                     .font(.system(size: 13))
-                    .foregroundStyle(.white.opacity(0.5))
+                    .foregroundStyle(.primary.opacity(0.55))
 
                 // Description
                 Text("A modern clipboard manager for macOS")
                     .font(.system(size: 13))
-                    .foregroundStyle(.white.opacity(0.4))
+                    .foregroundStyle(.primary.opacity(0.45))
                     .padding(.top, 4)
             }
 
@@ -1092,33 +1094,65 @@ struct AboutSettingsPane: View {
             .padding(.horizontal, 24)
             .padding(.bottom, 12)
 
-            // Quit button
-            Button {
-                NSApp.terminate(nil)
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "power")
-                        .font(.system(size: 12, weight: .medium))
-                    Text("Quit Superclip")
-                        .font(.system(size: 12, weight: .medium))
+            // Quit buttons
+            HStack(spacing: 10) {
+                Button {
+                    NSApp.terminate(nil)
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "power")
+                            .font(.system(size: 12, weight: .medium))
+                        Text("Quit Superclip")
+                            .font(.system(size: 12, weight: .medium))
+                    }
+                    .foregroundStyle(.red.opacity(0.9))
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 8)
+                    .background(Color.red.opacity(0.12))
+                    .cornerRadius(8)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(Color.red.opacity(0.2), lineWidth: 1)
+                    )
                 }
-                .foregroundStyle(.red.opacity(0.9))
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-                .background(Color.red.opacity(0.1))
-                .cornerRadius(8)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(Color.red.opacity(0.15), lineWidth: 1)
-                )
+                .buttonStyle(.plain)
+
+                Button {
+                    showResetAlert = true
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.counterclockwise")
+                            .font(.system(size: 12, weight: .medium))
+                        Text("Quit & Reset")
+                            .font(.system(size: 12, weight: .medium))
+                    }
+                    .foregroundStyle(.red.opacity(0.9))
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 8)
+                    .background(Color.red.opacity(0.12))
+                    .cornerRadius(8)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(Color.red.opacity(0.2), lineWidth: 1)
+                    )
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
             .padding(.bottom, 24)
         }
         .alert("Up to Date", isPresented: $showUpToDateAlert) {
             Button("OK", role: .cancel) {}
         } message: {
             Text("You're running the latest version of Superclip.")
+        }
+        .alert("Reset Superclip?", isPresented: $showResetAlert) {
+            Button("Cancel", role: .cancel) {}
+            Button("Quit & Reset", role: .destructive) {
+                SettingsManager.resetAllUserDefaults()
+                NSApp.terminate(nil)
+            }
+        } message: {
+            Text("This will erase all settings, clipboard history, and pinboards, then quit the app. The next launch will start fresh with onboarding.")
         }
     }
 

@@ -245,3 +245,73 @@
 **No False Positives:**
 1. Copy plain text like "Hello world" → no quick actions shown in preview or context menu
 2. Copy an image → no quick actions (only text-based items are analyzed)
+
+---
+
+## 3. Fuzzy Search with Ranking
+
+### What Changed
+- Search now uses fuzzy matching with scored results instead of basic string contains
+- Matches across content, source app name, type label, file names, and link metadata
+
+### Test Cases
+- Search "googl" → matches "google.com" (subsequence match)
+- Search "safar" → shows items copied from Safari (matches source app)
+- Search exact text → appears first (exact > prefix > contains > fuzzy)
+- Empty search → all items shown, same order as before
+- Search in pinboard view → fuzzy search works there too
+
+---
+
+## 4. Smart Collections / Auto-Tagging
+
+### What Changed
+- Clipboard items are auto-tagged with content sub-categories (color, email, phone, code, JSON, address)
+- Tags appear as small colored badges on clipboard cards
+
+### Test Cases
+- Copy "#FF5733" → shows purple "Color" badge
+- Copy "user@example.com" → shows blue "Email" badge
+- Copy "+1 (555) 123-4567" → shows green "Phone" badge
+- Copy a multi-line code snippet → shows orange "Code" badge
+- Copy `{"key": "value"}` → shows yellow "JSON" badge
+- Copy "123 Main Street" → shows cyan "Addr" badge
+- Multiple tags: copy "email me at user@example.com or call +1555123456" → both Email and Phone badges
+- Tags persist after app restart
+
+---
+
+## 5. Quick Actions Per Content Type
+
+### What Changed
+- Context-aware actions appear in preview panel and context menus based on content type
+
+### Test Cases
+- Copy "#FF5733" → preview shows "Copy as RGB" → click → clipboard has "rgb(255, 87, 51)"
+- Copy URL with tracking params → "Copy clean URL" strips utm_*, fbclid, etc.
+- Copy messy JSON → "Pretty Print" reformats with indentation
+- Copy email → "Compose Email" opens default mail client
+- Copy indented code → "Copy without indentation" strips leading whitespace
+- Plain text with no special content → no quick actions shown
+- Actions appear in both preview panel and right-click context menu
+
+---
+
+## 6. Snippets / Text Expansion
+
+### What Changed
+- Create saved snippets with trigger shortcuts
+- Type a trigger anywhere to auto-expand to saved content
+- Managed in Settings > Snippets
+
+### Test Cases
+- Create snippet: trigger ";;email", content "omar@example.com"
+- Type ";;email" in any app → auto-expands to "omar@example.com"
+- Create snippet: trigger ";;addr", content "123 Main St, London"
+- Type ";;addr" → expands correctly
+- Edit snippet trigger → old trigger stops working, new one works
+- Delete snippet → trigger no longer expands
+- Disable snippet → trigger stops expanding; re-enable → works again
+- Duplicate trigger → shows error "already used"
+- Trigger too short (1 char) → shows error
+- Snippets survive app restart

@@ -11,11 +11,13 @@ class SettingsPanel: NSPanel {
     let settings: SettingsManager
     let clipboardManager: ClipboardManager
     let pinboardManager: PinboardManager
+    let snippetManager: SnippetManager
 
-    init(settings: SettingsManager, clipboardManager: ClipboardManager, pinboardManager: PinboardManager) {
+    init(settings: SettingsManager, clipboardManager: ClipboardManager, pinboardManager: PinboardManager, snippetManager: SnippetManager) {
         self.settings = settings
         self.clipboardManager = clipboardManager
         self.pinboardManager = pinboardManager
+        self.snippetManager = snippetManager
 
         super.init(
             contentRect: NSRect(x: 0, y: 0, width: 680, height: 480),
@@ -66,7 +68,8 @@ class SettingsPanel: NSPanel {
             },
             settings: settings,
             clipboardManager: clipboardManager,
-            pinboardManager: pinboardManager
+            pinboardManager: pinboardManager,
+            snippetManager: snippetManager
         )
 
         let hostingView = NSHostingView(rootView: settingsView)

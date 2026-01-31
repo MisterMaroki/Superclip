@@ -239,6 +239,9 @@ struct PreviewView: View {
       .frame(maxWidth: .infinity, maxHeight: .infinity)
       .background(Color(nsColor: .controlBackgroundColor).opacity(0.95))
 
+      // Quick Actions bar (only shown when actions are available)
+      QuickActionsBar(item: item)
+
       // Footer
       Group {
         if item.type == .url {

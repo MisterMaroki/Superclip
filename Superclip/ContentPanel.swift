@@ -123,19 +123,14 @@ class ContentPanel: NSPanel {
       let offscreenY = screenFrame.minY - panelHeight
       let offscreenFrame = NSRect(x: xPosition, y: offscreenY, width: panelWidth, height: panelHeight)
 
-      // Show window at final position first to ensure it's rendered
-      setFrame(finalFrame, display: true)
-      alphaValue = 1.0
+      // Start offscreen and invisible so SwiftUI layout happens without a visible flash
+      alphaValue = 0
+      setFrame(offscreenFrame, display: true)
       orderFront(nil)
       makeKey()
 
-      // Instantly move to offscreen position (no animation)
-      CATransaction.begin()
-      CATransaction.setDisableActions(true)
-      setFrame(offscreenFrame, display: true)
-      CATransaction.commit()
-
-      // Animate up to final position
+      // Make visible and animate up to final position
+      alphaValue = 1.0
       NSAnimationContext.runAnimationGroup { context in
         context.duration = 0.1
         context.timingFunction = CAMediaTimingFunction(name: .easeOut)

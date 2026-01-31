@@ -1,7 +1,7 @@
-fix paste stack
+fix paste stack.
 
-context menus and right click menus
+context menus and right click menus have missing icons that need to be added.
 
-light mode needs work.
+find out why we recognise this as link ".glassEffect(.clear.tint(.red)"
 
-link previews are broken
+improve performance of navigation between pinboards

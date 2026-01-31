@@ -40,6 +40,9 @@ pin / unpin
 open link (if URL)
 edit rich text
 save image
+content tags:
+auto-detected badges (color, email, phone, code, JSON, address)
+color cards show parsed color tint on background (hex, rgb, hsl)
 
 Paste Stack:
 hotkeys:
@@ -98,12 +101,39 @@ capture area
 copy capture to clipboard
 open capture in image editor
 
+Snippets:
+trigger-based text expansion (e.g., ;;email expands to full address)
+global keyboard monitoring — works in any app
+create, edit, enable/disable snippets in settings
+persisted across launches
+
+Quick Actions:
+context-aware actions shown in preview panel
+color detection: hex (#RRGGBB), rgb(), hsl() — convert between formats
+JSON: pretty print, minify, copy
+email: compose mailto, copy
+phone: call, copy
+code: copy
+file path: reveal in Finder, copy
+
+Smart Filters:
+filter bar with auto-detected content categories
+filters: All, Links, Images, Files, Code, Colors, Emails, JSON, Phones
+content tagging via regex heuristics (color, email, phone, code, JSON, address)
+
+Fuzzy Search:
+ranked results by relevance
+scoring: exact > prefix > contains > fuzzy (subsequence)
+matches on content, source app name, type label, file names
+
 Integrations:
 AppIntents / Shortcuts (expose actions)
 link metadata fetching (title, description, favicon)
 
 Persistence & Export:
 history (max 100) with deduplication
+pinboards persisted across launches
+snippets persisted across launches
 export/import settings and data (pins, history)
 
 Automation targets:

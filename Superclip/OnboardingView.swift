@@ -237,7 +237,7 @@ private struct WelcomePage: View {
                     .foregroundStyle(OB.fgMuted)
             }
 
-            VStack(spacing: 10) {
+            VStack(spacing: 8) {
                 FeatureRow(
                     icon: "clock.arrow.circlepath",
                     title: "Clipboard History",
@@ -251,10 +251,22 @@ private struct WelcomePage: View {
                     gradient: [OB.purple, OB.pink]
                 )
                 FeatureRow(
+                    icon: "text.cursor",
+                    title: "Snippets",
+                    subtitle: "Type a trigger, expand into full text",
+                    gradient: [OB.pink, OB.orange]
+                )
+                FeatureRow(
+                    icon: "bolt.fill",
+                    title: "Quick Actions",
+                    subtitle: "Convert colors, format JSON, and more",
+                    gradient: [OB.orange, OB.cyan]
+                )
+                FeatureRow(
                     icon: "text.viewfinder",
                     title: "Text Sniper",
                     subtitle: "Extract text from anywhere on screen",
-                    gradient: [OB.pink, OB.orange]
+                    gradient: [OB.emerald, OB.cyan]
                 )
             }
             .padding(.horizontal, 36)

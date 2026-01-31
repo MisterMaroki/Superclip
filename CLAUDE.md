@@ -53,6 +53,29 @@ Superclip is a native macOS menu-bar clipboard manager built with SwiftUI and Ap
 - Pin/unpin items; persisted across launches
 - Quick access UI and navigation
 
+**SnippetManager** (`SnippetManager.swift`) - Text expansion:
+
+- Trigger-based snippets (e.g., `;;email` expands to full text)
+- Global keyboard monitor detects triggers in any app
+- CRUD with enable/disable; persisted via UserDefaults
+
+**QuickActions** (`QuickActions.swift`) - Context-aware actions:
+
+- `QuickActionAnalyzer` detects content types (color hex/rgb/hsl, JSON, email, phone, code, file path)
+- `QuickActionsProvider` maps detections to actionable conversions (e.g., hex → RGB, JSON → pretty print)
+- `QuickActionsBar` displayed in preview panel with color swatch
+
+**ContentDetector** (`ContentDetector.swift`) - Auto-tagging:
+
+- Regex-based detection of colors, emails, phones, code, JSON, addresses
+- Tags stored as `Set<ContentTag>` on each `ClipboardItem`
+- Powers smart filter bar and card content badges
+
+**FuzzySearch** (`FuzzySearch.swift`) - Ranked search:
+
+- Scoring: exact > prefix > contains > fuzzy subsequence
+- Matches on content, source app, type label, file names
+
 **OCRManager** (`OCRManager.swift`) - OCR support:
 
 - Extract text from images/screenshots
@@ -83,6 +106,7 @@ Panels use `floatingLevel` and `canJoinAllSpaces`.
 - `fileURLs: [URL]?`
 - `linkMetadata: LinkMetadata?`
 - `sourceApp: SourceApp?`
+- `detectedTags: Set<ContentTag>` — auto-detected content sub-categories
 
 ### Content Detection Order
 

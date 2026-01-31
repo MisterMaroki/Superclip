@@ -11,6 +11,8 @@ const rows = [
 	},
 	{ feature: 'Clipboard History & Pinboards', superclip: true, paste: true },
 	{ feature: 'OCR & Paste Stack', superclip: true, paste: true },
+	{ feature: 'Snippets & Text Expansion', superclip: true, paste: false, highlight: true },
+	{ feature: 'Quick Actions & Smart Filters', superclip: true, paste: false, highlight: true },
 	{
 		feature: 'Screen Capture & Recording',
 		superclip: "Feb '26",

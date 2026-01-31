@@ -8,11 +8,16 @@ Superclip is a lightweight, native macOS clipboard manager that runs from your m
 
 ## Features
 
-- **Menu bar app** - Runs discreetly in the background without cluttering your dock
-- **Global hotkey** - Quick access via keyboard shortcut (⌘⇧A)
-- **Clipboard history** - Access your previously copied items
-- **Native macOS experience** - Built with SwiftUI for a smooth, native feel
-- **Open source** - Free and open source alternative to commercial clipboard managers
+- **Clipboard history** — everything you copy, saved and searchable with fuzzy matching
+- **Pinboards** — color-coded collections for frequently used items
+- **Snippets** — define trigger shortcuts (e.g., `;;email`) that expand into full text in any app
+- **Quick Actions** — context-aware actions per content type: convert colors between hex/RGB/HSL, pretty print JSON, compose emails, reveal file paths
+- **Smart Filters** — auto-tags content (colors, code, emails, JSON, phone numbers) and lets you filter by type
+- **Paste Stack** — copy multiple items, paste them in sequence with auto-advance
+- **Built-in OCR** — extract text from images and screen regions
+- **Keyboard-first** — global hotkeys, arrow navigation, type-to-search
+- **Private by default** — everything stays on your Mac, no cloud sync, no tracking
+- **Native macOS** — built with SwiftUI, launches in 0.3s, uses less than 30MB RAM
 
 ## Requirements
 

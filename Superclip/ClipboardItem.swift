@@ -130,6 +130,7 @@ struct ClipboardItem: Identifiable, Equatable {
     let sourceApp: SourceApp?
     var linkMetadata: LinkMetadata?
     var rtfData: Data?  // Rich text formatting data (RTF format)
+    var detectedTags: Set<ContentTag>  // Auto-detected content sub-categories
 
     enum ClipboardType: String, Codable {
         case text
@@ -138,7 +139,7 @@ struct ClipboardItem: Identifiable, Equatable {
         case url
     }
 
-    init(id: UUID = UUID(), content: String, timestamp: Date = Date(), type: ClipboardType = .text, imageData: Data? = nil, fileURLs: [URL]? = nil, sourceApp: SourceApp? = nil, linkMetadata: LinkMetadata? = nil, rtfData: Data? = nil) {
+    init(id: UUID = UUID(), content: String, timestamp: Date = Date(), type: ClipboardType = .text, imageData: Data? = nil, fileURLs: [URL]? = nil, sourceApp: SourceApp? = nil, linkMetadata: LinkMetadata? = nil, rtfData: Data? = nil, detectedTags: Set<ContentTag> = []) {
         self.id = id
         self.content = content
         self.timestamp = timestamp
@@ -148,6 +149,7 @@ struct ClipboardItem: Identifiable, Equatable {
         self.sourceApp = sourceApp
         self.linkMetadata = linkMetadata
         self.rtfData = rtfData
+        self.detectedTags = detectedTags
     }
 
     // Get attributed string from RTF data
@@ -264,5 +266,74 @@ struct ClipboardItem: Identifiable, Equatable {
         lhs.id == rhs.id
             && lhs.linkMetadata === rhs.linkMetadata
             && lhs.rtfData == rhs.rtfData
+            && lhs.detectedTags == rhs.detectedTags
+    }
+}
+
+// MARK: - Codable Serialization Wrapper
+
+/// Lightweight Codable wrapper for persisting ClipboardItem to disk.
+/// Intentionally omits non-Codable fields (NSImage icon, LinkMetadata)
+/// which can be reconstructed at load time.
+struct CodableSourceApp: Codable {
+    let bundleIdentifier: String?
+    let name: String
+
+    init(from sourceApp: SourceApp) {
+        self.bundleIdentifier = sourceApp.bundleIdentifier
+        self.name = sourceApp.name
+    }
+
+    func toSourceApp() -> SourceApp {
+        var icon: NSImage?
+        if let bundleId = bundleIdentifier,
+           let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId) {
+            icon = NSWorkspace.shared.icon(forFile: appURL.path)
+        }
+        return SourceApp(bundleIdentifier: bundleIdentifier, name: name, icon: icon)
+    }
+}
+
+struct CodableClipboardItem: Codable {
+    let id: UUID
+    let content: String
+    let timestamp: Date
+    let type: ClipboardItem.ClipboardType
+    let imageBase64: String?
+    let fileURLPaths: [String]?
+    let sourceApp: CodableSourceApp?
+    let rtfBase64: String?
+    let detectedTags: Set<ContentTag>?
+
+    init(from item: ClipboardItem) {
+        self.id = item.id
+        self.content = item.content
+        self.timestamp = item.timestamp
+        self.type = item.type
+        self.imageBase64 = item.imageData?.base64EncodedString()
+        self.fileURLPaths = item.fileURLs?.map { $0.path }
+        self.sourceApp = item.sourceApp.map { CodableSourceApp(from: $0) }
+        self.rtfBase64 = item.rtfData?.base64EncodedString()
+        self.detectedTags = item.detectedTags.isEmpty ? nil : item.detectedTags
+    }
+
+    func toClipboardItem() -> ClipboardItem {
+        let imageData = imageBase64.flatMap { Data(base64Encoded: $0) }
+        let fileURLs = fileURLPaths?.map { URL(fileURLWithPath: $0) }
+        let rtfData = rtfBase64.flatMap { Data(base64Encoded: $0) }
+        let source = sourceApp?.toSourceApp()
+
+        return ClipboardItem(
+            id: id,
+            content: content,
+            timestamp: timestamp,
+            type: type,
+            imageData: imageData,
+            fileURLs: fileURLs,
+            sourceApp: source,
+            linkMetadata: nil,  // Re-fetched on demand
+            rtfData: rtfData,
+            detectedTags: detectedTags ?? []
+        )
     }
 }

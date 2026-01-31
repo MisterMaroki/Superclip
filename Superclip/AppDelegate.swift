@@ -4,6 +4,7 @@
 //
 
 import AppKit
+import Combine
 import HotKey
 import QuartzCore
 import ScreenCaptureKit
@@ -20,12 +21,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   var hotKey: HotKey?
   var pasteStackHotKey: HotKey?
   var ocrHotKey: HotKey?
+  private var hotkeyCancellables = Set<AnyCancellable>()
   var screenCaptureWindow: NSWindow?
   var clickMonitor: Any?
   var pasteStackKeyMonitor: Any?
   var previewClickMonitor: Any?
   let settingsManager = SettingsManager()
   let pinboardManager = PinboardManager()
+  let snippetManager = SnippetManager()
   lazy var clipboardManager = ClipboardManager(settings: settingsManager)
   lazy var pasteStackManager = PasteStackManager(clipboardManager: clipboardManager)
   private var shouldPasteAfterClose = false
@@ -45,6 +48,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     setupHotkey()
     setupPasteStackHotkey()
     setupOCRHotkey()
+    observeHotkeySettings()
+    snippetManager.startMonitoring()
+
+    // Pre-warm ClipboardManager so its init (disk I/O, observers) doesn't delay the first drawer open
+    _ = clipboardManager
 
     if !UserDefaults.standard.bool(forKey: WelcomeWindowController.hasSeenWelcomeKey) {
       // Seed tutorial cards and pinboard immediately so they're ready before the drawer ever opens
@@ -82,7 +90,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
   func applicationWillTerminate(_ notification: Notification) {
     if settingsManager.clearOnQuit {
+      clipboardManager.historyStore.deleteHistoryFile()
       clipboardManager.clearHistory()
+    } else {
+      clipboardManager.saveHistoryImmediately()
     }
   }
 
@@ -100,7 +111,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   private func setupHotkey() {
-    hotKey = HotKey(key: .a, modifiers: [.command, .shift])
+    let config = settingsManager.hotkeyConfigForHistory()
+    hotKey = HotKey(keyCombo: config.keyCombo)
     hotKey?.keyDownHandler = { [weak self] in
       DispatchQueue.main.async {
         self?.toggleContentWindow()
@@ -109,7 +121,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   private func setupPasteStackHotkey() {
-    pasteStackHotKey = HotKey(key: .c, modifiers: [.command, .shift])
+    let config = settingsManager.hotkeyConfigForPasteStack()
+    pasteStackHotKey = HotKey(keyCombo: config.keyCombo)
     pasteStackHotKey?.keyDownHandler = { [weak self] in
       DispatchQueue.main.async {
         self?.togglePasteStackWindow()
@@ -255,6 +268,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
       }
 
       if event.type == .keyDown {
+        // If the settings window is key, let all events through to its text fields
+        // (ESC and Cmd+W are handled by SettingsPanel.keyDown directly)
+        if let settings = self.settingsWindow, event.window === settings {
+          return event
+        }
+
         // Quick digit selection when Command is held (1-9, 0)
         // Key codes: 1=18, 2=19, 3=20, 4=21, 5=23, 6=22, 7=26, 8=28, 9=25, 0=29
         if event.modifierFlags.contains(.command) {
@@ -391,8 +410,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self.holdCompleted = false
             self.holdStartTime = CACurrentMediaTime()
 
-            self.holdProgressTimer = Timer.scheduledTimer(
-              withTimeInterval: 1.0 / 60.0, repeats: true
+            self.holdProgressTimer = Timer(
+              timeInterval: 1.0 / 60.0, repeats: true
             ) { [weak self] t in
               guard let self = self, let panel = self.contentWindow as? ContentPanel else {
                 t.invalidate()
@@ -400,9 +419,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
               }
               let elapsed = CACurrentMediaTime() - self.holdStartTime
               let p = min(1.0, elapsed / self.holdDuration)
-              DispatchQueue.main.async {
-                panel.navigationState.holdProgress = p
-              }
+              panel.navigationState.holdProgress = p
               if p >= 1.0 {
                 t.invalidate()
                 self.holdProgressTimer = nil
@@ -411,8 +428,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self.holdProgressTimer?.tolerance = 0.01
             RunLoop.main.add(self.holdProgressTimer!, forMode: .common)
 
-            self.holdCompletionTimer = Timer.scheduledTimer(
-              withTimeInterval: self.holdDuration, repeats: false
+            self.holdCompletionTimer = Timer(
+              timeInterval: self.holdDuration, repeats: false
             ) { [weak self] _ in
               self?.completeHoldToEdit()
             }
@@ -453,7 +470,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
       }
 
-      if event.type == .keyUp && event.keyCode == 49 {
+      if event.type == .keyUp {
+        if let settings = self.settingsWindow, event.window === settings {
+          return event
+        }
+        guard event.keyCode == 49 else { return event }
         // Space key up - handle hold release (rebound) or consume after completed hold
         guard let panel = self.contentWindow as? ContentPanel else { return event }
         let wasHolding = panel.navigationState.isHoldingSpace || self.holdCompleted
@@ -876,7 +897,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     let settingsPanel = SettingsPanel(
       settings: settingsManager,
       clipboardManager: clipboardManager,
-      pinboardManager: pinboardManager
+      pinboardManager: pinboardManager,
+      snippetManager: snippetManager
     )
     settingsPanel.appDelegate = self
     settingsWindow = settingsPanel
@@ -892,12 +914,40 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   // MARK: - OCR Screen Capture
 
   private func setupOCRHotkey() {
-    ocrHotKey = HotKey(key: .grave, modifiers: [.command, .shift])
+    let config = settingsManager.hotkeyConfigForOCR()
+    ocrHotKey = HotKey(keyCombo: config.keyCombo)
     ocrHotKey?.keyDownHandler = { [weak self] in
       DispatchQueue.main.async {
         self?.startScreenCapture()
       }
     }
+  }
+
+  /// Observe hotkey setting changes and re-register hotkeys immediately.
+  private func observeHotkeySettings() {
+    settingsManager.$historyHotkey
+      .dropFirst()
+      .receive(on: DispatchQueue.main)
+      .sink { [weak self] _ in
+        self?.setupHotkey()
+      }
+      .store(in: &hotkeyCancellables)
+
+    settingsManager.$pasteStackHotkey
+      .dropFirst()
+      .receive(on: DispatchQueue.main)
+      .sink { [weak self] _ in
+        self?.setupPasteStackHotkey()
+      }
+      .store(in: &hotkeyCancellables)
+
+    settingsManager.$ocrHotkey
+      .dropFirst()
+      .receive(on: DispatchQueue.main)
+      .sink { [weak self] _ in
+        self?.setupOCRHotkey()
+      }
+      .store(in: &hotkeyCancellables)
   }
 
   func startScreenCapture() {

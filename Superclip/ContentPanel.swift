@@ -129,11 +129,11 @@ class ContentPanel: NSPanel {
       orderFront(nil)
       makeKey()
 
-      // Make visible and animate up to final position
-      alphaValue = 1.0
+      // Animate up to final position with fade-in
       NSAnimationContext.runAnimationGroup { context in
-        context.duration = 0.1
+        context.duration = 0.15
         context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        self.animator().alphaValue = 1.0
         self.animator().setFrame(finalFrame, display: true)
       }
     }
@@ -149,8 +149,9 @@ class ContentPanel: NSPanel {
     let offscreenFrame = NSRect(x: frame.origin.x, y: offscreenY, width: frame.width, height: frame.height)
 
     NSAnimationContext.runAnimationGroup({ context in
-      context.duration = 0.1
+      context.duration = 0.15
       context.timingFunction = CAMediaTimingFunction(name: .easeIn)
+      self.animator().alphaValue = 0
       self.animator().setFrame(offscreenFrame, display: true)
     }, completionHandler: completion)
   }

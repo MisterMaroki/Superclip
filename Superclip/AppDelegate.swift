@@ -21,8 +21,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   var hotKey: HotKey?
   var pasteStackHotKey: HotKey?
   var ocrHotKey: HotKey?
+  var screenshotHotKey: HotKey?
   private var hotkeyCancellables = Set<AnyCancellable>()
   var screenCaptureWindow: NSWindow?
+  var screenshotCaptureWindow: NSWindow?
+  var floatingOverlayWindows: [FloatingOverlayPanel] = []
+  lazy var screenCaptureManager = ScreenCaptureManager()
   var clickMonitor: Any?
   var pasteStackKeyMonitor: Any?
   var previewClickMonitor: Any?
@@ -48,6 +52,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     setupHotkey()
     setupPasteStackHotkey()
     setupOCRHotkey()
+    setupScreenshotHotkey()
     observeHotkeySettings()
     snippetManager.startMonitoring()
 
@@ -104,6 +109,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     // Don't close if rich text editor windows are open
     if richTextEditorWindows.contains(where: { $0.isVisible }) {
+      return
+    }
+    // Don't close if floating overlay windows are visible
+    if floatingOverlayWindows.contains(where: { $0.isVisible }) {
       return
     }
     // Close both preview and drawer when app loses focus (paste stack stays open)
@@ -506,9 +515,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         let isRichTextEditorWindow = self.richTextEditorWindows.contains { $0 === event.window }
         let isSettingsWindow = event.window === self.settingsWindow
+        let isFloatingOverlay = self.floatingOverlayWindows.contains { $0 === event.window }
         if event.window != panelWindow && event.window != self.previewWindow
           && event.window != self.pasteStackWindow && !isRichTextEditorWindow
-          && !isSettingsWindow
+          && !isSettingsWindow && !isFloatingOverlay
         {
           DispatchQueue.main.async {
             // Close both preview and drawer when clicking outside the app
@@ -557,6 +567,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         // If settings window is becoming key, don't close
         if let settings = self.settingsWindow, settings.isVisible && keyWindow === settings {
+          return
+        }
+        // If floating overlay is becoming key, don't close
+        if let keyWin = keyWindow, self.floatingOverlayWindows.contains(where: { $0 === keyWin }) {
           return
         }
         // If preview is becoming key, don't close (user clicked on preview)
@@ -779,10 +793,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
       let isPasteStackWindow = clickWindow === self.pasteStackWindow
       let isRichTextEditorWindow = self.richTextEditorWindows.contains { $0 === clickWindow }
       let isSettingsWindow = clickWindow === self.settingsWindow
+      let isFloatingOverlay = self.floatingOverlayWindows.contains { $0 === clickWindow }
 
       // If click is outside all our windows, close both preview and drawer
       if !isPreviewWindow && !isDrawerWindow && !isPasteStackWindow && !isRichTextEditorWindow
-        && !isSettingsWindow
+        && !isSettingsWindow && !isFloatingOverlay
       {
         DispatchQueue.main.async {
           self.closeReviewWindow(andPaste: false)
@@ -948,6 +963,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         self?.setupOCRHotkey()
       }
       .store(in: &hotkeyCancellables)
+
+    settingsManager.$screenshotHotkey
+      .dropFirst()
+      .receive(on: DispatchQueue.main)
+      .sink { [weak self] _ in
+        self?.setupScreenshotHotkey()
+      }
+      .store(in: &hotkeyCancellables)
   }
 
   func startScreenCapture() {
@@ -986,59 +1009,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   private func captureScreenRegion(_ rect: NSRect) {
-    // Get scale factor on main thread before async work
-    let scaleFactor = NSScreen.main?.backingScaleFactor ?? 2.0
-
-    // Capture the screen region using ScreenCaptureKit
-    // Use [weak self] to avoid retain cycles
     Task { [weak self] in
       guard let self = self else { return }
 
       do {
-        // Get shareable content
-        let content = try await SCShareableContent.excludingDesktopWindows(
-          false, onScreenWindowsOnly: true)
-
-        // Find the main display
-        guard
-          let display = content.displays.first(where: { display in
-            display.displayID == CGMainDisplayID()
-          }) ?? content.displays.first
-        else {
-          await MainActor.run { [weak self] in
-            self?.showOCRError(.invalidImage)
-          }
-          return
-        }
-
-        // Find windows belonging to our app to exclude them
-        let ourBundleID = Bundle.main.bundleIdentifier ?? ""
-        let windowsToExclude = content.windows.filter { window in
-          window.owningApplication?.bundleIdentifier == ourBundleID
-        }
-
-        // Create a filter for the display, excluding our app's windows
-        let filter = SCContentFilter(display: display, excludingWindows: windowsToExclude)
-
-        // Configure the capture
-        let config = SCStreamConfiguration()
-        config.sourceRect = rect
-        config.width = Int(rect.width * scaleFactor)
-        config.height = Int(rect.height * scaleFactor)
-        config.scalesToFit = true
-        config.showsCursor = false
-        config.pixelFormat = kCVPixelFormatType_32BGRA
-
-        // Capture the image
-        let cgImage = try await SCScreenshotManager.captureImage(
-          contentFilter: filter,
-          configuration: config
-        )
+        let image = try await self.screenCaptureManager.captureArea(rect: rect)
 
         // Run OCR synchronously to avoid retaining the image in closures
-        let ocrResult = OCRManager.shared.recognizeText(in: NSImage(cgImage: cgImage, size: .zero))
+        let ocrResult = OCRManager.shared.recognizeText(in: image)
 
-        // Handle result on main thread (image is no longer needed)
         await MainActor.run { [weak self] in
           switch ocrResult {
           case .success(let text):
@@ -1122,6 +1101,182 @@ class AppDelegate: NSObject, NSApplicationDelegate {
       {
         NSWorkspace.shared.open(url)
       }
+    }
+  }
+
+  // MARK: - Screenshot Capture
+
+  private func setupScreenshotHotkey() {
+    let config = settingsManager.hotkeyConfigForScreenshot()
+    screenshotHotKey = HotKey(keyCombo: config.keyCombo)
+    screenshotHotKey?.keyDownHandler = { [weak self] in
+      DispatchQueue.main.async {
+        self?.startScreenshotCapture()
+      }
+    }
+  }
+
+  func startScreenshotCapture() {
+    // Prevent multiple captures at once
+    if screenshotCaptureWindow != nil && screenshotCaptureWindow?.isVisible == true {
+      return
+    }
+
+    // Close any open panels first
+    closeReviewWindow(andPaste: false)
+    closePasteStackWindow(andPaste: false)
+
+    // Check for screen recording permission
+    if !hasScreenRecordingPermission() {
+      requestScreenRecordingPermission()
+      return
+    }
+
+    // Get the main screen frame
+    guard let screen = NSScreen.main else { return }
+    let screenFrame = screen.frame
+
+    // Create and show the screenshot capture panel
+    let capturePanel = ScreenshotCapturePanel(screenFrame: screenFrame)
+    capturePanel.onCapture = { [weak self] image in
+      self?.handleScreenshotCapture(image)
+      self?.screenshotCaptureWindow = nil
+    }
+    capturePanel.onCancel = { [weak self] in
+      self?.screenshotCaptureWindow = nil
+    }
+
+    screenshotCaptureWindow = capturePanel
+    capturePanel.makeKeyAndOrderFront(nil)
+    NSApp.activate(ignoringOtherApps: true)
+  }
+
+  private func handleScreenshotCapture(_ image: NSImage) {
+    // Compress to PNG first
+    let pngData: Data? = {
+      guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+        return nil
+      }
+      let rep = NSBitmapImageRep(cgImage: cgImage)
+      return rep.representation(using: .png, properties: [:])
+    }()
+
+    if settingsManager.screenshotAutoCopy {
+      // Copy to clipboard
+      let pasteboard = NSPasteboard.general
+      pasteboard.clearContents()
+      pasteboard.writeObjects([image])
+      clipboardManager.syncPasteboardChangeCount()
+
+      // Add to clipboard history
+      var description = "Screenshot"
+      let width = Int(image.size.width)
+      let height = Int(image.size.height)
+      if width > 0 && height > 0 {
+        description = "\(width)\u{00D7}\(height)"
+      }
+
+      let item = ClipboardItem(
+        content: description,
+        type: .image,
+        imageData: pngData,
+        sourceApp: SourceApp(
+          bundleIdentifier: Bundle.main.bundleIdentifier,
+          name: "Superclip Screenshot",
+          icon: NSApp.applicationIconImage
+        )
+      )
+
+      DispatchQueue.main.async {
+        self.clipboardManager.history.insert(item, at: 0)
+      }
+    }
+
+    // Show floating overlay — when auto-copy is off, this is the only
+    // way to access the capture until the user acts on it
+    if let pngData = pngData {
+      let thumbnail = Self.createThumbnail(from: image, maxWidth: 280)
+      showFloatingOverlay(thumbnail: thumbnail, pngData: pngData)
+    }
+  }
+
+  /// Create a downscaled thumbnail for the floating overlay display.
+  private static func createThumbnail(from image: NSImage, maxWidth: CGFloat) -> NSImage {
+    let originalSize = image.size
+    guard originalSize.width > 0, originalSize.height > 0 else { return image }
+
+    let scale = min(maxWidth / originalSize.width, 1.0)
+    let thumbSize = NSSize(
+      width: round(originalSize.width * scale),
+      height: round(originalSize.height * scale)
+    )
+
+    let thumbnail = NSImage(size: thumbSize)
+    thumbnail.lockFocus()
+    NSGraphicsContext.current?.imageInterpolation = .high
+    image.draw(
+      in: NSRect(origin: .zero, size: thumbSize),
+      from: NSRect(origin: .zero, size: originalSize),
+      operation: .copy,
+      fraction: 1.0
+    )
+    thumbnail.unlockFocus()
+    return thumbnail
+  }
+
+  // MARK: - Floating Screenshot Overlay
+
+  private let overlayPadding: CGFloat = 16
+  private let overlaySpacing: CGFloat = 10
+
+  func showFloatingOverlay(thumbnail: NSImage, pngData: Data) {
+    let panel = FloatingOverlayPanel(thumbnail: thumbnail, pngData: pngData)
+    panel.appDelegate = self
+
+    // Position off-screen initially (below visible area) so it slides up
+    guard let screen = NSScreen.main else { return }
+    let screenFrame = screen.visibleFrame
+    let startX = screenFrame.minX + overlayPadding
+    panel.setFrameOrigin(NSPoint(x: startX, y: screenFrame.minY - panel.frame.height))
+
+    floatingOverlayWindows.append(panel)
+    panel.orderFront(nil)
+
+    // Animate all panels to their correct stacked positions
+    relayoutFloatingOverlays()
+  }
+
+  func removeFloatingOverlay(_ panel: FloatingOverlayPanel) {
+    floatingOverlayWindows.removeAll { $0 === panel }
+
+    // Fade out the removed panel, then close it
+    // Strong capture keeps the panel alive until close() runs
+    panel.animateOut {
+      panel.close()
+    }
+
+    // Slide remaining panels into place
+    relayoutFloatingOverlays()
+  }
+
+  /// Recalculate and animate all floating overlay positions.
+  /// Stacks from bottom-left upward, newest on top.
+  private func relayoutFloatingOverlays() {
+    guard let screen = NSScreen.main else { return }
+    let screenFrame = screen.visibleFrame
+    let x = screenFrame.minX + overlayPadding
+    var y = screenFrame.minY + overlayPadding
+
+    // Stack bottom-to-top: first item in array is oldest, goes at the bottom
+    for panel in floatingOverlayWindows {
+      let targetFrame = NSRect(
+        x: x,
+        y: y,
+        width: panel.frame.width,
+        height: panel.frame.height
+      )
+      panel.animateToFrame(targetFrame)
+      y += panel.frame.height + overlaySpacing
     }
   }
 }

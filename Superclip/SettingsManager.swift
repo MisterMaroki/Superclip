@@ -99,6 +99,16 @@ class SettingsManager: ObservableObject {
         didSet { defaults.set(ocrHotkey, forKey: Keys.ocrHotkey) }
     }
 
+    @Published var screenshotHotkey: [String: Int] {
+        didSet { defaults.set(screenshotHotkey, forKey: Keys.screenshotHotkey) }
+    }
+
+    // MARK: - Screen Capture
+
+    @Published var screenshotAutoCopy: Bool {
+        didSet { defaults.set(screenshotAutoCopy, forKey: Keys.screenshotAutoCopy) }
+    }
+
     // MARK: - Storage
 
     @Published var maxHistorySize: Int {
@@ -132,6 +142,8 @@ class SettingsManager: ObservableObject {
         static let historyHotkey = "Superclip.historyHotkey"
         static let pasteStackHotkey = "Superclip.pasteStackHotkey"
         static let ocrHotkey = "Superclip.ocrHotkey"
+        static let screenshotHotkey = "Superclip.screenshotHotkey"
+        static let screenshotAutoCopy = "Superclip.screenshotAutoCopy"
         static let maxHistorySize = "Superclip.maxHistorySize"
         static let clearOnQuit = "Superclip.clearOnQuit"
     }
@@ -163,6 +175,8 @@ class SettingsManager: ObservableObject {
             Keys.historyHotkey: HotkeyConfig.defaultHistory.dictionary,
             Keys.pasteStackHotkey: HotkeyConfig.defaultPasteStack.dictionary,
             Keys.ocrHotkey: HotkeyConfig.defaultOCR.dictionary,
+            Keys.screenshotHotkey: HotkeyConfig.defaultScreenshot.dictionary,
+            Keys.screenshotAutoCopy: true,
         ])
 
         self.launchAtLogin = d.bool(forKey: Keys.launchAtLogin)
@@ -182,6 +196,8 @@ class SettingsManager: ObservableObject {
         self.historyHotkey = (d.dictionary(forKey: Keys.historyHotkey) as? [String: Int]) ?? HotkeyConfig.defaultHistory.dictionary
         self.pasteStackHotkey = (d.dictionary(forKey: Keys.pasteStackHotkey) as? [String: Int]) ?? HotkeyConfig.defaultPasteStack.dictionary
         self.ocrHotkey = (d.dictionary(forKey: Keys.ocrHotkey) as? [String: Int]) ?? HotkeyConfig.defaultOCR.dictionary
+        self.screenshotHotkey = (d.dictionary(forKey: Keys.screenshotHotkey) as? [String: Int]) ?? HotkeyConfig.defaultScreenshot.dictionary
+        self.screenshotAutoCopy = d.bool(forKey: Keys.screenshotAutoCopy)
         self.ignoredAppBundleIDs = d.stringArray(forKey: Keys.ignoredAppBundleIDs) ?? []
         self.maxHistorySize = d.integer(forKey: Keys.maxHistorySize)
         self.clearOnQuit = d.bool(forKey: Keys.clearOnQuit)
@@ -247,10 +263,15 @@ class SettingsManager: ObservableObject {
         HotkeyConfig(dictionary: ocrHotkey) ?? .defaultOCR
     }
 
+    func hotkeyConfigForScreenshot() -> HotkeyConfig {
+        HotkeyConfig(dictionary: screenshotHotkey) ?? .defaultScreenshot
+    }
+
     func resetHotkeysToDefaults() {
         historyHotkey = HotkeyConfig.defaultHistory.dictionary
         pasteStackHotkey = HotkeyConfig.defaultPasteStack.dictionary
         ocrHotkey = HotkeyConfig.defaultOCR.dictionary
+        screenshotHotkey = HotkeyConfig.defaultScreenshot.dictionary
     }
 
     // MARK: - Reset

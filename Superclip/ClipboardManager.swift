@@ -522,6 +522,12 @@ class ClipboardManager: ObservableObject {
     changeCount = pasteboard.changeCount
   }
 
+  /// Sync internal change count with the pasteboard so the polling timer
+  /// does not re-process a pasteboard write we already handled externally.
+  func syncPasteboardChangeCount() {
+    changeCount = pasteboard.changeCount
+  }
+
   func deleteItem(_ item: ClipboardItem) {
     DispatchQueue.main.async {
       // Find the index before removing

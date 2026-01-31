@@ -12,6 +12,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     case general = "General"
     case appearance = "Appearance"
     case shortcuts = "Shortcuts"
+    case screenCapture = "Screen Capture"
     case snippets = "Snippets"
     case privacy = "Privacy"
     case storage = "Storage"
@@ -24,6 +25,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .general: return "gearshape.fill"
         case .appearance: return "paintbrush.fill"
         case .shortcuts: return "keyboard.fill"
+        case .screenCapture: return "camera.viewfinder"
         case .snippets: return "text.insert"
         case .privacy: return "hand.raised.fill"
         case .storage: return "internaldrive.fill"
@@ -36,6 +38,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .general: return .gray
         case .appearance: return .purple
         case .shortcuts: return .orange
+        case .screenCapture: return .indigo
         case .snippets: return .cyan
         case .privacy: return .red
         case .storage: return .blue
@@ -140,6 +143,8 @@ struct SettingsView: View {
             AppearanceSettingsPane(settings: settings)
         case .shortcuts:
             ShortcutsSettingsPane(settings: settings)
+        case .screenCapture:
+            ScreenCaptureSettingsPane(settings: settings)
         case .snippets:
             SnippetsSettingsPane(snippetManager: snippetManager)
         case .privacy:
@@ -525,9 +530,10 @@ struct ShortcutsSettingsPane: View {
     @State private var historyConfig: HotkeyConfig = .defaultHistory
     @State private var pasteStackConfig: HotkeyConfig = .defaultPasteStack
     @State private var ocrConfig: HotkeyConfig = .defaultOCR
+    @State private var screenshotConfig: HotkeyConfig = .defaultScreenshot
 
     var allConfigs: [HotkeyConfig] {
-        [historyConfig, pasteStackConfig, ocrConfig]
+        [historyConfig, pasteStackConfig, ocrConfig, screenshotConfig]
     }
 
     var body: some View {
@@ -560,6 +566,13 @@ struct ShortcutsSettingsPane: View {
                         onChanged: { settings.ocrHotkey = ocrConfig.dictionary }
                     )
                     SettingsDivider()
+                    HotkeyRecorderView(
+                        title: "Screenshot capture",
+                        config: $screenshotConfig,
+                        allConfigs: allConfigs,
+                        onChanged: { settings.screenshotHotkey = screenshotConfig.dictionary }
+                    )
+                    SettingsDivider()
                     HStack {
                         Spacer()
                         Button {
@@ -567,6 +580,7 @@ struct ShortcutsSettingsPane: View {
                             historyConfig = .defaultHistory
                             pasteStackConfig = .defaultPasteStack
                             ocrConfig = .defaultOCR
+                            screenshotConfig = .defaultScreenshot
                         } label: {
                             Text("Reset to Defaults")
                                 .font(.system(size: 12, weight: .medium))
@@ -610,6 +624,33 @@ struct ShortcutsSettingsPane: View {
             historyConfig = settings.hotkeyConfigForHistory()
             pasteStackConfig = settings.hotkeyConfigForPasteStack()
             ocrConfig = settings.hotkeyConfigForOCR()
+            screenshotConfig = settings.hotkeyConfigForScreenshot()
+        }
+    }
+}
+
+// MARK: - Screen Capture Settings Pane
+
+struct ScreenCaptureSettingsPane: View {
+    @ObservedObject var settings: SettingsManager
+
+    var body: some View {
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 20) {
+                Text("Screen Capture")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(.primary)
+                    .padding(.bottom, 4)
+
+                SettingsGroupBox(title: "After Capture") {
+                    SettingsToggleRow(
+                        title: "Auto-copy to clipboard",
+                        subtitle: "Automatically copy screenshots to the clipboard",
+                        isOn: $settings.screenshotAutoCopy
+                    )
+                }
+            }
+            .padding(24)
         }
     }
 }

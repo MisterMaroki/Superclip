@@ -226,11 +226,20 @@ struct ClipboardItem: Identifiable, Equatable {
         return formatter.localizedString(for: timestamp, relativeTo: Date())
     }
     
+    /// Cache decoded NSImages to avoid re-decoding PNG data on every access.
+    private static let imageCache = NSCache<NSUUID, NSImage>()
+
     var nsImage: NSImage? {
         guard let data = imageData else { return nil }
-        return NSImage(data: data)
+        let key = id as NSUUID
+        if let cached = Self.imageCache.object(forKey: key) {
+            return cached
+        }
+        guard let image = NSImage(data: data) else { return nil }
+        Self.imageCache.setObject(image, forKey: key)
+        return image
     }
-    
+
     var imageDimensions: String? {
         guard let image = nsImage else { return nil }
         let width = Int(image.size.width)

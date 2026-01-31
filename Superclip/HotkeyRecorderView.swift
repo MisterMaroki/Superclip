@@ -42,6 +42,7 @@ struct HotkeyConfig: Equatable {
     static let defaultHistory = HotkeyConfig(carbonKeyCode: UInt32(kVK_ANSI_A), carbonModifiers: NSEvent.ModifierFlags([.command, .shift]).carbonFlags)
     static let defaultPasteStack = HotkeyConfig(carbonKeyCode: UInt32(kVK_ANSI_C), carbonModifiers: NSEvent.ModifierFlags([.command, .shift]).carbonFlags)
     static let defaultOCR = HotkeyConfig(carbonKeyCode: UInt32(kVK_ANSI_Grave), carbonModifiers: NSEvent.ModifierFlags([.command, .shift]).carbonFlags)
+    static let defaultScreenshot = HotkeyConfig(carbonKeyCode: UInt32(kVK_ANSI_4), carbonModifiers: NSEvent.ModifierFlags([.command, .shift]).carbonFlags)
 
     // UserDefaults serialization
     var dictionary: [String: Int] {

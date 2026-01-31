@@ -100,6 +100,93 @@
 
 ---
 
+## 3. Smart Collections / Auto-Tagging
+
+### What Changed
+- Clipboard items are now auto-tagged with content sub-categories (color, email, phone, code, JSON, address)
+- New `ContentDetector.swift` with regex-based detection — runs on copy, no external APIs
+- Tags stored as `detectedTags: Set<ContentTag>` on `ClipboardItem`, persisted via `CodableClipboardItem`
+- Filter bar (horizontal pill buttons) above the card list for filtering by type
+- Tag badges displayed in the card header
+
+### Test Cases
+
+**Color Detection:**
+1. Copy `#FF5733` → card should show "Color" tag badge in header
+2. Copy `rgb(255, 87, 51)` → should show color tag
+3. Copy `hsl(9, 100%, 60%)` → should show color tag
+4. Copy `#abc` (3-char hex) → should show color tag
+5. Copy plain text "hello" → should NOT show color tag
+
+**Email Detection:**
+1. Copy `user@example.com` → should show "Email" tag badge
+2. Copy `first.last+tag@company.co.uk` → should show email tag
+3. Copy `not-an-email` → should NOT show email tag
+
+**Phone Detection:**
+1. Copy `+1 (555) 123-4567` → should show "Phone" tag badge
+2. Copy `+44 20 7946 0958` → should show phone tag
+3. Copy `123` → should NOT show phone tag (too few digits)
+
+**Code Detection:**
+1. Copy a multi-line Swift snippet (func, braces, indentation) → should show "Code" tag badge
+2. Copy a Python snippet (def, indentation) → should show code tag
+3. Copy a JS snippet (function, const, =>) → should show code tag
+4. Copy a single line of text → should NOT show code tag
+
+**JSON Detection:**
+1. Copy `{"key": "value", "count": 42}` → should show "JSON" tag badge
+2. Copy `[1, 2, 3]` → should show json tag
+3. Copy `{invalid json` → should NOT show json tag
+4. Copy plain text starting with a letter → should NOT show json tag
+
+**Address Detection:**
+1. Copy `123 Main Street` → should show "Addr" tag badge
+2. Copy `456 Oak Ave` → should show address tag
+3. Copy `hello world` → should NOT show address tag
+
+**Multiple Tags:**
+1. Copy text containing both an email and a phone number → should show both tag badges
+
+**Filter Bar:**
+1. Open drawer → filter bar with pill buttons visible above card list
+2. "All" is selected by default → all items shown
+3. Click "Colors" → only items with color tag shown
+4. Click "Links" → only URL-type items shown
+5. Click "Images" → only image-type items shown
+6. Click "Code" → only code-tagged items shown
+7. Click active filter again → deselects, returns to "All"
+
+**Filter + Search:**
+1. Select "Colors" filter, then type in search → both filters applied simultaneously
+2. Clear search → still filtered by "Colors"
+3. Click "All" → search still applied, filter cleared
+4. Clear search → all items shown
+
+**Filter + Pinboard:**
+1. Switch to a pinboard → filter bar still works
+2. Select a filter → pinboard items filtered accordingly
+
+**Persistence:**
+1. Copy items with various tags, quit and relaunch
+2. Tags should persist — color/email/code badges should still appear
+3. Filter bar should still work on reloaded items
+
+**Keyboard Navigation:**
+1. Apply a filter, use arrow keys → navigation works within filtered results
+2. Apply filter that shows 0 results → empty state message shown
+3. Change filter → selection resets to first item
+
+**Don't Break:**
+- Existing search still works independently
+- Card layout unchanged (tags are small badges in header)
+- Pinboard filtering unaffected
+- Drag and drop still works
+- Context menu still works
+- Hold-to-edit still works
+
+---
+
 ## 3. Quick Actions Per Content Type
 
 ### What Changed

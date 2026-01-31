@@ -832,7 +832,7 @@ struct ClipboardItemCard: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
-      // Header: type + time on left, app icon on right
+      // Header: type + time on left, tags, app icon on right
       HStack(spacing: 6) {
         // Type label
         Text(item.typeLabel)
@@ -845,6 +845,9 @@ struct ClipboardItemCard: View {
             .font(.system(size: 11))
             .foregroundStyle(.primary.opacity(0.5))
         }
+
+        // Detected content tag badges
+        ContentTagBadgesRow(tags: item.detectedTags)
 
         Spacer()
 

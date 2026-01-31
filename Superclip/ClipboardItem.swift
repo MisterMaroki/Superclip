@@ -130,6 +130,7 @@ struct ClipboardItem: Identifiable, Equatable {
     let sourceApp: SourceApp?
     var linkMetadata: LinkMetadata?
     var rtfData: Data?  // Rich text formatting data (RTF format)
+    var detectedTags: Set<ContentTag>  // Auto-detected content sub-categories
 
     enum ClipboardType: String, Codable {
         case text
@@ -138,7 +139,7 @@ struct ClipboardItem: Identifiable, Equatable {
         case url
     }
 
-    init(id: UUID = UUID(), content: String, timestamp: Date = Date(), type: ClipboardType = .text, imageData: Data? = nil, fileURLs: [URL]? = nil, sourceApp: SourceApp? = nil, linkMetadata: LinkMetadata? = nil, rtfData: Data? = nil) {
+    init(id: UUID = UUID(), content: String, timestamp: Date = Date(), type: ClipboardType = .text, imageData: Data? = nil, fileURLs: [URL]? = nil, sourceApp: SourceApp? = nil, linkMetadata: LinkMetadata? = nil, rtfData: Data? = nil, detectedTags: Set<ContentTag> = []) {
         self.id = id
         self.content = content
         self.timestamp = timestamp
@@ -148,6 +149,7 @@ struct ClipboardItem: Identifiable, Equatable {
         self.sourceApp = sourceApp
         self.linkMetadata = linkMetadata
         self.rtfData = rtfData
+        self.detectedTags = detectedTags
     }
 
     // Get attributed string from RTF data
@@ -264,6 +266,7 @@ struct ClipboardItem: Identifiable, Equatable {
         lhs.id == rhs.id
             && lhs.linkMetadata === rhs.linkMetadata
             && lhs.rtfData == rhs.rtfData
+            && lhs.detectedTags == rhs.detectedTags
     }
 }
 
@@ -300,6 +303,7 @@ struct CodableClipboardItem: Codable {
     let fileURLPaths: [String]?
     let sourceApp: CodableSourceApp?
     let rtfBase64: String?
+    let detectedTags: Set<ContentTag>?
 
     init(from item: ClipboardItem) {
         self.id = item.id
@@ -310,6 +314,7 @@ struct CodableClipboardItem: Codable {
         self.fileURLPaths = item.fileURLs?.map { $0.path }
         self.sourceApp = item.sourceApp.map { CodableSourceApp(from: $0) }
         self.rtfBase64 = item.rtfData?.base64EncodedString()
+        self.detectedTags = item.detectedTags.isEmpty ? nil : item.detectedTags
     }
 
     func toClipboardItem() -> ClipboardItem {
@@ -327,7 +332,8 @@ struct CodableClipboardItem: Codable {
             fileURLs: fileURLs,
             sourceApp: source,
             linkMetadata: nil,  // Re-fetched on demand
-            rtfData: rtfData
+            rtfData: rtfData,
+            detectedTags: detectedTags ?? []
         )
     }
 }

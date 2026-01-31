@@ -359,6 +359,23 @@ class ClipboardManager: ObservableObject {
             return
         }
 
+        // Auto-detect content tags for text-based items
+        var taggedItem = item
+        if item.type == .text || item.type == .url {
+            taggedItem = ClipboardItem(
+                id: item.id,
+                content: item.content,
+                timestamp: item.timestamp,
+                type: item.type,
+                imageData: item.imageData,
+                fileURLs: item.fileURLs,
+                sourceApp: item.sourceApp,
+                linkMetadata: item.linkMetadata,
+                rtfData: item.rtfData,
+                detectedTags: ContentDetector.detect(text: item.content)
+            )
+        }
+
         DispatchQueue.main.async {
             // Check if content already exists in history (dedup logic)
             if self.settings.deduplicateItems,
@@ -374,16 +391,17 @@ class ClipboardManager: ObservableObject {
                     fileURLs: existingItem.fileURLs,
                     sourceApp: existingItem.sourceApp,
                     linkMetadata: existingItem.linkMetadata,
-                    rtfData: existingItem.rtfData
+                    rtfData: existingItem.rtfData,
+                    detectedTags: existingItem.detectedTags
                 )
                 self.history.insert(updatedItem, at: 0)
             } else {
                 // New item - insert at beginning
-                self.history.insert(item, at: 0)
+                self.history.insert(taggedItem, at: 0)
 
                 // If it's a URL, fetch link metadata (if enabled)
-                if item.type == .url && self.settings.detectLinks {
-                    self.fetchLinkMetadata(for: item)
+                if taggedItem.type == .url && self.settings.detectLinks {
+                    self.fetchLinkMetadata(for: taggedItem)
                 }
 
                 // Limit history size
@@ -425,7 +443,8 @@ class ClipboardManager: ObservableObject {
                 fileURLs: item.fileURLs,
                 sourceApp: item.sourceApp,
                 linkMetadata: item.linkMetadata,
-                rtfData: item.rtfData
+                rtfData: item.rtfData,
+                detectedTags: item.detectedTags
             )
             self.history.insert(updatedItem, at: 0)
         }
@@ -477,7 +496,8 @@ class ClipboardManager: ObservableObject {
                 fileURLs: item.fileURLs,
                 sourceApp: item.sourceApp,
                 linkMetadata: item.linkMetadata,
-                rtfData: item.rtfData
+                rtfData: item.rtfData,
+                detectedTags: item.detectedTags
             )
             self.history.insert(updatedItem, at: 0)
         }
@@ -553,6 +573,9 @@ class ClipboardManager: ObservableObject {
                 // Clear metadata if no longer a URL, or fetch new metadata if became a URL
                 let newMetadata: LinkMetadata? = (newType == .url) ? existingItem.linkMetadata : nil
 
+                // Re-detect content tags for the updated content
+                let newTags = ContentDetector.detect(text: trimmedContent)
+
                 let updatedItem = ClipboardItem(
                     id: existingItem.id,
                     content: trimmedContent,
@@ -562,7 +585,8 @@ class ClipboardManager: ObservableObject {
                     fileURLs: existingItem.fileURLs,
                     sourceApp: existingItem.sourceApp,
                     linkMetadata: newMetadata,
-                    rtfData: existingItem.rtfData
+                    rtfData: existingItem.rtfData,
+                    detectedTags: newTags
                 )
                 self.history[index] = updatedItem
 
@@ -592,6 +616,9 @@ class ClipboardManager: ObservableObject {
                 // Clear metadata if no longer a URL
                 let newMetadata: LinkMetadata? = (newType == .url) ? existingItem.linkMetadata : nil
 
+                // Re-detect content tags for the updated content
+                let newTags = ContentDetector.detect(text: plainText)
+
                 let updatedItem = ClipboardItem(
                     id: existingItem.id,
                     content: plainText,
@@ -601,7 +628,8 @@ class ClipboardManager: ObservableObject {
                     fileURLs: existingItem.fileURLs,
                     sourceApp: existingItem.sourceApp,
                     linkMetadata: newMetadata,
-                    rtfData: rtfData
+                    rtfData: rtfData,
+                    detectedTags: newTags
                 )
                 self.history[index] = updatedItem
 

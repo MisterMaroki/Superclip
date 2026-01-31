@@ -360,8 +360,11 @@ class ClipboardManager: ObservableObject {
       {
         // Has a scheme (http://...) or looks like a domain (google.com)
         // Validate domain-like strings by checking they have valid URL structure
+        // Reject schemeless strings starting with "." (e.g. ".hidden-file") — not valid domains
         let urlString = url.scheme != nil ? string : "https://\(string)"
-        if let validatedURL = URL(string: urlString), validatedURL.host != nil {
+        if url.scheme != nil || !string.hasPrefix("."),
+          let validatedURL = URL(string: urlString), validatedURL.host != nil
+        {
           addToHistory(item: ClipboardItem(content: string, type: .url, sourceApp: sourceApp))
         } else {
           addToHistory(item: ClipboardItem(content: string, type: .text, sourceApp: sourceApp))
@@ -582,8 +585,11 @@ class ClipboardManager: ObservableObject {
 
     if let url = URL(string: trimmed), url.scheme != nil || trimmed.contains(".") {
       // Has a scheme (http://...) or looks like a domain (google.com)
+      // Reject schemeless strings starting with "." (e.g. ".hidden-file") — not valid domains
       let urlString = url.scheme != nil ? trimmed : "https://\(trimmed)"
-      if let validatedURL = URL(string: urlString), validatedURL.host != nil {
+      if url.scheme != nil || !trimmed.hasPrefix("."),
+        let validatedURL = URL(string: urlString), validatedURL.host != nil
+      {
         return true
       }
     }

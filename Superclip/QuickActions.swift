@@ -40,7 +40,7 @@ enum QuickActionAnalyzer {
   private static let hslColorPattern = #"hsla?\(\s*\d{1,3}\s*,\s*\d{1,3}%?\s*,\s*\d{1,3}%?"#
   private static let emailPattern = #"^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$"#
   private static let phonePattern =
-    #"^[\+]?[(]?[0-9]{1,4}[)]?[\s.\-]?[(]?[0-9]{1,4}[)]?[\s.\-]?[0-9]{1,9}$"#
+    #"^[\+]?[(]?[0-9]{1,4}[)]?[-\s./0-9()]{6,18}$"#
   private static let filePathPattern = #"^[~/](?:[^\x00]+/)*[^\x00]+$"#
 
   // MARK: Detection

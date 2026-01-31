@@ -12,6 +12,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     case general = "General"
     case appearance = "Appearance"
     case shortcuts = "Shortcuts"
+    case snippets = "Snippets"
     case privacy = "Privacy"
     case storage = "Storage"
     case about = "About"
@@ -23,6 +24,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .general: return "gearshape.fill"
         case .appearance: return "paintbrush.fill"
         case .shortcuts: return "keyboard.fill"
+        case .snippets: return "text.insert"
         case .privacy: return "hand.raised.fill"
         case .storage: return "internaldrive.fill"
         case .about: return "info.circle.fill"
@@ -34,6 +36,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .general: return .gray
         case .appearance: return .purple
         case .shortcuts: return .orange
+        case .snippets: return .cyan
         case .privacy: return .red
         case .storage: return .blue
         case .about: return .green
@@ -48,6 +51,7 @@ struct SettingsView: View {
     @ObservedObject var settings: SettingsManager
     @ObservedObject var clipboardManager: ClipboardManager
     @ObservedObject var pinboardManager: PinboardManager
+    @ObservedObject var snippetManager: SnippetManager
 
     @State private var selectedSection: SettingsSection = .general
 
@@ -136,6 +140,8 @@ struct SettingsView: View {
             AppearanceSettingsPane(settings: settings)
         case .shortcuts:
             ShortcutsSettingsPane(settings: settings)
+        case .snippets:
+            SnippetsSettingsPane(snippetManager: snippetManager)
         case .privacy:
             PrivacySettingsPane(settings: settings)
         case .storage:
@@ -1215,5 +1221,313 @@ struct AboutSettingsPane: View {
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
         let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
         return "\(version) (\(build))"
+    }
+}
+
+// MARK: - Snippets Settings Pane
+
+struct SnippetsSettingsPane: View {
+    @ObservedObject var snippetManager: SnippetManager
+
+    @State private var selectedSnippetId: UUID?
+    @State private var isCreating = false
+    @State private var editName = ""
+    @State private var editTrigger = ""
+    @State private var editContent = ""
+    @State private var editError: String?
+
+    var selectedSnippet: Snippet? {
+        guard let id = selectedSnippetId else { return nil }
+        return snippetManager.snippets.first { $0.id == id }
+    }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            // Snippet list (left)
+            snippetList
+                .frame(width: 220)
+
+            Rectangle()
+                .fill(Color.primary.opacity(0.08))
+                .frame(width: 1)
+
+            // Detail editor (right)
+            if isCreating || selectedSnippet != nil {
+                snippetEditor
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                emptyState
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+    }
+
+    // MARK: - Snippet List
+
+    var snippetList: some View {
+        VStack(spacing: 0) {
+            // Header
+            HStack {
+                Text("Snippets")
+                    .font(.system(size: 20, weight: .semibold))
+
+                Spacer()
+
+                Text("\(snippetManager.enabledSnippetCount)")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.primary.opacity(0.4))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.primary.opacity(0.08))
+                    .cornerRadius(4)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+
+            // List
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: 2) {
+                    ForEach(snippetManager.snippets) { snippet in
+                        snippetRow(snippet)
+                    }
+                }
+                .padding(.horizontal, 8)
+            }
+
+            // Toolbar
+            HStack(spacing: 0) {
+                Button {
+                    isCreating = true
+                    selectedSnippetId = nil
+                    editName = ""
+                    editTrigger = ";;"
+                    editContent = ""
+                    editError = nil
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.primary.opacity(0.7))
+                        .frame(width: 32, height: 28)
+                }
+                .buttonStyle(.plain)
+
+                Divider().frame(height: 16)
+
+                Button {
+                    if let id = selectedSnippetId, let snippet = snippetManager.snippets.first(where: { $0.id == id }) {
+                        snippetManager.deleteSnippet(snippet)
+                        selectedSnippetId = nil
+                    }
+                } label: {
+                    Image(systemName: "minus")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.primary.opacity(selectedSnippetId != nil ? 0.7 : 0.25))
+                        .frame(width: 32, height: 28)
+                }
+                .buttonStyle(.plain)
+                .disabled(selectedSnippetId == nil)
+
+                Spacer()
+            }
+            .padding(.horizontal, 4)
+            .padding(.vertical, 4)
+            .background(Color.primary.opacity(0.04))
+        }
+    }
+
+    func snippetRow(_ snippet: Snippet) -> some View {
+        Button {
+            selectedSnippetId = snippet.id
+            isCreating = false
+            editName = snippet.name
+            editTrigger = snippet.trigger
+            editContent = snippet.content
+            editError = nil
+        } label: {
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(snippet.isEnabled ? Color.cyan : Color.primary.opacity(0.2))
+                    .frame(width: 6, height: 6)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(snippet.name.isEmpty ? "Untitled" : snippet.name)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.primary.opacity(0.9))
+                        .lineLimit(1)
+
+                    Text(snippet.trigger)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(.primary.opacity(0.45))
+                }
+
+                Spacer()
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(selectedSnippetId == snippet.id ? Color.primary.opacity(0.12) : Color.clear)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Snippet Editor
+
+    var snippetEditor: some View {
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 16) {
+                Text(isCreating ? "New Snippet" : "Edit Snippet")
+                    .font(.system(size: 16, weight: .semibold))
+
+                // Name
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Name")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.primary.opacity(0.5))
+                        .textCase(.uppercase)
+
+                    TextField("e.g., Email address", text: $editName)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 13))
+                }
+
+                // Trigger
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Trigger")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.primary.opacity(0.5))
+                        .textCase(.uppercase)
+
+                    TextField("e.g., ;;email", text: $editTrigger)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 13, design: .monospaced))
+
+                    Text("Type this anywhere to expand the snippet")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.primary.opacity(0.35))
+                }
+
+                // Content
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Content")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.primary.opacity(0.5))
+                        .textCase(.uppercase)
+
+                    TextEditor(text: $editContent)
+                        .font(.system(size: 13))
+                        .frame(minHeight: 100, maxHeight: 200)
+                        .padding(4)
+                        .background(Color.primary.opacity(0.06))
+                        .cornerRadius(6)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6)
+                                .stroke(Color.primary.opacity(0.1), lineWidth: 1)
+                        )
+                }
+
+                if let error = editError {
+                    Text(error)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.red.opacity(0.8))
+                }
+
+                // Actions
+                HStack {
+                    if !isCreating, let snippet = selectedSnippet {
+                        Button {
+                            snippetManager.toggleSnippet(snippet)
+                        } label: {
+                            Text(snippet.isEnabled ? "Disable" : "Enable")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(.primary.opacity(0.7))
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(Color.primary.opacity(0.08))
+                                .cornerRadius(6)
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                    Spacer()
+
+                    Button {
+                        saveSnippet()
+                    } label: {
+                        Text(isCreating ? "Create" : "Save")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 6)
+                            .background(Color.accentColor)
+                            .cornerRadius(6)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(20)
+        }
+    }
+
+    var emptyState: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "text.insert")
+                .font(.system(size: 32))
+                .foregroundStyle(.primary.opacity(0.2))
+
+            Text("Select a snippet or create a new one")
+                .font(.system(size: 13))
+                .foregroundStyle(.primary.opacity(0.4))
+
+            Text("Type a trigger shortcut anywhere to auto-expand text")
+                .font(.system(size: 11))
+                .foregroundStyle(.primary.opacity(0.25))
+        }
+    }
+
+    // MARK: - Save
+
+    private func saveSnippet() {
+        let trimmedTrigger = editTrigger.trimmingCharacters(in: .whitespaces)
+        let trimmedContent = editContent.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !trimmedTrigger.isEmpty else {
+            editError = "Trigger cannot be empty"
+            return
+        }
+
+        guard trimmedTrigger.count >= 2 else {
+            editError = "Trigger must be at least 2 characters"
+            return
+        }
+
+        guard !trimmedContent.isEmpty else {
+            editError = "Content cannot be empty"
+            return
+        }
+
+        let excludeId = isCreating ? nil : selectedSnippetId
+        if snippetManager.isTriggerTaken(trimmedTrigger, excludingId: excludeId) {
+            editError = "This trigger is already used by another snippet"
+            return
+        }
+
+        editError = nil
+
+        if isCreating {
+            let snippet = snippetManager.createSnippet(
+                name: editName.trimmingCharacters(in: .whitespaces),
+                trigger: trimmedTrigger,
+                content: trimmedContent
+            )
+            selectedSnippetId = snippet.id
+            isCreating = false
+        } else if var snippet = selectedSnippet {
+            snippet.name = editName.trimmingCharacters(in: .whitespaces)
+            snippet.trigger = trimmedTrigger
+            snippet.content = trimmedContent
+            snippetManager.updateSnippet(snippet)
+        }
     }
 }

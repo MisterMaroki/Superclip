@@ -28,6 +28,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   var previewClickMonitor: Any?
   let settingsManager = SettingsManager()
   let pinboardManager = PinboardManager()
+  let snippetManager = SnippetManager()
   lazy var clipboardManager = ClipboardManager(settings: settingsManager)
   lazy var pasteStackManager = PasteStackManager(clipboardManager: clipboardManager)
   private var shouldPasteAfterClose = false
@@ -48,6 +49,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     setupPasteStackHotkey()
     setupOCRHotkey()
     observeHotkeySettings()
+    snippetManager.startMonitoring()
 
     if !UserDefaults.standard.bool(forKey: WelcomeWindowController.hasSeenWelcomeKey) {
       // Seed tutorial cards and pinboard immediately so they're ready before the drawer ever opens

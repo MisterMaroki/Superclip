@@ -22,6 +22,48 @@ enum ViewMode: Equatable {
   case pinboard(Pinboard)
 }
 
+/// Filter categories for the filter bar. Maps to ClipboardType + ContentTag.
+enum FilterTag: String, CaseIterable, Equatable {
+  case all = "All"
+  case links = "Links"
+  case images = "Images"
+  case files = "Files"
+  case code = "Code"
+  case colors = "Colors"
+  case emails = "Emails"
+  case json = "JSON"
+  case phones = "Phones"
+
+  var icon: String {
+    switch self {
+    case .all:    return "tray.full"
+    case .links:  return "link"
+    case .images: return "photo"
+    case .files:  return "doc"
+    case .code:   return "chevron.left.forwardslash.chevron.right"
+    case .colors: return "paintpalette"
+    case .emails: return "envelope"
+    case .json:   return "curlybraces"
+    case .phones: return "phone"
+    }
+  }
+
+  /// Check whether a clipboard item matches this filter.
+  func matches(_ item: ClipboardItem) -> Bool {
+    switch self {
+    case .all:    return true
+    case .links:  return item.type == .url
+    case .images: return item.type == .image
+    case .files:  return item.type == .file
+    case .code:   return item.detectedTags.contains(.code)
+    case .colors: return item.detectedTags.contains(.color)
+    case .emails: return item.detectedTags.contains(.email)
+    case .json:   return item.detectedTags.contains(.json)
+    case .phones: return item.detectedTags.contains(.phone)
+    }
+  }
+}
+
 struct ContentView: View {
   @ObservedObject var clipboardManager: ClipboardManager
   @ObservedObject var navigationState: NavigationState
@@ -40,6 +82,7 @@ struct ContentView: View {
   @State private var searchText: String = ""
   @State private var showSearchField: Bool = false
   @State private var viewMode: ViewMode = .clipboard
+  @State private var selectedFilter: FilterTag = .all
   @State private var editingPinboard: Pinboard?
   @State private var editingPinboardName: String = ""
   @FocusState private var isEditingPinboard: Bool
@@ -600,6 +643,28 @@ struct ContentView: View {
         )
         .padding(.trailing, 8)
       }
+    }
+  }
+
+  // MARK: - Filter Bar View
+
+  var filterBarView: some View {
+    ScrollView(.horizontal, showsIndicators: false) {
+      HStack(spacing: 6) {
+        ForEach(FilterTag.allCases, id: \.self) { tag in
+          FilterPillButton(
+            tag: tag,
+            isSelected: selectedFilter == tag,
+            onSelect: {
+              withAnimation(.easeOut(duration: 0.15)) {
+                selectedFilter = (selectedFilter == tag && tag != .all) ? .all : tag
+              }
+            }
+          )
+        }
+      }
+      .padding(.horizontal, 20)
+      .padding(.vertical, 6)
     }
   }
 
@@ -1328,6 +1393,9 @@ struct ItemContextMenu: View {
     }
     .keyboardShortcut(.delete, modifiers: [])
 
+    // Quick Actions submenu (context-aware)
+    QuickActionsContextMenu(item: item)
+
     Divider()
 
     // Pin submenu
@@ -1481,6 +1549,94 @@ struct RichTextCardPreview: NSViewRepresentable {
 }
 
 // MARK: - Header Components
+
+// MARK: - Filter Pill Button
+
+struct FilterPillButton: View {
+  let tag: FilterTag
+  let isSelected: Bool
+  let onSelect: () -> Void
+
+  @State private var isHovered = false
+
+  var body: some View {
+    Button(action: onSelect) {
+      HStack(spacing: 4) {
+        Image(systemName: tag.icon)
+          .font(.system(size: 10))
+        Text(tag.rawValue)
+          .font(.system(size: 11, weight: isSelected ? .semibold : .medium))
+      }
+      .foregroundStyle(isSelected ? .primary : .primary.opacity(0.6))
+      .padding(.horizontal, 10)
+      .padding(.vertical, 5)
+      .background(
+        isSelected
+          ? Color.primary.opacity(0.18)
+          : (isHovered ? Color.primary.opacity(0.1) : Color.primary.opacity(0.05))
+      )
+      .cornerRadius(14)
+    }
+    .buttonStyle(.plain)
+    .onHover { hovering in
+      isHovered = hovering
+    }
+  }
+}
+
+// MARK: - Content Tag Badge
+
+struct ContentTagBadge: View {
+  let tag: ContentTag
+
+  var label: String {
+    switch tag {
+    case .color:   return "Color"
+    case .email:   return "Email"
+    case .phone:   return "Phone"
+    case .code:    return "Code"
+    case .json:    return "JSON"
+    case .address: return "Addr"
+    }
+  }
+
+  var badgeColor: Color {
+    switch tag {
+    case .color:   return .purple
+    case .email:   return .blue
+    case .phone:   return .green
+    case .code:    return .orange
+    case .json:    return .yellow
+    case .address: return .cyan
+    }
+  }
+
+  var body: some View {
+    Text(label)
+      .font(.system(size: 9, weight: .semibold))
+      .foregroundStyle(badgeColor)
+      .padding(.horizontal, 5)
+      .padding(.vertical, 2)
+      .background(badgeColor.opacity(0.18))
+      .cornerRadius(4)
+  }
+}
+
+// MARK: - Content Tag Badges Row
+
+struct ContentTagBadgesRow: View {
+  let tags: Set<ContentTag>
+
+  var body: some View {
+    if !tags.isEmpty {
+      HStack(spacing: 3) {
+        ForEach(tags.sorted(by: { $0.rawValue < $1.rawValue }), id: \.self) { tag in
+          ContentTagBadge(tag: tag)
+        }
+      }
+    }
+  }
+}
 
 struct HeaderIconButton: View {
   let icon: String

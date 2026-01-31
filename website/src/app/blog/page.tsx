@@ -16,6 +16,7 @@ export const metadata: Metadata = {
     description:
       "Tips, comparisons, and updates from the Superclip team. Learn how to get the most out of your clipboard on macOS.",
     url: "https://superclip.app/blog",
+    images: ["/og-image.png"],
   },
 };
 

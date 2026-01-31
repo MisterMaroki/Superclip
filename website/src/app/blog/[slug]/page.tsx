@@ -41,11 +41,13 @@ export async function generateMetadata({
       publishedTime: post.date,
       url: `https://superclip.app/blog/${post.slug}`,
       authors: [post.author],
+      images: ["/og-image.png"],
     },
     twitter: {
       card: "summary_large_image",
       title: post.title,
       description: post.description,
+      images: ["/og-image.png"],
     },
   };
 }

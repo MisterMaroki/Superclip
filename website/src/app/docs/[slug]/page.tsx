@@ -39,6 +39,7 @@ export async function generateMetadata({
 			title: `${doc.title} | Superclip Docs`,
 			description: doc.description,
 			url: `https://superclip.app/docs/${doc.slug}`,
+			images: ['/og-image.png'],
 		},
 	};
 }

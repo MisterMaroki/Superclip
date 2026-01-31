@@ -16,6 +16,7 @@ export const metadata: Metadata = {
 		description:
 			'Learn how to use Superclip — installation, features, keyboard shortcuts, privacy settings, and troubleshooting.',
 		url: 'https://superclip.app/docs',
+		images: ['/og-image.png'],
 	},
 };
 

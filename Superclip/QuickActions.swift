@@ -29,6 +29,16 @@ enum DetectedContentType {
   case filePath(path: String)
 }
 
+// MARK: - Detected Color Model
+
+struct DetectedColor: Identifiable {
+  let id = UUID()
+  let raw: String  // original text matched (e.g. "#FF5733", "rgb(100, 200, 50)")
+  let r: Int
+  let g: Int
+  let b: Int
+}
+
 // MARK: - Content Detector
 
 enum QuickActionAnalyzer {
@@ -108,6 +118,56 @@ enum QuickActionAnalyzer {
     // Code detection (reuse SyntaxHighlighter's heuristic — multi-line + structure)
     if results.isEmpty, SyntaxHighlighter.highlight(text) != nil {
       results.append(.code(raw: text))
+    }
+
+    return results
+  }
+
+  // MARK: Multi-Color Detection
+
+  /// Detect all color values in the text, returning a deduplicated array of `DetectedColor`.
+  static func detectAllColors(in text: String) -> [DetectedColor] {
+    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return [] }
+
+    var results: [DetectedColor] = []
+    var seen = Set<String>()  // deduplicate by "r,g,b"
+
+    // Hex colors
+    for match in allMatches(pattern: hexColorPattern, in: trimmed) {
+      let hex = match.hasPrefix("#") ? match : "#\(match)"
+      if let (r, g, b) = parseHexColor(hex) {
+        let key = "\(r),\(g),\(b)"
+        if !seen.contains(key) {
+          seen.insert(key)
+          results.append(DetectedColor(raw: hex, r: r, g: g, b: b))
+        }
+      }
+    }
+
+    // RGB colors
+    for match in allMatches(pattern: rgbColorPattern, in: trimmed) {
+      let nums = match.components(separatedBy: CharacterSet.decimalDigits.inverted).compactMap { Int($0) }
+      if nums.count >= 3, nums[0] <= 255, nums[1] <= 255, nums[2] <= 255 {
+        let key = "\(nums[0]),\(nums[1]),\(nums[2])"
+        if !seen.contains(key) {
+          seen.insert(key)
+          results.append(DetectedColor(raw: match, r: nums[0], g: nums[1], b: nums[2]))
+        }
+      }
+    }
+
+    // HSL colors
+    for match in allMatches(pattern: hslColorPattern, in: trimmed) {
+      let nums = match.components(separatedBy: CharacterSet.decimalDigits.inverted).compactMap { Int($0) }
+      if nums.count >= 3 {
+        let (r, g, b) = hslToRGB(h: Double(nums[0]), s: Double(nums[1]) / 100.0, l: Double(nums[2]) / 100.0)
+        let key = "\(r),\(g),\(b)"
+        if !seen.contains(key) {
+          seen.insert(key)
+          results.append(DetectedColor(raw: match, r: r, g: g, b: b))
+        }
+      }
     }
 
     return results
@@ -275,6 +335,17 @@ enum QuickActionAnalyzer {
     let groupRange = match.numberOfRanges > 1 ? match.range(at: 1) : match.range
     guard let swiftRange = Range(groupRange, in: text) else { return nil }
     return String(text[swiftRange])
+  }
+
+  private static func allMatches(pattern: String, in text: String) -> [String] {
+    guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
+    let range = NSRange(text.startIndex..., in: text)
+    let matches = regex.matches(in: text, range: range)
+    return matches.compactMap { match in
+      let groupRange = match.numberOfRanges > 1 ? match.range(at: 1) : match.range
+      guard let swiftRange = Range(groupRange, in: text) else { return nil }
+      return String(text[swiftRange])
+    }
   }
 
   private static func isValidJSON(_ text: String) -> Bool {
@@ -541,11 +612,273 @@ class QuickActionFeedback: ObservableObject {
   }
 }
 
+// MARK: - Color Spectrum View
+
+struct ColorSpectrumView: View {
+  @Binding var hue: Double        // 0...360
+  @Binding var saturation: Double // 0...1
+  var brightness: Double          // 0...1
+
+  var body: some View {
+    GeometryReader { geo in
+      let size = geo.size
+      ZStack {
+        // Hue gradient (horizontal)
+        LinearGradient(
+          gradient: Gradient(colors: stride(from: 0.0, through: 360.0, by: 30.0).map { h in
+            Color(hue: h / 360.0, saturation: 1.0, brightness: brightness)
+          }),
+          startPoint: .leading,
+          endPoint: .trailing
+        )
+
+        // Saturation overlay: white at top fading to transparent at bottom
+        LinearGradient(
+          gradient: Gradient(colors: [
+            Color.white.opacity(1.0),
+            Color.white.opacity(0.0),
+          ]),
+          startPoint: .top,
+          endPoint: .bottom
+        )
+
+        // Crosshair indicator
+        Circle()
+          .fill(Color(hue: hue / 360.0, saturation: saturation, brightness: brightness))
+          .frame(width: 14, height: 14)
+          .overlay(
+            Circle()
+              .stroke(Color.white, lineWidth: 2)
+          )
+          .shadow(color: .black.opacity(0.3), radius: 2, x: 0, y: 1)
+          .position(
+            x: (hue / 360.0) * size.width,
+            y: (1.0 - saturation) * size.height
+          )
+      }
+      .clipShape(RoundedRectangle(cornerRadius: 6))
+      .contentShape(Rectangle())
+      .gesture(
+        DragGesture(minimumDistance: 0)
+          .onChanged { value in
+            let newHue = min(max(value.location.x / size.width, 0), 1) * 360.0
+            let newSat = 1.0 - min(max(value.location.y / size.height, 0), 1)
+            hue = newHue
+            saturation = newSat
+          }
+      )
+    }
+    .frame(height: 80)
+    .cornerRadius(6)
+  }
+}
+
+// MARK: - Color Channel Slider
+
+struct ColorChannelSlider: View {
+  let label: String
+  @Binding var value: Double
+  var range: ClosedRange<Double>
+  var color: Color
+
+  var body: some View {
+    HStack(spacing: 4) {
+      Text(label)
+        .font(.system(size: 10, weight: .medium))
+        .foregroundStyle(.secondary)
+        .frame(width: 12, alignment: .trailing)
+
+      GeometryReader { geo in
+        let fraction = (value - range.lowerBound) / (range.upperBound - range.lowerBound)
+        ZStack(alignment: .leading) {
+          // Track background
+          Capsule()
+            .fill(Color.primary.opacity(0.1))
+            .frame(height: 6)
+
+          // Filled portion
+          Capsule()
+            .fill(color.opacity(0.7))
+            .frame(width: max(6, CGFloat(fraction) * geo.size.width), height: 6)
+
+          // Thumb
+          Circle()
+            .fill(color)
+            .frame(width: 12, height: 12)
+            .shadow(color: .black.opacity(0.15), radius: 1, x: 0, y: 1)
+            .offset(x: max(0, CGFloat(fraction) * (geo.size.width - 12)))
+        }
+        .frame(height: 12)
+        .position(x: geo.size.width / 2, y: geo.size.height / 2)
+        .contentShape(Rectangle())
+        .gesture(
+          DragGesture(minimumDistance: 0)
+            .onChanged { drag in
+              let fraction = min(max(drag.location.x / geo.size.width, 0), 1)
+              value = range.lowerBound + Double(fraction) * (range.upperBound - range.lowerBound)
+            }
+        )
+      }
+      .frame(height: 18)
+
+      Text("\(Int(value))")
+        .font(.system(size: 10, design: .monospaced))
+        .foregroundStyle(.secondary)
+        .frame(width: 28, alignment: .trailing)
+    }
+  }
+}
+
+// MARK: - Inline Color Editor
+
+struct InlineColorEditor: View {
+  @Binding var hue: Double
+  @Binding var saturation: Double
+  @Binding var brightness: Double
+  @Binding var red: Double
+  @Binding var green: Double
+  @Binding var blue: Double
+
+  private var previewColor: Color {
+    Color(
+      nsColor: QuickActionAnalyzer.nsColor(
+        r: Int(red),
+        g: Int(green),
+        b: Int(blue)
+      )
+    )
+  }
+
+  private var hexText: String {
+    QuickActionAnalyzer.hexString(r: Int(red), g: Int(green), b: Int(blue))
+  }
+
+  var body: some View {
+    VStack(spacing: 8) {
+      // Row 1: Spectrum + swatch preview
+      HStack(spacing: 10) {
+        ColorSpectrumView(
+          hue: $hue,
+          saturation: $saturation,
+          brightness: brightness
+        )
+
+        VStack(spacing: 4) {
+          RoundedRectangle(cornerRadius: 6)
+            .fill(previewColor)
+            .frame(width: 48, height: 48)
+            .overlay(
+              RoundedRectangle(cornerRadius: 6)
+                .stroke(Color.primary.opacity(0.2), lineWidth: 1)
+            )
+          Text(hexText)
+            .font(.system(size: 9, weight: .medium, design: .monospaced))
+            .foregroundStyle(.secondary)
+        }
+      }
+
+      // Brightness slider
+      ColorChannelSlider(
+        label: "B",
+        value: $brightness,
+        range: 0...100,
+        color: .gray
+      )
+
+      // RGB sliders
+      ColorChannelSlider(
+        label: "R",
+        value: $red,
+        range: 0...255,
+        color: .red
+      )
+      ColorChannelSlider(
+        label: "G",
+        value: $green,
+        range: 0...255,
+        color: .green
+      )
+      ColorChannelSlider(
+        label: "B",
+        value: $blue,
+        range: 0...255,
+        color: .blue
+      )
+    }
+    .padding(10)
+    .background(Color.primary.opacity(0.04))
+    .cornerRadius(8)
+  }
+}
+
+// MARK: - Color Editor State
+
+class ColorEditorState: ObservableObject, Identifiable {
+  let id = UUID()
+  let original: DetectedColor
+
+  @Published var adjustedR: Double
+  @Published var adjustedG: Double
+  @Published var adjustedB: Double
+  @Published var adjustedHue: Double = 0
+  @Published var adjustedSaturation: Double = 1.0
+  @Published var adjustedBrightness: Double = 100
+  var isUpdating = false
+
+  init(color: DetectedColor) {
+    self.original = color
+    self.adjustedR = Double(color.r)
+    self.adjustedG = Double(color.g)
+    self.adjustedB = Double(color.b)
+    syncHSBFromRGB()
+  }
+
+  func syncHSBFromRGB() {
+    guard !isUpdating else { return }
+    isUpdating = true
+    let nsColor = NSColor(
+      red: CGFloat(adjustedR) / 255.0,
+      green: CGFloat(adjustedG) / 255.0,
+      blue: CGFloat(adjustedB) / 255.0,
+      alpha: 1.0
+    )
+    var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+    nsColor.getHue(&h, saturation: &s, brightness: &b, alpha: &a)
+    adjustedHue = Double(h) * 360.0
+    adjustedSaturation = Double(s)
+    adjustedBrightness = Double(b) * 100.0
+    isUpdating = false
+  }
+
+  func syncRGBFromHSB() {
+    guard !isUpdating else { return }
+    isUpdating = true
+    let nsColor = NSColor(
+      hue: CGFloat(adjustedHue / 360.0),
+      saturation: CGFloat(adjustedSaturation),
+      brightness: CGFloat(adjustedBrightness / 100.0),
+      alpha: 1.0
+    )
+    var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+    nsColor.getRed(&r, green: &g, blue: &b, alpha: &a)
+    adjustedR = Double(r) * 255.0
+    adjustedG = Double(g) * 255.0
+    adjustedB = Double(b) * 255.0
+    isUpdating = false
+  }
+}
+
 // MARK: - Quick Actions Bar (for PreviewView)
 
 struct QuickActionsBar: View {
   let item: ClipboardItem
   @ObservedObject private var feedback = QuickActionFeedback.shared
+
+  // Multi-color state
+  @State private var colorStates: [ColorEditorState] = []
+  @State private var selectedColorIndex: Int = 0
+  @State private var isColorEditorExpanded: Bool = false
+  @State private var colorsInitialized: Bool = false
 
   private var actions: [QuickAction] {
     QuickActionsProvider.actions(for: item)
@@ -555,19 +888,53 @@ struct QuickActionsBar: View {
     QuickActionsProvider.detectedTypes(for: item)
   }
 
-  /// Extract color info from any color detection type.
-  private var colorInfo: (r: Int, g: Int, b: Int)? {
-    for t in detectedTypes {
-      switch t {
-      case .colorHex(_, let r, let g, let b),
-           .colorRGB(_, let r, let g, let b),
-           .colorHSL(_, let r, let g, let b):
-        return (r, g, b)
-      default:
-        continue
+  private var hasColors: Bool {
+    !colorStates.isEmpty
+  }
+
+  private var selectedState: ColorEditorState? {
+    guard selectedColorIndex >= 0, selectedColorIndex < colorStates.count else { return nil }
+    return colorStates[selectedColorIndex]
+  }
+
+  /// Non-color actions to display alongside dynamic color copy buttons.
+  private var nonColorActions: [QuickAction] {
+    guard hasColors else { return actions }
+    let colorActionTitles: Set<String> = [
+      "Copy as RGB", "Copy as HSL", "Copy as Hex",
+    ]
+    return actions.filter { !colorActionTitles.contains($0.title) }
+  }
+
+  private func colorCopyButton(title: String, icon: String, value: String) -> some View {
+    Button {
+      let pb = NSPasteboard.general
+      pb.clearContents()
+      pb.setString(value, forType: .string)
+      QuickActionFeedback.shared.show("Copied!")
+    } label: {
+      HStack(spacing: 4) {
+        Image(systemName: icon)
+          .font(.system(size: 10))
+        Text(title)
+          .font(.system(size: 11, weight: .medium))
       }
+      .foregroundStyle(.primary.opacity(0.85))
+      .padding(.horizontal, 10)
+      .padding(.vertical, 5)
+      .background(Color.primary.opacity(0.08))
+      .cornerRadius(6)
     }
-    return nil
+    .buttonStyle(.plain)
+    .contentShape(Rectangle())
+  }
+
+  private func initializeColors() {
+    guard !colorsInitialized else { return }
+    colorsInitialized = true
+    let detected = QuickActionAnalyzer.detectAllColors(in: item.content)
+    colorStates = detected.map { ColorEditorState(color: $0) }
+    selectedColorIndex = 0
   }
 
   var body: some View {
@@ -592,25 +959,76 @@ struct QuickActionsBar: View {
           }
         }
 
-        // Color swatch (if applicable)
-        if let c = colorInfo {
-          HStack(spacing: 8) {
-            RoundedRectangle(cornerRadius: 4)
-              .fill(Color(nsColor: QuickActionAnalyzer.nsColor(r: c.r, g: c.g, b: c.b)))
-              .frame(width: 28, height: 28)
-              .overlay(
-                RoundedRectangle(cornerRadius: 4)
-                  .stroke(Color.primary.opacity(0.2), lineWidth: 1)
-              )
-            Text(QuickActionAnalyzer.rgbString(r: c.r, g: c.g, b: c.b))
-              .font(.system(size: 11, design: .monospaced))
-              .foregroundStyle(.secondary)
+        // Color chip strip (if colors detected)
+        if hasColors {
+          HStack(spacing: 6) {
+            ScrollView(.horizontal, showsIndicators: false) {
+              HStack(spacing: 6) {
+                ForEach(Array(colorStates.enumerated()), id: \.element.id) { index, state in
+                  ColorChipView(
+                    state: state,
+                    isSelected: index == selectedColorIndex
+                  )
+                  .onTapGesture {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                      selectedColorIndex = index
+                    }
+                  }
+                }
+              }
+            }
+
+            Button {
+              withAnimation(.easeInOut(duration: 0.25)) {
+                isColorEditorExpanded.toggle()
+              }
+            } label: {
+              Image(systemName: isColorEditorExpanded ? "chevron.up" : "slider.horizontal.3")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .frame(width: 24, height: 24)
+                .background(Color.primary.opacity(0.06))
+                .cornerRadius(4)
+            }
+            .buttonStyle(.plain)
+          }
+
+          // Expanded color editor for selected color
+          if isColorEditorExpanded, let state = selectedState {
+            ColorEditorView(state: state)
+              .transition(.opacity.combined(with: .move(edge: .top)))
           }
         }
 
         // Action buttons in a flowing layout
         FlowLayout(spacing: 6) {
-          ForEach(actions) { qa in
+          // Dynamic color copy buttons (use selected color's adjusted values)
+          if let state = selectedState {
+            colorCopyButton(
+              title: "Copy Hex",
+              icon: "number",
+              value: QuickActionAnalyzer.hexString(
+                r: Int(state.adjustedR), g: Int(state.adjustedG), b: Int(state.adjustedB)
+              )
+            )
+            colorCopyButton(
+              title: "Copy RGB",
+              icon: "paintpalette",
+              value: QuickActionAnalyzer.rgbString(
+                r: Int(state.adjustedR), g: Int(state.adjustedG), b: Int(state.adjustedB)
+              )
+            )
+            colorCopyButton(
+              title: "Copy HSL",
+              icon: "paintpalette.fill",
+              value: QuickActionAnalyzer.hslString(
+                r: Int(state.adjustedR), g: Int(state.adjustedG), b: Int(state.adjustedB)
+              )
+            )
+          }
+
+          // Non-color actions (or all actions if no color detected)
+          ForEach(hasColors ? nonColorActions : actions) { qa in
             Button {
               qa.action(item)
             } label: {
@@ -635,7 +1053,71 @@ struct QuickActionsBar: View {
       .padding(.vertical, 10)
       .background(Color.primary.opacity(0.03))
       .animation(.easeInOut(duration: 0.2), value: feedback.message)
+      .onAppear { initializeColors() }
     }
+  }
+}
+
+// MARK: - Color Chip View
+
+struct ColorChipView: View {
+  @ObservedObject var state: ColorEditorState
+  let isSelected: Bool
+
+  private var chipColor: Color {
+    Color(nsColor: QuickActionAnalyzer.nsColor(
+      r: Int(state.adjustedR), g: Int(state.adjustedG), b: Int(state.adjustedB)
+    ))
+  }
+
+  var body: some View {
+    HStack(spacing: 5) {
+      RoundedRectangle(cornerRadius: 3)
+        .fill(chipColor)
+        .frame(width: 20, height: 20)
+        .overlay(
+          RoundedRectangle(cornerRadius: 3)
+            .stroke(Color.primary.opacity(0.2), lineWidth: 1)
+        )
+      Text(state.original.raw)
+        .font(.system(size: 10, weight: .medium, design: .monospaced))
+        .foregroundStyle(.primary.opacity(0.8))
+        .lineLimit(1)
+    }
+    .padding(.horizontal, 6)
+    .padding(.vertical, 4)
+    .background(
+      RoundedRectangle(cornerRadius: 6)
+        .fill(isSelected ? Color.accentColor.opacity(0.15) : Color.primary.opacity(0.06))
+    )
+    .overlay(
+      RoundedRectangle(cornerRadius: 6)
+        .stroke(isSelected ? Color.accentColor.opacity(0.5) : Color.clear, lineWidth: 1.5)
+    )
+    .contentShape(Rectangle())
+  }
+}
+
+// MARK: - Color Editor View (wraps InlineColorEditor with bindings to ColorEditorState)
+
+struct ColorEditorView: View {
+  @ObservedObject var state: ColorEditorState
+
+  var body: some View {
+    InlineColorEditor(
+      hue: $state.adjustedHue,
+      saturation: $state.adjustedSaturation,
+      brightness: $state.adjustedBrightness,
+      red: $state.adjustedR,
+      green: $state.adjustedG,
+      blue: $state.adjustedB
+    )
+    .onChange(of: state.adjustedR) { _ in state.syncHSBFromRGB() }
+    .onChange(of: state.adjustedG) { _ in state.syncHSBFromRGB() }
+    .onChange(of: state.adjustedB) { _ in state.syncHSBFromRGB() }
+    .onChange(of: state.adjustedHue) { _ in state.syncRGBFromHSB() }
+    .onChange(of: state.adjustedSaturation) { _ in state.syncRGBFromHSB() }
+    .onChange(of: state.adjustedBrightness) { _ in state.syncRGBFromHSB() }
   }
 }
 

@@ -82,7 +82,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
   func applicationWillTerminate(_ notification: Notification) {
     if settingsManager.clearOnQuit {
+      clipboardManager.historyStore.deleteHistoryFile()
       clipboardManager.clearHistory()
+    } else {
+      clipboardManager.saveHistoryImmediately()
     }
   }
 

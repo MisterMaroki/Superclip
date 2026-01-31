@@ -93,10 +93,19 @@ class ClipboardManager: ObservableObject {
     private let undoTimeout: TimeInterval = 30.0 // 30 seconds to undo
     private var undoCleanupTimer: Timer?
 
+    // Persistence
+    let historyStore = HistoryStore()
+
     init(settings: SettingsManager) {
         self.settings = settings
         pasteboard = NSPasteboard.general
         changeCount = pasteboard.changeCount
+
+        // Load persisted history from disk before anything else
+        let loaded = historyStore.load()
+        if !loaded.isEmpty {
+            history = loaded
+        }
 
         // Start monitoring clipboard changes (if enabled)
         if settings.monitorClipboard {
@@ -106,17 +115,49 @@ class ClipboardManager: ObservableObject {
         // Start undo cleanup timer
         startUndoCleanupTimer()
 
-        // Load initial clipboard content
+        // Load initial clipboard content (picks up whatever is currently on the pasteboard)
         loadCurrentClipboard()
 
         // Observe settings changes
         observeSettings()
+
+        // Auto-save: observe history changes and schedule debounced writes
+        observeHistoryForPersistence()
+
+        // Re-fetch link metadata for URL items loaded from disk (metadata is not persisted)
+        if settings.detectLinks {
+            refetchLinkMetadataForLoadedItems()
+        }
     }
     
     deinit {
         stopMonitoring()
         undoCleanupTimer?.invalidate()
         cancellables.removeAll()
+    }
+
+    // MARK: - Persistence Helpers
+
+    /// Observe `$history` and schedule a debounced save on every change.
+    private func observeHistoryForPersistence() {
+        $history
+            .dropFirst()  // Skip the initial value (already loaded or empty)
+            .sink { [weak self] items in
+                self?.historyStore.scheduleSave(items: items)
+            }
+            .store(in: &cancellables)
+    }
+
+    /// Immediately flush history to disk. Call on app termination.
+    func saveHistoryImmediately() {
+        historyStore.saveImmediately(items: history)
+    }
+
+    /// Re-fetch link metadata for URL items loaded from disk (metadata is intentionally not persisted).
+    private func refetchLinkMetadataForLoadedItems() {
+        for item in history where item.type == .url && item.linkMetadata == nil {
+            fetchLinkMetadata(for: item)
+        }
     }
 
     private func observeSettings() {
@@ -575,6 +616,8 @@ class ClipboardManager: ObservableObject {
     func clearHistory() {
         DispatchQueue.main.async {
             self.history.removeAll()
+            // Also delete the persisted file so cleared history doesn't come back
+            self.historyStore.deleteHistoryFile()
         }
     }
 

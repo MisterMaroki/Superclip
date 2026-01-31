@@ -1,0 +1,65 @@
+---
+title: "Why I Built Superclip"
+description: "I was paying $200/year for Setapp and only using three apps. So I built them into one."
+date: "2026-01-28"
+tags: ["Behind the Scenes", "macOS"]
+author: "Omar Maroki"
+---
+
+## $200 a year for three apps
+
+I was a Setapp subscriber. $17.99/month — roughly $200 a year — for access to a catalog of Mac apps. Sounds like a good deal until you look at what you're actually using.
+
+For me, it was:
+
+- **Paste** — clipboard history and pinboards
+- **TextSniper** — OCR, copying text from images
+- **CleanShot X** — screenshots, annotation, screen recording
+
+That's it. Those were the three apps I opened every day. Everything else I had installed from Setapp either had a free alternative or I barely used. Proxyman has a free tier. HandMirror is free. AlDente is free. I was paying $200/year for a clipboard manager, an OCR tool, and a screenshot app.
+
+Once I actually did that math, I couldn't unsee it.
+
+## The problem isn't the apps
+
+Paste is genuinely good. CleanShot X is best-in-class. TextSniper does exactly what it says. I'm not building Superclip because those apps are bad — I'm building it because they're three separate subscriptions for workflows that are fundamentally the same thing: **you capture something, you copy it, you use it.**
+
+Clipboard history, OCR, and screen capture are all variations of "get content from one place and put it somewhere else." Splitting them into separate apps with separate price tags never made sense to me. It just happened that way because each developer solved one piece of the puzzle.
+
+## So I built it myself
+
+Superclip started as a weekend project: a native SwiftUI clipboard manager that could replace Paste. Then I added OCR and thought, "why was I paying for TextSniper?" Then I started on screen capture and thought, "wait, this could actually replace CleanShot X too."
+
+One native macOS app. No Electron, no web wrappers. Launches in under 0.3 seconds, uses less than 30MB of memory. Here's what it does:
+
+**[Clipboard history](/docs/clipboard-history) that's actually useful.** Up to 100 items, deduplicated, with source-app metadata so you know where each clip came from. Full-text search. [Keyboard-first navigation](/docs/keyboard-shortcuts).
+
+**[Built-in OCR](/docs/ocr).** Copy text from any image or screenshot with one click. No TextSniper, no separate app. Apple's Vision framework handles it on-device.
+
+**[Paste stack](/docs/paste-stack).** Copy multiple items, then paste them in sequence with `Cmd+V`. It auto-advances to the next item. This was the one feature I always wished Paste had.
+
+**[Smart pinboards](/docs/pinboards).** Pin your frequently-used clips — addresses, email templates, code snippets — and organize them into boards. They persist across launches.
+
+**[Screen capture and recording](/docs/screen-capture).** Full screen capture with annotation, GIF recording, and scrolling capture. The feature set I was paying CleanShot X for — bundled in. (This one's still in development.)
+
+**[Privacy-first](/docs/privacy-and-settings).** Everything stays on your Mac. No cloud sync, no analytics, no tracking. You can exclude sensitive apps and auto-clear history on quit.
+
+## The math now
+
+Before: $200/year for Setapp, using three apps.
+
+After: $14.99/year for Superclip, which replaces all three. Or free, if you're one of the first 1,000 users.
+
+I cancelled my Setapp subscription. No regrets.
+
+## Free for the first 1,000 users
+
+I'm giving Superclip away for free to the first 1,000 users. Not a trial — free forever. No credit card, no catch.
+
+Why? Because I built this for myself first, and I want to know if it's useful to other people too. The best way to find out is to get it into the hands of people who care about their workflow and actually listen to what they say.
+
+## What's next
+
+Clipboard history, pinboards, paste stack, and OCR are already built and shipping. Screen capture is next — area capture, annotation, GIF/MP4 recording, and scrolling capture.
+
+If you're tired of paying for three apps that should be one, [grab a free spot](/#download) before they're gone.

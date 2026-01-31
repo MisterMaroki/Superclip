@@ -1,0 +1,43 @@
+---
+title: Paste Stack
+description: Copy multiple items and paste them sequentially with paste stack.
+category: Features
+order: 5
+---
+
+## What Is Paste Stack?
+
+Paste Stack lets you queue up multiple clipboard items and paste them one after another. It's perfect for filling out forms, moving data between apps, or any workflow where you need to paste several things in sequence.
+
+## How to Use It
+
+### Adding Items
+
+Press `Cmd+Shift+C` to copy an item and add it to the paste stack. Each new item is added to the end of the queue.
+
+You can also add items from your clipboard history by selecting them and choosing **Add to Paste Stack** from the context menu.
+
+### Pasting Sequentially
+
+Once your stack is loaded, switch to the target app and press `Cmd+V`. Superclip will paste the first item in the stack and automatically advance to the next one.
+
+Keep pressing `Cmd+V` to paste each subsequent item. The stack auto-advances after each paste.
+
+### Session Lifecycle
+
+The paste stack is **session-scoped** — it resets when you close the paste stack view or quit Superclip. This keeps things clean and prevents stale items from piling up.
+
+## Managing the Stack
+
+- **Remove item** — click the remove button or select and delete an individual item from the stack
+- **Copy item** — copy a specific item from the stack without pasting it
+- **Clear stack** — remove all items to start fresh
+
+## Example Workflow
+
+1. Open a spreadsheet with data you need to move
+2. `Cmd+Shift+C` each cell value (name, email, phone, etc.)
+3. Switch to the destination form
+4. `Cmd+V` to paste each field in order — the stack auto-advances
+
+This eliminates the back-and-forth of switching between apps for each copy-paste cycle.

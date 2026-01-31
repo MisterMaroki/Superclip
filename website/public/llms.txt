@@ -1,0 +1,56 @@
+# Superclip
+
+> The clipboard manager macOS deserves.
+
+Superclip is a native macOS clipboard manager built with SwiftUI. It is a commercial alternative to Paste that offers the same features at half the price, plus built-in screen capture and recording.
+
+## What is Superclip?
+
+Superclip is a menu-bar clipboard manager for macOS that provides:
+
+- **Clipboard history**: Automatically saves everything you copy. Search, preview, and re-paste from your full history.
+- **Smart pinboards**: Organize frequently used snippets into color-coded collections.
+- **Paste stack**: Copy multiple items, then paste them sequentially — a game-changing workflow for moving data between apps.
+- **Built-in OCR**: Extract text from any image or screenshot on your clipboard.
+- **Screen capture and recording** (coming February 2026): Screenshots, GIF recording, MP4 recording, scrolling capture, and a full image and video editor. Replaces CleanShot X ($99/yr) at no extra cost.
+- **iOS companion app** (coming March 2026): Sync your clipboard across Mac and iPhone.
+- **Keyboard-first design**: Global hotkeys for everything. ⌘⇧A to open history, ⌘⇧C for paste stack, Space to preview, and more.
+- **Privacy-focused**: All data stays local on your Mac. No cloud sync, no analytics, no tracking. Exclude sensitive apps and auto-clear history on quit.
+
+## Pricing
+
+- **Free** for the first 1,000 users — forever. No trial, no credit card.
+- After free spots are claimed: **$14.99/year** or **$1.99/month**.
+- Paste charges $29.99/year. Superclip is 50% cheaper with the same features plus screen capture.
+
+## Comparison with Paste
+
+| Feature | Superclip | Paste |
+|---------|-----------|-------|
+| Price | $14.99/yr | $29.99/yr |
+| Clipboard history & pinboards | Yes | Yes |
+| OCR & paste stack | Yes | Yes |
+| iOS companion app | March 2026 | Yes |
+| Screen capture & recording | February 2026 | No |
+
+## System Requirements
+
+- macOS 12 (Monterey) or later
+- Runs natively on Apple Silicon and Intel Macs
+- Uses less than 30MB of memory
+- Launches in under 0.3 seconds
+
+## Key Differentiators
+
+1. **Half the price**: $14.99/yr vs Paste's $29.99/yr.
+2. **Built-in screen capture**: CleanShot X features ($99/yr value) included free — screenshots, GIF/MP4 recording, scrolling capture, image editor, video editor, annotations.
+3. **Native performance**: Built with SwiftUI, not Electron. Zero lag, minimal memory usage.
+4. **Privacy-first**: No cloud, no telemetry. Everything stays on your Mac.
+
+## Website
+
+https://superclip.app
+
+## Contact
+
+For support, feature requests, or questions, visit https://superclip.app

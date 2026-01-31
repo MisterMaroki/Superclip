@@ -1,0 +1,47 @@
+---
+title: Clipboard History
+description: How Superclip captures, stores, and organizes your clipboard history.
+category: Features
+order: 3
+---
+
+## How It Works
+
+Superclip monitors your system clipboard every 0.5 seconds. When it detects new content, it's automatically saved to your history. No manual action required — just copy as you normally would.
+
+## Supported Content Types
+
+Superclip detects and stores several content types, checked in this order:
+
+1. **Images** — screenshots, copied images, image data
+2. **Files** — copied files and folders (single-image files are treated as images)
+3. **URLs** — web links with automatic metadata fetching (title, description, favicon)
+4. **Plain text** — any text content, including code snippets, numbers, and more
+
+Rich text (RTF) formatting is also preserved when available.
+
+## History Limits
+
+Superclip keeps up to **100 items** in your clipboard history. When the limit is reached, the oldest item is removed to make room for new ones.
+
+## Deduplication
+
+If you copy the same content twice, Superclip won't create a duplicate entry. Instead, the existing item is moved to the top of your history.
+
+## Source App Tracking
+
+Each clipboard item shows which app it was copied from. This makes it easy to identify items when your history is full of similar-looking text snippets.
+
+## Search
+
+With the drawer open, start typing to filter your history. Search matches against the text content of your items. Press `Esc` to clear the search.
+
+## Managing Items
+
+- **Delete** — select an item and press `Backspace` or `Delete`
+- **Undo delete** — press `Cmd+Z` within ~30 seconds to restore a deleted item
+- **Copy** — press `Enter` or click to copy an item back to your clipboard
+
+## Link Previews
+
+When you copy a URL, Superclip automatically fetches the page title, description, and favicon. This makes links easy to identify in your history without having to remember bare URLs.

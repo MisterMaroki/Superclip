@@ -1,0 +1,82 @@
+---
+title: Troubleshooting
+description: Solutions for common issues with Superclip.
+category: Troubleshooting
+order: 10
+---
+
+## Accessibility Permissions
+
+**Problem:** Global hotkeys (`Cmd+Shift+A`, etc.) don't work.
+
+**Solution:** Superclip needs Accessibility access to register global shortcuts.
+
+1. Open **System Settings** > **Privacy & Security** > **Accessibility**
+2. Make sure **Superclip** is listed and toggled **on**
+3. If it's already on, try toggling it off and back on
+4. Restart Superclip after changing permissions
+
+> On macOS Ventura and later, you may need to click the lock icon and authenticate before making changes.
+
+## App Not Appearing
+
+**Problem:** Superclip doesn't show up after launching.
+
+**Solution:** Superclip runs as a **menu bar app** — it won't appear in the Dock. Look for the Superclip icon in your **menu bar** at the top of the screen.
+
+If the icon isn't visible:
+
+- Check if it's hidden behind the notch (on MacBook Pro models)
+- Try pressing `Cmd+Shift+A` to open the drawer directly
+- Check Activity Monitor to confirm Superclip is running
+
+## Hotkey Conflicts
+
+**Problem:** A Superclip shortcut conflicts with another app.
+
+**Solution:** If another app has claimed the same keyboard shortcut, macOS may not deliver it to Superclip. Common conflicts:
+
+- **`Cmd+Shift+A`** — some apps use this for "Select All" or other actions
+- **Third-party hotkey apps** (Alfred, Raycast, BetterTouchTool) may intercept shortcuts
+
+To resolve:
+
+1. Check the other app's settings and remap the conflicting shortcut
+2. Quit the conflicting app temporarily to confirm the issue
+
+## Clipboard Not Capturing
+
+**Problem:** Copied items aren't appearing in Superclip history.
+
+**Solution:**
+
+1. Make sure Superclip is running (check the menu bar icon)
+2. Check if the source app is in your **Excluded Apps** list (Settings > Excluded Apps)
+3. Some apps use private clipboard formats that Superclip can't read — this is rare but possible
+4. Restart Superclip if items have stopped appearing
+
+## Migration from Paste
+
+**Problem:** Moving from Paste app to Superclip.
+
+**Solution:** Superclip uses the same keyboard shortcut patterns as Paste, so your muscle memory transfers directly. There's no data import needed — Superclip will start capturing your clipboard from the moment you install it.
+
+Key differences:
+
+- Superclip opens with `Cmd+Shift+A` (Paste uses `Cmd+Shift+V` by default)
+- Pinboard navigation uses `Cmd+Arrow` keys in both apps
+- Paste stack works similarly in both apps
+
+## FAQ
+
+**Q: Does Superclip work with universal clipboard (Handoff)?**
+A: Yes. If you copy on your iPhone and it arrives on your Mac's clipboard, Superclip will capture it.
+
+**Q: Can I use Superclip alongside other clipboard managers?**
+A: Yes, but it's not recommended. Running two clipboard managers may cause conflicts with hotkeys and clipboard monitoring.
+
+**Q: Where is my clipboard data stored?**
+A: Everything is stored in memory while Superclip is running. Pinned items are saved to a local file on your Mac. No data is sent externally.
+
+**Q: How do I completely uninstall Superclip?**
+A: Drag Superclip from Applications to the Trash. To remove preferences, delete `~/Library/Preferences/com.superclip.app.plist` and `~/Library/Application Support/Superclip/`.

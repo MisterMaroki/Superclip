@@ -4,6 +4,7 @@
 //
 
 import AppKit
+import Combine
 import HotKey
 import QuartzCore
 import ScreenCaptureKit
@@ -20,6 +21,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   var hotKey: HotKey?
   var pasteStackHotKey: HotKey?
   var ocrHotKey: HotKey?
+  private var hotkeyCancellables = Set<AnyCancellable>()
   var screenCaptureWindow: NSWindow?
   var clickMonitor: Any?
   var pasteStackKeyMonitor: Any?
@@ -45,6 +47,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     setupHotkey()
     setupPasteStackHotkey()
     setupOCRHotkey()
+    observeHotkeySettings()
 
     if !UserDefaults.standard.bool(forKey: WelcomeWindowController.hasSeenWelcomeKey) {
       // Seed tutorial cards and pinboard immediately so they're ready before the drawer ever opens
@@ -103,7 +106,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   private func setupHotkey() {
-    hotKey = HotKey(key: .a, modifiers: [.command, .shift])
+    let config = settingsManager.hotkeyConfigForHistory()
+    hotKey = HotKey(keyCombo: config.keyCombo)
     hotKey?.keyDownHandler = { [weak self] in
       DispatchQueue.main.async {
         self?.toggleContentWindow()
@@ -112,7 +116,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   private func setupPasteStackHotkey() {
-    pasteStackHotKey = HotKey(key: .c, modifiers: [.command, .shift])
+    let config = settingsManager.hotkeyConfigForPasteStack()
+    pasteStackHotKey = HotKey(keyCombo: config.keyCombo)
     pasteStackHotKey?.keyDownHandler = { [weak self] in
       DispatchQueue.main.async {
         self?.togglePasteStackWindow()
@@ -895,12 +900,40 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   // MARK: - OCR Screen Capture
 
   private func setupOCRHotkey() {
-    ocrHotKey = HotKey(key: .grave, modifiers: [.command, .shift])
+    let config = settingsManager.hotkeyConfigForOCR()
+    ocrHotKey = HotKey(keyCombo: config.keyCombo)
     ocrHotKey?.keyDownHandler = { [weak self] in
       DispatchQueue.main.async {
         self?.startScreenCapture()
       }
     }
+  }
+
+  /// Observe hotkey setting changes and re-register hotkeys immediately.
+  private func observeHotkeySettings() {
+    settingsManager.$historyHotkey
+      .dropFirst()
+      .receive(on: DispatchQueue.main)
+      .sink { [weak self] _ in
+        self?.setupHotkey()
+      }
+      .store(in: &hotkeyCancellables)
+
+    settingsManager.$pasteStackHotkey
+      .dropFirst()
+      .receive(on: DispatchQueue.main)
+      .sink { [weak self] _ in
+        self?.setupPasteStackHotkey()
+      }
+      .store(in: &hotkeyCancellables)
+
+    settingsManager.$ocrHotkey
+      .dropFirst()
+      .receive(on: DispatchQueue.main)
+      .sink { [weak self] _ in
+        self?.setupOCRHotkey()
+      }
+      .store(in: &hotkeyCancellables)
   }
 
   func startScreenCapture() {

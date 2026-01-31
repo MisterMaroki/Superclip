@@ -135,7 +135,7 @@ struct SettingsView: View {
         case .appearance:
             AppearanceSettingsPane(settings: settings)
         case .shortcuts:
-            ShortcutsSettingsPane()
+            ShortcutsSettingsPane(settings: settings)
         case .privacy:
             PrivacySettingsPane(settings: settings)
         case .storage:
@@ -551,6 +551,16 @@ struct AppearanceSettingsPane: View {
 // MARK: - Shortcuts Settings Pane
 
 struct ShortcutsSettingsPane: View {
+    @ObservedObject var settings: SettingsManager
+
+    @State private var historyConfig: HotkeyConfig = .defaultHistory
+    @State private var pasteStackConfig: HotkeyConfig = .defaultPasteStack
+    @State private var ocrConfig: HotkeyConfig = .defaultOCR
+
+    var allConfigs: [HotkeyConfig] {
+        [historyConfig, pasteStackConfig, ocrConfig]
+    }
+
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 20) {
@@ -560,11 +570,51 @@ struct ShortcutsSettingsPane: View {
                     .padding(.bottom, 4)
 
                 SettingsGroupBox(title: "Global Hotkeys") {
-                    SettingsShortcutRow(title: "Open clipboard history", shortcut: "\u{2318}\u{21E7}A")
+                    HotkeyRecorderView(
+                        title: "Open clipboard history",
+                        config: $historyConfig,
+                        allConfigs: allConfigs,
+                        onChanged: { settings.historyHotkey = historyConfig.dictionary }
+                    )
                     SettingsDivider()
-                    SettingsShortcutRow(title: "Open paste stack", shortcut: "\u{2318}\u{21E7}C")
+                    HotkeyRecorderView(
+                        title: "Open paste stack",
+                        config: $pasteStackConfig,
+                        allConfigs: allConfigs,
+                        onChanged: { settings.pasteStackHotkey = pasteStackConfig.dictionary }
+                    )
                     SettingsDivider()
-                    SettingsShortcutRow(title: "Screen capture OCR", shortcut: "\u{2318}\u{21E7}`")
+                    HotkeyRecorderView(
+                        title: "Screen capture OCR",
+                        config: $ocrConfig,
+                        allConfigs: allConfigs,
+                        onChanged: { settings.ocrHotkey = ocrConfig.dictionary }
+                    )
+                    SettingsDivider()
+                    HStack {
+                        Spacer()
+                        Button {
+                            settings.resetHotkeysToDefaults()
+                            historyConfig = .defaultHistory
+                            pasteStackConfig = .defaultPasteStack
+                            ocrConfig = .defaultOCR
+                        } label: {
+                            Text("Reset to Defaults")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(.primary.opacity(0.7))
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 6)
+                                .background(Color.primary.opacity(0.08))
+                                .cornerRadius(6)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .stroke(Color.primary.opacity(0.1), lineWidth: 1)
+                                )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
                 }
 
                 SettingsGroupBox(title: "Navigation") {
@@ -586,6 +636,11 @@ struct ShortcutsSettingsPane: View {
                 }
             }
             .padding(24)
+        }
+        .onAppear {
+            historyConfig = settings.hotkeyConfigForHistory()
+            pasteStackConfig = settings.hotkeyConfigForPasteStack()
+            ocrConfig = settings.hotkeyConfigForOCR()
         }
     }
 }

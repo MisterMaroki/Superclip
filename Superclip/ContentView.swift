@@ -57,22 +57,8 @@ struct ContentView: View {
       if searchText.isEmpty {
         return pinboardItems
       }
-      return pinboardItems.filter { item in
-        if item.content.localizedCaseInsensitiveContains(searchText) {
-          return true
-        }
-        if item.type.rawValue.localizedCaseInsensitiveContains(searchText) {
-          return true
-        }
-        if let urls = item.fileURLs {
-          for url in urls {
-            if url.lastPathComponent.localizedCaseInsensitiveContains(searchText) {
-              return true
-            }
-          }
-        }
-        return false
-      }
+      // Use fuzzy search with ranked results for pinboard items too
+      return FuzzySearch.search(query: searchText, in: pinboardItems)
     }
   }
 
@@ -80,25 +66,8 @@ struct ContentView: View {
     if searchText.isEmpty {
       return clipboardManager.history
     }
-    return clipboardManager.history.filter { item in
-      // Search in content
-      if item.content.localizedCaseInsensitiveContains(searchText) {
-        return true
-      }
-      // Search in type name
-      if item.type.rawValue.localizedCaseInsensitiveContains(searchText) {
-        return true
-      }
-      // Search in file names
-      if let urls = item.fileURLs {
-        for url in urls {
-          if url.lastPathComponent.localizedCaseInsensitiveContains(searchText) {
-            return true
-          }
-        }
-      }
-      return false
-    }
+    // Use fuzzy search with ranked results
+    return FuzzySearch.search(query: searchText, in: clipboardManager.history)
   }
 
   var selectedItem: ClipboardItem? {

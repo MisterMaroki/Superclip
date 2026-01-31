@@ -833,35 +833,37 @@ struct ClipboardItemCard: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
-      // Header: type + time on left, tags, app icon on right
-      HStack(spacing: 6) {
-        // Type label
-        Text(item.typeLabel)
-          .font(.system(size: 12, weight: .semibold))
-          .foregroundStyle(.primary.opacity(0.95))
+      // Header: type · time on left, tag dots + app icon on right
+      HStack(spacing: 5) {
+        // Type label + time ago combined
+        HStack(spacing: 0) {
+          Text(item.typeLabel)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(.primary.opacity(0.9))
 
-        // Time ago (conditional)
-        if showTimestamps {
-          Text(item.timeAgo)
-            .font(.system(size: 11))
-            .foregroundStyle(.primary.opacity(0.5))
+          if showTimestamps {
+            Text(" · " + item.timeAgo)
+              .font(.system(size: 10))
+              .foregroundStyle(.primary.opacity(0.4))
+          }
         }
+        .lineLimit(1)
 
-        // Detected content tag badges
+        Spacer(minLength: 4)
+
+        // Detected content tag dots
         ContentTagBadgesRow(tags: item.detectedTags)
-
-        Spacer()
 
         // Source app icon on right (conditional)
         if showSourceAppIcons, let icon = item.sourceApp?.icon {
           Image(nsImage: icon)
             .resizable()
-            .frame(width: 18, height: 18)
-            .cornerRadius(4)
+            .frame(width: 16, height: 16)
+            .cornerRadius(3)
         }
       }
       .padding(.horizontal, 10)
-      .padding(.vertical, 8)
+      .padding(.vertical, 6)
       .background(headerBackground)
 
       // Content area
@@ -1662,6 +1664,17 @@ struct ContentTagBadge: View {
     }
   }
 
+  var icon: String {
+    switch tag {
+    case .color: return "paintpalette.fill"
+    case .email: return "envelope.fill"
+    case .phone: return "phone.fill"
+    case .code: return "chevron.left.forwardslash.chevron.right"
+    case .json: return "curlybraces"
+    case .address: return "mappin"
+    }
+  }
+
   var badgeColor: Color {
     switch tag {
     case .color: return .purple
@@ -1674,13 +1687,13 @@ struct ContentTagBadge: View {
   }
 
   var body: some View {
-    Text(label)
-      .font(.system(size: 9, weight: .semibold))
+    Image(systemName: icon)
+      .font(.system(size: 8, weight: .semibold))
       .foregroundStyle(badgeColor)
-      .padding(.horizontal, 5)
-      .padding(.vertical, 2)
-      .background(badgeColor.opacity(0.18))
+      .frame(width: 16, height: 16)
+      .background(badgeColor.opacity(0.15))
       .cornerRadius(4)
+      .help(label)
   }
 }
 
@@ -1691,7 +1704,7 @@ struct ContentTagBadgesRow: View {
 
   var body: some View {
     if !tags.isEmpty {
-      HStack(spacing: 3) {
+      HStack(spacing: 2) {
         ForEach(tags.sorted(by: { $0.rawValue < $1.rawValue }), id: \.self) { tag in
           ContentTagBadge(tag: tag)
         }

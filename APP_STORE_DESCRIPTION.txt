@@ -12,7 +12,19 @@ Text Sniper
 Extract text from images or videos displayed on your screen. Select a region and the app uses OCR to recognize and copy the text. Works with any visible content including video frames, screenshots, or images in other applications.
 
 Pinboards
-Create pinboards to store frequently used snippets. Organize items into named collections with color coding. Pinboards persist across sessions, so you can keep reusable text, code snippets, or other content organized and easily accessible.
+Create pinboards to store frequently used items. Organize into named collections with color coding. Pinboards persist across sessions, so you can keep reusable text, code, or other content always accessible.
+
+Snippets
+Define trigger shortcuts that expand into full text anywhere on your Mac. Type ;;email and it becomes your email address. Create as many snippets as you need, toggle them on or off, and they work in every app.
+
+Quick Actions
+Superclip recognizes what you copy. Colors are shown with a swatch and can be converted between hex, RGB, and HSL. JSON can be pretty printed or minified. Emails, phone numbers, and file paths get contextual actions too.
+
+Smart Filters
+Automatically tags copied content — colors, code, emails, JSON, phone numbers, and more. Filter your history by type to find what you need instantly.
+
+Fuzzy Search
+Start typing to search your history. Results are ranked by relevance, matching across content, source app, and file names.
 
 Paste Stack
 Sequential pasting mode for copying multiple items in a row. Copy several items, then paste them one after another. The app automatically advances to the next item after each paste.

@@ -469,7 +469,6 @@ struct GeneralSettingsPane: View {
 
 struct AppearanceSettingsPane: View {
     @ObservedObject var settings: SettingsManager
-    private let themes = ["System", "Light", "Dark"]
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
@@ -478,42 +477,6 @@ struct AppearanceSettingsPane: View {
                     .font(.system(size: 20, weight: .semibold))
                     .foregroundStyle(.primary)
                     .padding(.bottom, 4)
-
-                SettingsGroupBox(title: "Theme") {
-                    HStack {
-                        Text("Theme")
-                            .font(.system(size: 13))
-                            .foregroundStyle(.primary.opacity(0.9))
-
-                        Spacer()
-
-                        HStack(spacing: 0) {
-                            ForEach(themes, id: \.self) { theme in
-                                Button {
-                                    settings.theme = theme
-                                } label: {
-                                    Text(theme)
-                                        .font(.system(size: 12, weight: settings.theme == theme ? .semibold : .regular))
-                                        .foregroundStyle(.primary.opacity(settings.theme == theme ? 1.0 : 0.55))
-                                        .padding(.horizontal, 14)
-                                        .padding(.vertical, 6)
-                                        .background(
-                                            settings.theme == theme ? Color.primary.opacity(0.18) : Color.clear
-                                        )
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                        .background(Color.primary.opacity(0.08))
-                        .cornerRadius(7)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 7)
-                                .stroke(Color.primary.opacity(0.1), lineWidth: 1)
-                        )
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
-                }
 
                 SettingsGroupBox(title: "Window") {
                     SettingsToggleRow(
@@ -980,7 +943,7 @@ struct StorageSettingsPane: View {
     @State private var showExportAlert = false
     @State private var showImportAlert = false
 
-    private let historySizeOptions = [25, 50, 100, 200, 500]
+    private let historySizeOptions = [0, 25, 50, 100, 200, 500]
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
@@ -991,11 +954,23 @@ struct StorageSettingsPane: View {
                     .padding(.bottom, 4)
 
                 SettingsGroupBox(title: "History") {
-                    SettingsPickerRow(
-                        title: "Max history size",
-                        options: historySizeOptions,
-                        selection: $settings.maxHistorySize
-                    )
+                    HStack {
+                        Text("Max history size")
+                            .font(.system(size: 13))
+                            .foregroundStyle(.primary.opacity(0.95))
+
+                        Spacer()
+
+                        Picker("", selection: $settings.maxHistorySize) {
+                            ForEach(historySizeOptions, id: \.self) { option in
+                                Text(option == 0 ? "Unlimited" : "\(option)").tag(option)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .frame(width: 140)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
                     SettingsDivider()
                     SettingsInfoRow(title: "Items stored", value: "\(clipboardManager.history.count) items")
                     SettingsDivider()
@@ -1029,14 +1004,6 @@ struct StorageSettingsPane: View {
                         subtitle: "Restore from an exported file",
                         buttonTitle: "Import",
                         action: { showImportAlert = true }
-                    )
-                }
-
-                SettingsGroupBox(title: "Privacy") {
-                    SettingsToggleRow(
-                        title: "Exclude sensitive apps",
-                        subtitle: "Don't capture from password managers",
-                        isOn: $settings.excludeSensitiveApps
                     )
                     SettingsDivider()
                     SettingsToggleRow(

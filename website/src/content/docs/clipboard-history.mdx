@@ -34,7 +34,22 @@ Each clipboard item shows which app it was copied from. This makes it easy to id
 
 ## Search
 
-With the drawer open, start typing to filter your history. Search matches against the text content of your items. Press `Esc` to clear the search.
+With the drawer open, start typing to filter your history. Superclip uses fuzzy search with ranked results — it matches against content, source app name, type label, and file names. Results are sorted by relevance: exact matches first, then prefix, contains, and fuzzy subsequence matches. Press `Esc` to clear the search.
+
+## Smart Filters
+
+Superclip automatically tags clipboard items by content type. A filter bar at the top of the drawer lets you narrow your history by category:
+
+- **Links** — URLs
+- **Images** — screenshots, copied images
+- **Files** — copied files and folders
+- **Code** — detected source code
+- **Colors** — hex (`#ff0000`), RGB (`rgb(255, 0, 0)`), and HSL values
+- **Emails** — email addresses
+- **JSON** — valid JSON objects and arrays
+- **Phones** — phone numbers
+
+Color items also display a tint of the detected color on their card background.
 
 ## Managing Items
 

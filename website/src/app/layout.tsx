@@ -17,7 +17,7 @@ export const metadata: Metadata = {
     template: "%s | Superclip",
   },
   description:
-    "Superclip is a native macOS clipboard manager built with SwiftUI. Clipboard history, pinboards, paste stack, OCR, and screen capture — all for half the price of Paste. Free for the first 1,000 users.",
+    "Superclip is a native macOS clipboard manager built with SwiftUI. Clipboard history, pinboards, snippets, quick actions, smart filters, paste stack, and OCR — all for half the price of Paste. Free for the first 1,000 users.",
   keywords: [
     "clipboard manager",
     "clipboard manager for mac",
@@ -35,6 +35,11 @@ export const metadata: Metadata = {
     "cleanshot alternative",
     "pinboard clipboard",
     "keyboard clipboard manager",
+    "text expander mac",
+    "snippet manager mac",
+    "clipboard quick actions",
+    "color converter clipboard",
+    "smart clipboard mac",
     "superclip",
   ],
   authors: [{ name: "Superclip" }],
@@ -59,7 +64,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "Superclip — The Clipboard Manager macOS Deserves",
     description:
-      "Native macOS clipboard manager with history, pinboards, paste stack, OCR, and screen capture. Half the price of Paste. Free for the first 1,000 users.",
+      "Native macOS clipboard manager with history, pinboards, snippets, quick actions, smart filters, paste stack, and OCR. Half the price of Paste. Free for the first 1,000 users.",
     type: "website",
     locale: "en_US",
     url: siteUrl,
@@ -77,7 +82,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "Superclip — The Clipboard Manager macOS Deserves",
     description:
-      "Native macOS clipboard manager. Clipboard history, paste stack, OCR, screen capture — half the price of Paste. Free for first 1,000 users.",
+      "Native macOS clipboard manager. Clipboard history, snippets, quick actions, smart filters, paste stack, OCR — half the price of Paste. Free for first 1,000 users.",
     images: ["/og-image.png"],
   },
   icons: {
@@ -92,7 +97,7 @@ function JsonLd() {
     "@type": "SoftwareApplication",
     name: "Superclip",
     description:
-      "Native macOS clipboard manager with clipboard history, pinboards, paste stack, built-in OCR, and screen capture. Half the price of Paste.",
+      "Native macOS clipboard manager with clipboard history, pinboards, snippets, quick actions, smart filters, paste stack, and built-in OCR. Half the price of Paste.",
     url: siteUrl,
     applicationCategory: "UtilitiesApplication",
     operatingSystem: "macOS 12+",
@@ -127,14 +132,18 @@ function JsonLd() {
     featureList: [
       "Clipboard history",
       "Smart pinboards",
+      "Text snippets and expansion",
+      "Quick actions per content type",
+      "Smart filters and auto-tagging",
+      "Fuzzy search with ranked results",
+      "Color conversion (hex, RGB, HSL)",
+      "JSON pretty print and minify",
       "Paste stack",
       "Built-in OCR",
       "Screen capture and recording",
-      "GIF and MP4 recording",
       "Image and video editor",
       "Keyboard-first navigation",
       "Privacy controls",
-      "App exclusion",
       "Native SwiftUI performance",
     ],
     screenshot: `${siteUrl}/og-image.png`,
@@ -163,7 +172,7 @@ function JsonLd() {
         name: "How is Superclip different from Paste?",
         acceptedAnswer: {
           "@type": "Answer",
-          text: "Superclip has every feature Paste has — clipboard history, pinboards, OCR, paste stack — at half the price ($14.99/yr vs $29.99/yr). Plus we're adding built-in screen capture and recording (worth $99/yr with CleanShot X) for free.",
+          text: "Superclip has every feature Paste has — clipboard history, pinboards, OCR, paste stack — at half the price ($14.99/yr vs $29.99/yr). Plus you get snippets, quick actions, smart filters, and built-in screen capture and recording (worth $99/yr with CleanShot X) for free.",
         },
       },
       {

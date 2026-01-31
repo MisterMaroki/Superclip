@@ -36,14 +36,14 @@ enum FilterTag: String, CaseIterable, Equatable {
 
   var icon: String {
     switch self {
-    case .all:    return "tray.full"
-    case .links:  return "link"
+    case .all: return "tray.full"
+    case .links: return "link"
     case .images: return "photo"
-    case .files:  return "doc"
-    case .code:   return "chevron.left.forwardslash.chevron.right"
+    case .files: return "doc"
+    case .code: return "chevron.left.forwardslash.chevron.right"
     case .colors: return "paintpalette"
     case .emails: return "envelope"
-    case .json:   return "curlybraces"
+    case .json: return "curlybraces"
     case .phones: return "phone"
     }
   }
@@ -51,14 +51,14 @@ enum FilterTag: String, CaseIterable, Equatable {
   /// Check whether a clipboard item matches this filter.
   func matches(_ item: ClipboardItem) -> Bool {
     switch self {
-    case .all:    return true
-    case .links:  return item.type == .url
+    case .all: return true
+    case .links: return item.type == .url
     case .images: return item.type == .image
-    case .files:  return item.type == .file
-    case .code:   return item.detectedTags.contains(.code)
+    case .files: return item.type == .file
+    case .code: return item.detectedTags.contains(.code)
     case .colors: return item.detectedTags.contains(.color)
     case .emails: return item.detectedTags.contains(.email)
-    case .json:   return item.detectedTags.contains(.json)
+    case .json: return item.detectedTags.contains(.json)
     case .phones: return item.detectedTags.contains(.phone)
     }
   }
@@ -134,8 +134,8 @@ struct ContentView: View {
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .background(
       ZStack {
-        Color.black.opacity(0.85)
-        VisualEffectBlur(material: .hudWindow, blendingMode: .behindWindow)
+        VisualEffectBlur(material: .fullScreenUI, blendingMode: .behindWindow)
+        Color.black.opacity(0.15)
       }
     )
     .clipShape(RoundedRectangle(cornerRadius: 12))
@@ -574,6 +574,7 @@ struct ContentView: View {
                 return false
               }(),
               isCompact: showSearchField,
+              itemCount: settings.showItemCount ? pinboard.itemIds.count : nil,
               onSelect: {
                 viewMode = .pinboard(pinboard)
               },
@@ -926,7 +927,6 @@ struct ClipboardItemCard: View {
             .foregroundStyle(.primary)
             .opacity(0.7 + holdProgress * 0.3)
         }
-        .animation(.spring(response: 0.35, dampingFraction: 0.65), value: holdProgress)
       }
     }
     .animation(.easeOut(duration: 0.15), value: quickAccessNumber != nil)
@@ -939,7 +939,6 @@ struct ClipboardItemCard: View {
       color: Color.blue.opacity(isSelected ? holdProgress * 0.3 : 0),
       radius: isSelected ? 10 * holdProgress : 0
     )
-    .animation(.easeOut(duration: 0.12), value: isSelected ? holdProgress : 0)
     .shadow(color: .black.opacity(isSelected ? 0.3 : 0.15), radius: isSelected ? 8 : 4, y: 2)
     .scaleEffect(isSelected ? 1.02 : 1.0)
     .animation(.easeOut(duration: 0.15), value: isSelected)
@@ -1055,6 +1054,9 @@ struct ClipboardItemCard: View {
 
   /// Content area tinted by content type
   private var contentBackground: Color {
+    if item.detectedTags.contains(.color), let parsed = parsedColor {
+      return parsed.opacity(0.4)
+    }
     switch item.type {
     case .image:
       return Color.primary.opacity(0.02)
@@ -1065,6 +1067,63 @@ struct ClipboardItemCard: View {
     case .text:
       return Color.primary.opacity(0.04)
     }
+  }
+
+  /// Parse the first color value found in the item content
+  private var parsedColor: Color? {
+    let text = item.content.trimmingCharacters(in: .whitespacesAndNewlines)
+
+    // Hex: #RGB or #RRGGBB
+    if let match = text.range(of: #"#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})\b"#, options: .regularExpression) {
+      var hex = String(text[match]).dropFirst() // remove #
+      if hex.count == 3 {
+        hex = hex.map { "\($0)\($0)" }.joined()[...]
+      }
+      if let val = UInt64(hex, radix: 16) {
+        let r = Double((val >> 16) & 0xFF) / 255.0
+        let g = Double((val >> 8) & 0xFF) / 255.0
+        let b = Double(val & 0xFF) / 255.0
+        return Color(red: r, green: g, blue: b)
+      }
+    }
+
+    // rgb(r, g, b) or rgba(r, g, b, a)
+    if let match = text.range(of: #"rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})"#, options: .regularExpression) {
+      let sub = String(text[match])
+      let nums = sub.components(separatedBy: CharacterSet.decimalDigits.inverted).compactMap { Int($0) }
+      if nums.count >= 3 {
+        return Color(red: Double(nums[0]) / 255.0, green: Double(nums[1]) / 255.0, blue: Double(nums[2]) / 255.0)
+      }
+    }
+
+    // hsl(h, s%, l%)
+    if let match = text.range(of: #"hsla?\(\s*(\d{1,3})\s*,\s*(\d{1,3})%?\s*,\s*(\d{1,3})%?"#, options: .regularExpression) {
+      let sub = String(text[match])
+      let nums = sub.components(separatedBy: CharacterSet.decimalDigits.inverted).compactMap { Int($0) }
+      if nums.count >= 3 {
+        let (r, g, b) = Self.hslToRGB(h: Double(nums[0]), s: Double(nums[1]) / 100.0, l: Double(nums[2]) / 100.0)
+        return Color(red: r, green: g, blue: b)
+      }
+    }
+
+    return nil
+  }
+
+  private static func hslToRGB(h: Double, s: Double, l: Double) -> (Double, Double, Double) {
+    guard s > 0 else { return (l, l, l) }
+    let c = (1 - abs(2 * l - 1)) * s
+    let x = c * (1 - abs((h / 60).truncatingRemainder(dividingBy: 2) - 1))
+    let m = l - c / 2
+    let (r1, g1, b1): (Double, Double, Double)
+    switch h {
+    case 0..<60:   (r1, g1, b1) = (c, x, 0)
+    case 60..<120:  (r1, g1, b1) = (x, c, 0)
+    case 120..<180: (r1, g1, b1) = (0, c, x)
+    case 180..<240: (r1, g1, b1) = (0, x, c)
+    case 240..<300: (r1, g1, b1) = (x, 0, c)
+    default:        (r1, g1, b1) = (c, 0, x)
+    }
+    return (r1 + m, g1 + m, b1 + m)
   }
 
   @ViewBuilder
@@ -1570,7 +1629,7 @@ struct FilterPillButton: View {
         Text(tag.rawValue)
           .font(.system(size: 11, weight: isSelected ? .semibold : .medium))
       }
-      .foregroundStyle(isSelected ? .primary : .primary.opacity(0.6))
+      .foregroundStyle(isSelected ? AnyShapeStyle(.primary) : AnyShapeStyle(.primary.opacity(0.6)))
       .padding(.horizontal, 10)
       .padding(.vertical, 5)
       .background(
@@ -1594,22 +1653,22 @@ struct ContentTagBadge: View {
 
   var label: String {
     switch tag {
-    case .color:   return "Color"
-    case .email:   return "Email"
-    case .phone:   return "Phone"
-    case .code:    return "Code"
-    case .json:    return "JSON"
+    case .color: return "Color"
+    case .email: return "Email"
+    case .phone: return "Phone"
+    case .code: return "Code"
+    case .json: return "JSON"
     case .address: return "Addr"
     }
   }
 
   var badgeColor: Color {
     switch tag {
-    case .color:   return .purple
-    case .email:   return .blue
-    case .phone:   return .green
-    case .code:    return .orange
-    case .json:    return .yellow
+    case .color: return .purple
+    case .email: return .blue
+    case .phone: return .green
+    case .code: return .orange
+    case .json: return .yellow
     case .address: return .cyan
     }
   }
@@ -1690,7 +1749,8 @@ struct ClipboardTabButton: View {
         .frame(minWidth: 28, minHeight: 28)
         .padding(.horizontal, 6)
         .background(
-          isSelected ? Color.primary.opacity(0.18) : (isHovered ? Color.primary.opacity(0.1) : Color.clear)
+          isSelected
+            ? Color.primary.opacity(0.18) : (isHovered ? Color.primary.opacity(0.1) : Color.clear)
         )
         .cornerRadius(8)
       } else {
@@ -1714,7 +1774,8 @@ struct ClipboardTabButton: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 7)
         .background(
-          isSelected ? Color.primary.opacity(0.18) : (isHovered ? Color.primary.opacity(0.1) : Color.clear)
+          isSelected
+            ? Color.primary.opacity(0.18) : (isHovered ? Color.primary.opacity(0.1) : Color.clear)
         )
         .cornerRadius(10)
       }
@@ -1730,6 +1791,7 @@ struct PinboardTabButton: View {
   let pinboard: Pinboard
   let isSelected: Bool
   let isCompact: Bool
+  var itemCount: Int? = nil
   let onSelect: () -> Void
   let onEdit: () -> Void
   let onDelete: () -> Void
@@ -1757,12 +1819,19 @@ struct PinboardTabButton: View {
   var body: some View {
     Group {
       if isCompact {
-        Circle()
-          .fill(pinboard.color.color)
-          .frame(width: 9, height: 9)
-          .padding(10)
-          .background(backgroundColor)
-          .cornerRadius(8)
+        HStack(spacing: 4) {
+          Circle()
+            .fill(pinboard.color.color)
+            .frame(width: 9, height: 9)
+          if let count = itemCount {
+            Text("\(count)")
+              .font(.system(size: 11, weight: .medium, design: .rounded))
+              .foregroundStyle(.primary.opacity(0.6))
+          }
+        }
+        .padding(10)
+        .background(backgroundColor)
+        .cornerRadius(8)
       } else {
         HStack(spacing: 7) {
           Circle()
@@ -1771,6 +1840,15 @@ struct PinboardTabButton: View {
           Text(pinboard.name)
             .font(.system(size: 13, weight: .medium))
             .foregroundStyle(.primary.opacity(0.9))
+          if let count = itemCount {
+            Text("\(count)")
+              .font(.system(size: 11, weight: .medium, design: .rounded))
+              .foregroundStyle(.primary.opacity(0.5))
+              .padding(.horizontal, 6)
+              .padding(.vertical, 2)
+              .background(Color.primary.opacity(0.1))
+              .cornerRadius(4)
+          }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 7)

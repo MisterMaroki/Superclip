@@ -105,10 +105,6 @@ class SettingsManager: ObservableObject {
         didSet { defaults.set(maxHistorySize, forKey: Keys.maxHistorySize) }
     }
 
-    @Published var excludeSensitiveApps: Bool {
-        didSet { defaults.set(excludeSensitiveApps, forKey: Keys.excludeSensitiveApps) }
-    }
-
     @Published var clearOnQuit: Bool {
         didSet { defaults.set(clearOnQuit, forKey: Keys.clearOnQuit) }
     }
@@ -137,24 +133,8 @@ class SettingsManager: ObservableObject {
         static let pasteStackHotkey = "Superclip.pasteStackHotkey"
         static let ocrHotkey = "Superclip.ocrHotkey"
         static let maxHistorySize = "Superclip.maxHistorySize"
-        static let excludeSensitiveApps = "Superclip.excludeSensitiveApps"
         static let clearOnQuit = "Superclip.clearOnQuit"
     }
-
-    // Bundle identifiers of apps whose clipboard content should be excluded
-    private static let sensitiveAppBundleIDs: Set<String> = [
-        "com.agilebits.onepassword7",
-        "com.agilebits.onepassword-osx",
-        "com.1password.1password",
-        "org.keepassxc.keepassxc",
-        "com.lastpass.LastPass",
-        "com.dashlane.DashlaneMacExtension",
-        "com.bitwarden.desktop",
-        "com.apple.keychainaccess",
-        "com.nordpass.NordPass",
-        "com.roboform.roboform",
-        "com.enpass.Enpass",
-    ]
 
     // MARK: - Init
 
@@ -177,9 +157,8 @@ class SettingsManager: ObservableObject {
             Keys.syntaxHighlighting: true,
             Keys.ignoreConfidentialContent: true,
             Keys.ignoreTransientContent: true,
-            Keys.ignoredAppBundleIDs: [String](),
-            Keys.maxHistorySize: 100,
-            Keys.excludeSensitiveApps: true,
+            Keys.ignoredAppBundleIDs: ["com.apple.keychainaccess", "com.apple.Passwords"],
+            Keys.maxHistorySize: 0,
             Keys.clearOnQuit: false,
             Keys.historyHotkey: HotkeyConfig.defaultHistory.dictionary,
             Keys.pasteStackHotkey: HotkeyConfig.defaultPasteStack.dictionary,
@@ -205,21 +184,13 @@ class SettingsManager: ObservableObject {
         self.ocrHotkey = (d.dictionary(forKey: Keys.ocrHotkey) as? [String: Int]) ?? HotkeyConfig.defaultOCR.dictionary
         self.ignoredAppBundleIDs = d.stringArray(forKey: Keys.ignoredAppBundleIDs) ?? []
         self.maxHistorySize = d.integer(forKey: Keys.maxHistorySize)
-        self.excludeSensitiveApps = d.bool(forKey: Keys.excludeSensitiveApps)
         self.clearOnQuit = d.bool(forKey: Keys.clearOnQuit)
     }
 
     // MARK: - Theme
 
     func applyTheme() {
-        switch theme {
-        case "Light":
-            NSApp.appearance = NSAppearance(named: .aqua)
-        case "Dark":
-            NSApp.appearance = NSAppearance(named: .darkAqua)
-        default:
-            NSApp.appearance = nil // System default
-        }
+        NSApp.appearance = NSAppearance(named: .darkAqua)
     }
 
     // MARK: - Launch at Login
@@ -291,10 +262,4 @@ class SettingsManager: ObservableObject {
         UserDefaults.standard.synchronize()
     }
 
-    // MARK: - Sensitive App Check
-
-    func shouldExcludeApp(bundleIdentifier: String?) -> Bool {
-        guard excludeSensitiveApps, let id = bundleIdentifier else { return false }
-        return Self.sensitiveAppBundleIDs.contains(id)
-    }
 }

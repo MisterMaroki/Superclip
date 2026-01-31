@@ -1,0 +1,73 @@
+---
+title: Quick Actions
+description: Context-aware actions that appear based on what you copy.
+category: Features
+order: 6
+---
+
+## What Are Quick Actions?
+
+Superclip analyzes your clipboard content and surfaces relevant actions in the preview panel. Copy a hex color and you can convert it to RGB. Copy JSON and you can pretty print it. No extra tools needed.
+
+## Supported Content Types
+
+### Colors
+
+Detected formats: hex (`#3b82f6`), RGB (`rgb(59, 130, 246)`), and HSL (`hsl(217, 91%, 60%)`).
+
+**Actions:**
+- Copy as Hex
+- Copy as RGB
+- Copy as HSL
+
+A color swatch is displayed alongside the detected value. Color items also show a tint of the parsed color on their card in the history.
+
+### JSON
+
+Detected when content starts with `{` or `[` and is valid JSON.
+
+**Actions:**
+- Pretty Print — reformats with indentation
+- Minify — compresses to a single line
+
+### Email Addresses
+
+Detected via standard email patterns.
+
+**Actions:**
+- Compose in Mail — opens a new email
+- Copy address
+
+### Phone Numbers
+
+Detected via common phone number formats.
+
+**Actions:**
+- Call — opens the dialer
+- Copy number
+
+### Code
+
+Detected via syntax heuristics (multi-line structured text with code patterns).
+
+**Actions:**
+- Copy code
+
+### File Paths
+
+Detected Unix-style paths starting with `/` or `~`.
+
+**Actions:**
+- Reveal in Finder
+- Copy path
+
+## Where Quick Actions Appear
+
+Quick actions are shown in two places:
+
+1. **Preview panel** — the Quick Actions bar appears below the content preview when actions are available
+2. **Context menu** — right-click a card to see available quick actions
+
+## Smart Filters
+
+Superclip also auto-tags items using these same detection heuristics. The filter bar at the top of the drawer lets you narrow your history by content type: Links, Images, Files, Code, Colors, Emails, JSON, and Phones.

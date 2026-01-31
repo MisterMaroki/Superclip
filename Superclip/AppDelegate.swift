@@ -51,6 +51,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     observeHotkeySettings()
     snippetManager.startMonitoring()
 
+    // Pre-warm ClipboardManager so its init (disk I/O, observers) doesn't delay the first drawer open
+    _ = clipboardManager
+
     if !UserDefaults.standard.bool(forKey: WelcomeWindowController.hasSeenWelcomeKey) {
       // Seed tutorial cards and pinboard immediately so they're ready before the drawer ever opens
       let pinCardId = clipboardManager.seedTutorialItems()
@@ -265,6 +268,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
       }
 
       if event.type == .keyDown {
+        // If the settings window is key, let all events through to its text fields
+        // (ESC and Cmd+W are handled by SettingsPanel.keyDown directly)
+        if let settings = self.settingsWindow, event.window === settings {
+          return event
+        }
+
         // Quick digit selection when Command is held (1-9, 0)
         // Key codes: 1=18, 2=19, 3=20, 4=21, 5=23, 6=22, 7=26, 8=28, 9=25, 0=29
         if event.modifierFlags.contains(.command) {
@@ -401,8 +410,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self.holdCompleted = false
             self.holdStartTime = CACurrentMediaTime()
 
-            self.holdProgressTimer = Timer.scheduledTimer(
-              withTimeInterval: 1.0 / 60.0, repeats: true
+            self.holdProgressTimer = Timer(
+              timeInterval: 1.0 / 60.0, repeats: true
             ) { [weak self] t in
               guard let self = self, let panel = self.contentWindow as? ContentPanel else {
                 t.invalidate()
@@ -410,9 +419,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
               }
               let elapsed = CACurrentMediaTime() - self.holdStartTime
               let p = min(1.0, elapsed / self.holdDuration)
-              DispatchQueue.main.async {
-                panel.navigationState.holdProgress = p
-              }
+              panel.navigationState.holdProgress = p
               if p >= 1.0 {
                 t.invalidate()
                 self.holdProgressTimer = nil
@@ -421,8 +428,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self.holdProgressTimer?.tolerance = 0.01
             RunLoop.main.add(self.holdProgressTimer!, forMode: .common)
 
-            self.holdCompletionTimer = Timer.scheduledTimer(
-              withTimeInterval: self.holdDuration, repeats: false
+            self.holdCompletionTimer = Timer(
+              timeInterval: self.holdDuration, repeats: false
             ) { [weak self] _ in
               self?.completeHoldToEdit()
             }
@@ -463,7 +470,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
       }
 
-      if event.type == .keyUp && event.keyCode == 49 {
+      if event.type == .keyUp {
+        if let settings = self.settingsWindow, event.window === settings {
+          return event
+        }
+        guard event.keyCode == 49 else { return event }
         // Space key up - handle hold release (rebound) or consume after completed hold
         guard let panel = self.contentWindow as? ContentPanel else { return event }
         let wasHolding = panel.navigationState.isHoldingSpace || self.holdCompleted
@@ -886,7 +897,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     let settingsPanel = SettingsPanel(
       settings: settingsManager,
       clipboardManager: clipboardManager,
-      pinboardManager: pinboardManager
+      pinboardManager: pinboardManager,
+      snippetManager: snippetManager
     )
     settingsPanel.appDelegate = self
     settingsWindow = settingsPanel

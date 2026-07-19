@@ -10,7 +10,12 @@ struct AnnotationCanvasView: View {
   let imageFrame: CGRect
 
   /// Pre-blurred copy of the full image for live blur preview.
+  /// Live full-image blur at the *current* slider radius/style — used only
+  /// for the in-progress blur drag.
   var blurPreviewNSImage: NSImage?
+  /// Image with every *committed* blur annotation baked in at its own
+  /// stored radius/style — committed regions preview exactly what exports.
+  var committedBlurNSImage: NSImage?
 
   /// Callback when a text annotation needs placement
   var onTextPlacement: ((CGPoint) -> Void)?
@@ -40,24 +45,27 @@ struct AnnotationCanvasView: View {
 
   var body: some View {
     Canvas { context, size in
-      // Resolve blur preview image once for all blur annotations
-      let resolvedBlur: GraphicsContext.ResolvedImage? = blurPreviewNSImage.map {
+      // Committed blurs draw from the baked image (per-annotation radius/
+      // style); the in-progress drag draws from the live slider preview.
+      let resolvedLiveBlur: GraphicsContext.ResolvedImage? = blurPreviewNSImage.map {
         context.resolve(Image(nsImage: $0))
       }
+      let resolvedCommittedBlur: GraphicsContext.ResolvedImage? =
+        committedBlurNSImage.map { context.resolve(Image(nsImage: $0)) } ?? resolvedLiveBlur
 
       // Render committed annotations
       for annotation in state.annotations {
         render(
           annotation: annotation, in: &context, size: size,
           isSelected: annotation.id == state.selectedAnnotationId,
-          resolvedBlur: resolvedBlur
+          resolvedBlur: resolvedCommittedBlur
         )
       }
       // Render in-progress annotation
       if let current = state.currentAnnotation {
         render(
           annotation: current, in: &context, size: size,
-          isSelected: false, resolvedBlur: resolvedBlur
+          isSelected: false, resolvedBlur: resolvedLiveBlur
         )
       }
     }

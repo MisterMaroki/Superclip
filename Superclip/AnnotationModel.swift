@@ -432,4 +432,28 @@ class AnnotationState: ObservableObject {
     isEditingText = false
     clearResizeState()
   }
+
+  // MARK: - Coordinate remapping
+
+  /// Remap every annotation's normalized points through `transform` —
+  /// including the undo/redo history, so undo restores annotations in the
+  /// image's *current* coordinate space. Called when the underlying image
+  /// is cropped, rotated, or flipped; without this, annotations detach from
+  /// the content they were drawn on.
+  func remapAllPoints(_ transform: (CGPoint) -> CGPoint) {
+    func remap(_ list: [Annotation]) -> [Annotation] {
+      list.map { annotation in
+        var a = annotation
+        a.points = a.points.map(transform)
+        return a
+      }
+    }
+    annotations = remap(annotations)
+    if var current = currentAnnotation {
+      current.points = current.points.map(transform)
+      currentAnnotation = current
+    }
+    undoStack = undoStack.map(remap)
+    redoStack = redoStack.map(remap)
+  }
 }

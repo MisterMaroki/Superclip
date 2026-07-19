@@ -39,6 +39,10 @@ struct ImageAnnotationEditorView: View {
   @State private var precomputedBlurImage: NSImage?
   @State private var blurPrecomputeWorkItem: DispatchWorkItem?
 
+  // Committed blurs baked at their stored radius/style (preview == export)
+  @State private var committedBlurImage: NSImage?
+  @State private var committedBlurWorkItem: DispatchWorkItem?
+
   // Pinch-to-zoom anchor
   @State private var magnifyAnchorScale: Double = 1.0
 
@@ -147,6 +151,11 @@ struct ImageAnnotationEditorView: View {
       if annotationState.selectedTool == .blur {
         precomputeBlur()
       }
+    }
+    // Rebake committed blurs whenever the set of blur annotations changes
+    // (commit, move, resize, delete, undo/redo)
+    .onChange(of: annotationState.annotations.filter { $0.tool == .blur }) { _ in
+      recomputeCommittedBlurs()
     }
     // Listen for keyboard shortcut notifications from the panel
     .onReceive(NotificationCenter.default.publisher(for: .imageEditorUndo)) { _ in
@@ -287,6 +296,7 @@ struct ImageAnnotationEditorView: View {
             state: annotationState,
             imageFrame: computeImageFrameUnscaled(in: geometry.size),
             blurPreviewNSImage: precomputedBlurImage,
+            committedBlurNSImage: committedBlurImage,
             onTextPlacement: { _ in
               textInputValue = ""
             }
@@ -820,6 +830,12 @@ struct ImageAnnotationEditorView: View {
     }) else { return }
 
     editedImage = NSImage(cgImage: outCG, size: NSSize(width: newWidth, height: newHeight))
+    // Keep annotations glued to the content they were drawn on
+    if degrees > 0 {
+      annotationState.remapAllPoints { CGPoint(x: $0.y, y: 1 - $0.x) }
+    } else {
+      annotationState.remapAllPoints { CGPoint(x: 1 - $0.y, y: $0.x) }
+    }
     refreshBlurPreviewIfNeeded()
   }
 
@@ -835,6 +851,7 @@ struct ImageAnnotationEditorView: View {
     }) else { return }
 
     editedImage = NSImage(cgImage: outCG, size: NSSize(width: w, height: h))
+    annotationState.remapAllPoints { CGPoint(x: 1 - $0.x, y: $0.y) }
     refreshBlurPreviewIfNeeded()
   }
 
@@ -850,15 +867,59 @@ struct ImageAnnotationEditorView: View {
     }) else { return }
 
     editedImage = NSImage(cgImage: outCG, size: NSSize(width: w, height: h))
+    annotationState.remapAllPoints { CGPoint(x: $0.x, y: 1 - $0.y) }
     refreshBlurPreviewIfNeeded()
   }
 
-  /// The blur preview is a snapshot of the image at compute time — refresh it
-  /// after any transform so committed blurs don't preview stale content.
+  /// The blur previews are snapshots of the image at compute time — refresh
+  /// them after any transform so blurs don't preview stale content.
   private func refreshBlurPreviewIfNeeded() {
-    if annotationState.selectedTool == .blur || annotationState.annotations.contains(where: { $0.tool == .blur }) {
+    if annotationState.selectedTool == .blur {
       precomputeBlur()
     }
+    recomputeCommittedBlurs()
+  }
+
+  /// Bake every committed blur annotation into a preview image at its own
+  /// stored radius/style — the same sequence `flattenImage` applies on
+  /// export, so what the canvas shows for committed blurs is exact.
+  private func recomputeCommittedBlurs() {
+    committedBlurWorkItem?.cancel()
+    let blurs = annotationState.annotations.filter { $0.tool == .blur }
+    guard !blurs.isEmpty else {
+      committedBlurImage = nil
+      return
+    }
+    let img = editedImage
+    let work = DispatchWorkItem {
+      var working = img
+      for blur in blurs {
+        guard blur.points.count >= 2 else { continue }
+        let p0 = blur.points[0]
+        let p1 = blur.points[1]
+        let ws = working.size
+        let blurRect = CGRect(
+          x: min(p0.x, p1.x) * ws.width,
+          y: min(p0.y, p1.y) * ws.height,
+          width: abs(p1.x - p0.x) * ws.width,
+          height: abs(p1.y - p0.y) * ws.height
+        )
+        if let blurred = BlurTool.applyBlur(
+          to: working, in: blurRect, style: blur.blurStyle, radius: blur.blurRadius
+        ) {
+          working = blurred
+        }
+      }
+      let result = working
+      DispatchQueue.main.async {
+        guard editedImage === img,
+          annotationState.annotations.filter({ $0.tool == .blur }) == blurs
+        else { return }
+        committedBlurImage = result
+      }
+    }
+    committedBlurWorkItem = work
+    DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.15, execute: work)
   }
 
   private func performCrop(normalizedRect: CGRect) {
@@ -901,6 +962,13 @@ struct ImageAnnotationEditorView: View {
       cgImage: croppedCGImage,
       size: NSSize(width: croppedCGImage.width, height: croppedCGImage.height)
     )
+
+    // Re-express annotation coordinates relative to the cropped region
+    let cw = max(normalizedRect.width, 0.0001)
+    let ch = max(normalizedRect.height, 0.0001)
+    annotationState.remapAllPoints { p in
+      CGPoint(x: (p.x - normalizedRect.minX) / cw, y: (p.y - normalizedRect.minY) / ch)
+    }
 
     cropStart = .zero
     cropEnd = .zero

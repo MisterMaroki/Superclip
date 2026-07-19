@@ -206,7 +206,14 @@ class SettingsManager: ObservableObject {
     // MARK: - Theme
 
     func applyTheme() {
-        NSApp.appearance = NSAppearance(named: .darkAqua)
+        switch theme {
+        case "Light":
+            NSApp.appearance = NSAppearance(named: .aqua)
+        case "Dark":
+            NSApp.appearance = NSAppearance(named: .darkAqua)
+        default:
+            NSApp.appearance = nil
+        }
     }
 
     // MARK: - Launch at Login

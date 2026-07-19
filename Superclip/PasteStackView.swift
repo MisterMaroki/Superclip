@@ -9,7 +9,7 @@ import AVFoundation
 enum SortOrder {
     case ascending  // Oldest first (first copied at top)
     case descending // Newest first (last copied at top)
-    
+
     var label: String {
         switch self {
         case .ascending:
@@ -18,9 +18,18 @@ enum SortOrder {
             return "Newest first"
         }
     }
-    
+
     mutating func toggle() {
         self = self == .ascending ? .descending : .ascending
+    }
+}
+
+enum PasteStackViewMode {
+    case list
+    case grid
+
+    mutating func toggle() {
+        self = self == .list ? .grid : .list
     }
 }
 
@@ -29,9 +38,11 @@ struct PasteStackView: View {
     @ObservedObject var navigationState: NavigationState
     var onClose: () -> Void
     var dismiss: (Bool) -> Void
-    
+
     @State private var sortOrder: SortOrder = .ascending
-    
+    @State private var viewMode: PasteStackViewMode = .list
+    @State private var userOverrodeViewMode = false
+
     var sortedItems: [ClipboardItem] {
         switch sortOrder {
         case .ascending:
@@ -40,7 +51,7 @@ struct PasteStackView: View {
             return pasteStackManager.stackItems.reversed()
         }
     }
-    
+
     var selectedItem: ClipboardItem? {
         guard !sortedItems.isEmpty,
               navigationState.selectedIndex >= 0,
@@ -49,11 +60,11 @@ struct PasteStackView: View {
         }
         return sortedItems[navigationState.selectedIndex]
     }
-    
+
     var body: some View {
         VStack(spacing: 0) {
             // Header
-            HStack(spacing: 8) { 
+            HStack(spacing: 8) {
                 // Close button
                 Button {
                     onClose()
@@ -68,15 +79,33 @@ struct PasteStackView: View {
                 Text("Paste Stack")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.primary.opacity(0.9))
-                
+
                 Spacer()
-                
+
                 if !pasteStackManager.stackItems.isEmpty {
                     Text("\(pasteStackManager.stackItems.count) items")
                         .font(.system(size: 10))
-                        .foregroundStyle(.primary.opacity(0.5))
+                        .foregroundStyle(Brand.gray600)
                 }
-                
+
+                // View mode toggle
+                if !pasteStackManager.stackItems.isEmpty {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            viewMode.toggle()
+                            userOverrodeViewMode = true
+                        }
+                    } label: {
+                        Image(systemName: viewMode == .grid ? "list.bullet" : "square.grid.2x2")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.primary.opacity(0.6))
+                            .padding(4)
+                            .background(Color.primary.opacity(0.1))
+                    }
+                    .buttonStyle(.plain)
+                    .help(viewMode == .grid ? "List view" : "Grid view")
+                }
+
                 // Sort button
                 if !pasteStackManager.stackItems.isEmpty {
                     Button {
@@ -96,12 +125,11 @@ struct PasteStackView: View {
                         .padding(.horizontal, 6)
                         .padding(.vertical, 4)
                         .background(Color.primary.opacity(0.1))
-                        .cornerRadius(4)
                     }
                     .buttonStyle(.plain)
                     .help(sortOrder.label)
                 }
-                
+
                 // Clear button
                 if !pasteStackManager.stackItems.isEmpty {
                     Button {
@@ -109,70 +137,42 @@ struct PasteStackView: View {
                     } label: {
                         Image(systemName: "trash")
                             .font(.system(size: 11))
-                            .foregroundStyle(.primary.opacity(0.5))
+                            .foregroundStyle(.primary.opacity(0.6))
                     }
                     .buttonStyle(.plain)
                     .help("Clear stack")
                 }
-             
+
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
-            .background(Color.black.opacity(0.3))
-            
+            .background(Brand.gray100)
+
             // Stack content
             if pasteStackManager.stackItems.isEmpty {
                 VStack(spacing: 10) {
                     Image(systemName: "doc.on.doc")
                         .font(.system(size: 28))
-                        .foregroundStyle(.primary.opacity(0.3))
-                    
+                        .foregroundStyle(.primary.opacity(0.45))
+
                     Text("Copy items to add to stack")
                         .font(.system(size: 12))
-                        .foregroundStyle(.primary.opacity(0.5))
-                    
+                        .foregroundStyle(Brand.gray600)
+
                     Text("⌘C to copy, then select to paste in order")
                         .font(.system(size: 10))
-                        .foregroundStyle(.primary.opacity(0.3))
+                        .foregroundStyle(Brand.gray600)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 let itemsToDisplay = sortedItems
                 ScrollViewReader { proxy in
                     ScrollView(.vertical, showsIndicators: false) {
-                        VStack(spacing: 6) {
-                            ForEach(Array(itemsToDisplay.enumerated()), id: \.element.id) { index, item in
-                                PasteStackItemRow(
-                                    item: item,
-                                    index: index + 1,
-                                    isSelected: navigationState.selectedIndex == index,
-                                    onSelect: {
-                                        navigationState.selectedIndex = index
-                                        pasteStackManager.copyToClipboard(item)
-                                        pasteStackManager.removeItem(item)
-                                        
-                                        // Adjust selected index if needed
-                                        if navigationState.selectedIndex >= itemsToDisplay.count {
-                                            navigationState.selectedIndex = max(0, itemsToDisplay.count - 1)
-                                        }
-                                        
-                                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                                            dismiss(true)
-                                        }
-                                    },
-                                    onDelete: {
-                                        pasteStackManager.removeItem(item)
-                                        if navigationState.selectedIndex >= itemsToDisplay.count {
-                                            navigationState.selectedIndex = max(0, itemsToDisplay.count - 1)
-                                        }
-                                    }
-                                )
-                                .id(item.id)
-                            }
+                        if viewMode == .grid {
+                            gridContent(items: itemsToDisplay)
+                        } else {
+                            listContent(items: itemsToDisplay)
                         }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 8)
-                        .id(sortOrder == .ascending ? "asc" : "desc")
                     }
                     .onChange(of: navigationState.selectedIndex) { newIndex in
                         if let item = itemsToDisplay[safe: newIndex] {
@@ -185,13 +185,8 @@ struct PasteStackView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(
-            ZStack {
-                Color.black.opacity(0.85)
-                VisualEffectBlur(material: .hudWindow, blendingMode: .behindWindow)
-            }
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .background(Brand.white)
+        .clipShape(Rectangle())
         .onAppear {
             navigationState.itemCount = sortedItems.count
             navigationState.selectedIndex = 0
@@ -203,25 +198,234 @@ struct PasteStackView: View {
             if newCount > 0 && navigationState.selectedIndex >= newCount {
                 navigationState.selectedIndex = newCount - 1
             }
+            // Auto-switch to grid when many images accumulate
+            if !userOverrodeViewMode {
+                let imageCount = pasteStackManager.stackItems.filter { $0.type == .image }.count
+                if imageCount >= 3 && viewMode == .list {
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        viewMode = .grid
+                    }
+                }
+            }
         }
         .onChange(of: navigationState.shouldSelectAndDismiss) { shouldSelect in
             if shouldSelect, let item = selectedItem {
                 pasteStackManager.copyToClipboard(item)
                 pasteStackManager.removeItem(item)
                 navigationState.shouldSelectAndDismiss = false
-                
+
                 // Adjust selected index
                 if navigationState.selectedIndex >= sortedItems.count {
                     navigationState.selectedIndex = max(0, sortedItems.count - 1)
                 }
-                
+
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                     dismiss(true)
                 }
             }
         }
     }
+
+    // MARK: - Grid Content
+
+    @ViewBuilder
+    private func gridContent(items: [ClipboardItem]) -> some View {
+        LazyVGrid(
+            columns: [GridItem(.adaptive(minimum: 75, maximum: 100), spacing: 6)],
+            spacing: 6
+        ) {
+            ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                PasteStackGridTile(
+                    item: item,
+                    index: index + 1,
+                    isSelected: navigationState.selectedIndex == index,
+                    onSelect: {
+                        navigationState.selectedIndex = index
+                        pasteStackManager.copyToClipboard(item)
+                        pasteStackManager.removeItem(item)
+                        if navigationState.selectedIndex >= items.count {
+                            navigationState.selectedIndex = max(0, items.count - 1)
+                        }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            dismiss(true)
+                        }
+                    },
+                    onDelete: {
+                        pasteStackManager.removeItem(item)
+                        if navigationState.selectedIndex >= items.count {
+                            navigationState.selectedIndex = max(0, items.count - 1)
+                        }
+                    }
+                )
+                .id(item.id)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .id("grid-\(sortOrder == .ascending ? "asc" : "desc")")
+    }
+
+    // MARK: - List Content
+
+    @ViewBuilder
+    private func listContent(items: [ClipboardItem]) -> some View {
+        VStack(spacing: 6) {
+            ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                PasteStackItemRow(
+                    item: item,
+                    index: index + 1,
+                    isSelected: navigationState.selectedIndex == index,
+                    onSelect: {
+                        navigationState.selectedIndex = index
+                        pasteStackManager.copyToClipboard(item)
+                        pasteStackManager.removeItem(item)
+
+                        // Adjust selected index if needed
+                        if navigationState.selectedIndex >= items.count {
+                            navigationState.selectedIndex = max(0, items.count - 1)
+                        }
+
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            dismiss(true)
+                        }
+                    },
+                    onDelete: {
+                        pasteStackManager.removeItem(item)
+                        if navigationState.selectedIndex >= items.count {
+                            navigationState.selectedIndex = max(0, items.count - 1)
+                        }
+                    }
+                )
+                .id(item.id)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .id(sortOrder == .ascending ? "asc" : "desc")
+    }
 }
+
+// MARK: - Grid Tile
+
+struct PasteStackGridTile: View {
+    let item: ClipboardItem
+    let index: Int
+    let isSelected: Bool
+    let onSelect: () -> Void
+    let onDelete: () -> Void
+
+    @State private var isHovered = false
+
+    private static let imageExtensions: Set<String> = [
+        "jpg", "jpeg", "png", "gif", "bmp", "tiff", "tif", "webp", "heic", "heif"
+    ]
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            // Content
+            tileContent
+                .frame(minWidth: 0, maxWidth: .infinity)
+                .aspectRatio(1, contentMode: .fit)
+                .clipped()
+
+            // Index badge
+            Text("\(index)")
+                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 5)
+                .padding(.vertical, 2)
+                .background(Rectangle().fill(Brand.black.opacity(0.55)))
+                .padding(4)
+
+            // Delete button on hover/selection
+            if isHovered || isSelected {
+                HStack {
+                    Spacer()
+                    Button {
+                        onDelete()
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 14))
+                            .foregroundStyle(.white.opacity(0.85))
+                    }
+                    .buttonStyle(.plain)
+                    .padding(4)
+                }
+            }
+        }
+        .overlay(
+            Rectangle()
+                .stroke(
+                    isSelected ? Color.white.opacity(0.8) : (isHovered ? Color.white.opacity(0.25) : Color.clear),
+                    lineWidth: isSelected ? 2 : 1
+                )
+        )
+        .contentShape(Rectangle())
+        .onTapGesture { onSelect() }
+        .onHover { hovering in
+            isHovered = hovering
+            if hovering { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+        }
+    }
+
+    @ViewBuilder
+    var tileContent: some View {
+        switch item.type {
+        case .image:
+            if let thumb = item.thumbnail ?? item.nsImage {
+                Image(nsImage: thumb)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+            } else {
+                placeholderTile(icon: "photo")
+            }
+        case .file:
+            if let urls = item.fileURLs, let firstURL = urls.first, urls.count == 1,
+               Self.imageExtensions.contains(firstURL.pathExtension.lowercased()),
+               let image = NSImage(contentsOf: firstURL) {
+                Image(nsImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+            } else {
+                placeholderTile(icon: "doc")
+            }
+        case .url:
+            textTile(icon: "link", text: item.content, tint: .blue)
+        case .text:
+            textTile(icon: "text.alignleft", text: item.content, tint: .primary)
+        }
+    }
+
+    @ViewBuilder
+    func placeholderTile(icon: String) -> some View {
+        ZStack {
+            Color.primary.opacity(0.08)
+            Image(systemName: icon)
+                .font(.system(size: 18))
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    func textTile(icon: String, text: String, tint: Color) -> some View {
+        ZStack {
+            Color.primary.opacity(0.06)
+            VStack(spacing: 3) {
+                Image(systemName: icon)
+                    .font(.system(size: 14))
+                    .foregroundStyle(tint.opacity(0.7))
+                Text(text)
+                    .font(.system(size: 8))
+                    .foregroundStyle(Brand.gray600)
+                    .lineLimit(3)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 4)
+            }
+        }
+    }
+}
+
+// MARK: - List Row
 
 struct PasteStackItemRow: View {
     let item: ClipboardItem
@@ -229,14 +433,14 @@ struct PasteStackItemRow: View {
     let isSelected: Bool
     let onSelect: () -> Void
     let onDelete: () -> Void
-    
+
     @State private var isHovered: Bool = false
     @State private var mediaThumbnail: NSImage?
-    
+
     var appColor: Color {
         item.sourceApp?.accentColor ?? Color(nsColor: .systemGray)
     }
-    
+
     // Get file extension for display
     var fileExtension: String? {
         switch item.type {
@@ -252,8 +456,8 @@ struct PasteStackItemRow: View {
                 let ext = firstURL.pathExtension.lowercased()
                 return ext.isEmpty ? nil : ext
             }
-            // Try to detect from image data
-            if let data = item.imageData {
+            // Detect format from magic bytes — read only the first 12 bytes, not the whole file
+            if let data = item.imageData ?? ImageStore.shared.loadHeader(for: item.id, byteCount: 12) {
                 if data.starts(with: [0x89, 0x50, 0x4E, 0x47]) { return "png" }
                 if data.starts(with: [0xFF, 0xD8, 0xFF]) { return "jpg" }
                 if data.starts(with: [0x47, 0x49, 0x46]) { return "gif" }
@@ -267,37 +471,37 @@ struct PasteStackItemRow: View {
             return nil
         }
     }
-    
+
     // Media file extensions
     private static let videoExtensions = ["mp4", "mov", "avi", "mkv", "webm", "m4v", "wmv", "flv"]
     private static let audioExtensions = ["mp3", "wav", "aac", "flac", "m4a", "ogg", "wma", "aiff"]
     private static let imageExtensions = ["jpg", "jpeg", "png", "gif", "bmp", "tiff", "tif", "webp", "heic", "heif"]
-    
+
     private func isVideoFile(_ url: URL) -> Bool {
         Self.videoExtensions.contains(url.pathExtension.lowercased())
     }
-    
+
     private func isAudioFile(_ url: URL) -> Bool {
         Self.audioExtensions.contains(url.pathExtension.lowercased())
     }
-    
+
     private func isImageFile(_ url: URL) -> Bool {
         Self.imageExtensions.contains(url.pathExtension.lowercased())
     }
-    
+
     private func isMediaFile(_ url: URL) -> Bool {
         isVideoFile(url) || isAudioFile(url) || isImageFile(url)
     }
-    
+
     private func generateVideoThumbnail(for url: URL) {
         DispatchQueue.global(qos: .userInitiated).async {
             let asset = AVAsset(url: url)
             let imageGenerator = AVAssetImageGenerator(asset: asset)
             imageGenerator.appliesPreferredTrackTransform = true
             imageGenerator.maximumSize = CGSize(width: 64, height: 64)
-            
+
             let time = CMTime(seconds: 1, preferredTimescale: 600)
-            
+
             do {
                 let cgImage = try imageGenerator.copyCGImage(at: time, actualTime: nil)
                 let thumbnail = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
@@ -309,39 +513,39 @@ struct PasteStackItemRow: View {
             }
         }
     }
-    
+
     var body: some View {
         HStack(alignment: .top, spacing: 1) {
             // Index badge
             Text("\(index)")
                 .font(.system(size: 10, weight: .medium, design: .monospaced))
-                .foregroundStyle(.primary.opacity(0.7))
+                .foregroundStyle(Brand.gray700)
                 .frame(width: 20)
                 .padding(.top, 2)
-            
+
             // Colored indicator bar
-            RoundedRectangle(cornerRadius: 2)
-                .fill(appColor)
+            Rectangle()
+                .fill(Brand.gray300)
                 .frame(width: 3, height: 32)
-            
+
             // Content preview
             contentPreview
                 .frame(maxWidth: .infinity, alignment: .topLeading)
-            
+
             // Type indicator with extension
             HStack(spacing: 3) {
                 typeIcon
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)
-                
+
                 if let ext = fileExtension {
                     Text(ext.uppercased())
                         .font(.system(size: 8, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Brand.gray600)
                 }
             }
             .padding(.top, 2)
-            
+
             // Delete button (visible on hover)
             if isHovered || isSelected {
                 Button {
@@ -349,7 +553,7 @@ struct PasteStackItemRow: View {
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 12))
-                        .foregroundStyle(.primary.opacity(0.5))
+                        .foregroundStyle(.primary.opacity(0.6))
                 }
                 .buttonStyle(.plain)
                 .padding(.top, 2)
@@ -358,11 +562,11 @@ struct PasteStackItemRow: View {
         .padding(.horizontal, 4)
         .padding(.vertical, 6)
         .background(
-            RoundedRectangle(cornerRadius: 6)
+            Rectangle()
                 .fill(isSelected ? Color.primary.opacity(0.15) : (isHovered ? Color.primary.opacity(0.08) : Color.clear))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 6)
+            Rectangle()
                 .stroke(isSelected ? Color.primary.opacity(0.3) : Color.clear, lineWidth: 1)
         )
         .contentShape(Rectangle())
@@ -378,19 +582,18 @@ struct PasteStackItemRow: View {
             }
         }
     }
-    
+
     @ViewBuilder
     var contentPreview: some View {
         switch item.type {
         case .image:
             HStack(alignment: .top, spacing: 6) {
-                if let nsImage = item.nsImage {
-                    Image(nsImage: nsImage)
+                if let thumb = item.thumbnail ?? item.nsImage {
+                    Image(nsImage: thumb)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
                         .frame(width: 32, height: 32)
-                        .cornerRadius(4)
-                        .clipped()
+                        .clipShape(Rectangle())
                 }
                 Text(item.imageDimensions ?? "Image")
                     .font(.system(size: 11))
@@ -402,7 +605,7 @@ struct PasteStackItemRow: View {
         case .url:
             Text(item.content)
                 .font(.system(size: 11))
-                .foregroundStyle(.blue)
+                .foregroundStyle(Brand.gray600)
                 .lineLimit(2)
                 .multilineTextAlignment(.leading)
         default:
@@ -413,7 +616,7 @@ struct PasteStackItemRow: View {
                 .multilineTextAlignment(.leading)
         }
     }
-    
+
     @ViewBuilder
     var fileContentPreview: some View {
         if let urls = item.fileURLs, let firstURL = urls.first {
@@ -427,8 +630,7 @@ struct PasteStackItemRow: View {
                                 .resizable()
                                 .aspectRatio(contentMode: .fill)
                                 .frame(width: 32, height: 32)
-                                .cornerRadius(4)
-                                .clipped()
+                                .clipShape(Rectangle())
                         } else {
                             defaultFileIcon(for: firstURL)
                         }
@@ -440,13 +642,11 @@ struct PasteStackItemRow: View {
                                     .resizable()
                                     .aspectRatio(contentMode: .fill)
                                     .frame(width: 32, height: 32)
-                                    .cornerRadius(4)
-                                    .clipped()
+                                    .clipShape(Rectangle())
                             } else {
                                 Rectangle()
                                     .fill(Color.gray.opacity(0.3))
                                     .frame(width: 32, height: 32)
-                                    .cornerRadius(4)
                             }
                             // Play icon overlay
                             Image(systemName: "play.circle.fill")
@@ -461,12 +661,11 @@ struct PasteStackItemRow: View {
                         // Audio file - show waveform icon
                         ZStack {
                             Rectangle()
-                                .fill(Color.purple.opacity(0.3))
+                                .fill(Brand.gray200)
                                 .frame(width: 32, height: 32)
-                                .cornerRadius(4)
                             Image(systemName: "waveform")
                                 .font(.system(size: 14))
-                                .foregroundStyle(.purple)
+                                .foregroundStyle(Brand.gray600)
                         }
                     } else {
                         defaultFileIcon(for: firstURL)
@@ -475,23 +674,23 @@ struct PasteStackItemRow: View {
                     // Multiple files - show default icon
                     defaultFileIcon(for: firstURL)
                 }
-                
+
                 VStack(alignment: .leading, spacing: 2) {
                     Text(urls.count == 1 ? firstURL.lastPathComponent : "\(urls.count) files")
                         .font(.system(size: 11))
                         .foregroundStyle(.primary)
                         .lineLimit(1)
-                    
+
                     if urls.count == 1 {
                         Text(mediaTypeLabel(for: firstURL))
                             .font(.system(size: 9))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Brand.gray600)
                     }
                 }
             }
         }
     }
-    
+
     @ViewBuilder
     func defaultFileIcon(for url: URL) -> some View {
         if let icon = NSWorkspace.shared.icon(forFile: url.path) as NSImage? {
@@ -500,19 +699,19 @@ struct PasteStackItemRow: View {
                 .frame(width: 24, height: 24)
         }
     }
-    
+
     func mediaTypeLabel(for url: URL) -> String {
         let ext = url.pathExtension.lowercased()
         if isVideoFile(url) {
-            return "Video • \(ext.uppercased())"
+            return "Video \u{2022} \(ext.uppercased())"
         } else if isAudioFile(url) {
-            return "Audio • \(ext.uppercased())"
+            return "Audio \u{2022} \(ext.uppercased())"
         } else if isImageFile(url) {
-            return "Image • \(ext.uppercased())"
+            return "Image \u{2022} \(ext.uppercased())"
         }
         return ext.uppercased()
     }
-    
+
     @ViewBuilder
     var typeIcon: some View {
         switch item.type {
@@ -526,7 +725,7 @@ struct PasteStackItemRow: View {
             Image(systemName: "text.alignleft")
         }
     }
-    
+
     @ViewBuilder
     var fileTypeIcon: some View {
         if let urls = item.fileURLs, let firstURL = urls.first, urls.count == 1 {

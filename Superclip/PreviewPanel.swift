@@ -111,6 +111,24 @@ class PreviewPanel: NSPanel {
       onOpenEditor: { [weak self] item, frame in
         self?.appDelegate?.showRichTextEditorWindow(for: item, fromPreviewFrame: frame)
       },
+      onOpenImageEditor: { [weak self] item in
+        guard let self = self, let appDelegate = self.appDelegate else { return }
+        guard let image = item.nsImage else { return }
+        let pngData = item.imageData ?? Data()
+        // Center the editor on the main screen
+        let screenFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 800)
+        let editorWidth: CGFloat = min(1000, screenFrame.width * 0.8)
+        let editorHeight: CGFloat = min(750, screenFrame.height * 0.8)
+        let editorFrame = NSRect(
+          x: screenFrame.midX - editorWidth / 2,
+          y: screenFrame.midY - editorHeight / 2,
+          width: editorWidth,
+          height: editorHeight
+        )
+        appDelegate.showImageEditorWindow(image: image, pngData: pngData, fromFrame: editorFrame)
+        // Close preview and drawer after opening the editor
+        appDelegate.closeReviewWindow(andPaste: false)
+      },
       onCloseAll: { [weak self] in
         // Close both preview and drawer
         self?.appDelegate?.closeReviewWindow(andPaste: false)

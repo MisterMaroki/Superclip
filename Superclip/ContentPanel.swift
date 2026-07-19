@@ -15,6 +15,7 @@ class ContentPanel: NSPanel {
   var isEditingPinboard: Bool = false
   var isSearching: Bool = false
   var isSearchFieldFocused: Bool = false
+  var hasNavigatedFromSearch: Bool = false
 
   init(clipboardManager: ClipboardManager, pinboardManager: PinboardManager, settings: SettingsManager) {
     self.clipboardManager = clipboardManager
@@ -23,7 +24,7 @@ class ContentPanel: NSPanel {
 
     super.init(
       contentRect: .zero,
-      styleMask: [.borderless, .nonactivatingPanel, .titled],
+      styleMask: [.borderless, .nonactivatingPanel],
       backing: .buffered,
       defer: true
     )
@@ -37,7 +38,7 @@ class ContentPanel: NSPanel {
   private func setupWindow() {
     backgroundColor = .clear
     isOpaque = false
-    hasShadow = true
+    hasShadow = false
     level = .floating
     isMovableByWindowBackground = false  // Don't allow moving the bottom bar
     titlebarAppearsTransparent = true
@@ -73,6 +74,9 @@ class ContentPanel: NSPanel {
       },
       onSearchingChanged: { [weak self] isSearching in
         self?.isSearching = isSearching
+        if !isSearching {
+          self?.hasNavigatedFromSearch = false
+        }
       },
       onSearchFocusChanged: { [weak self] isFocused in
         self?.isSearchFieldFocused = isFocused
@@ -107,8 +111,8 @@ class ContentPanel: NSPanel {
 
     if let screen = NSScreen.main {
       let screenFrame = screen.visibleFrame
-      let padding: CGFloat = 16
-      let bottomPadding: CGFloat = 16
+      let padding: CGFloat = 0
+      let bottomPadding: CGFloat = 0
       let panelHeight: CGFloat = 280  // Height for Paste-style horizontal cards
 
       // Set panel to span across the bottom of the screen

@@ -16,6 +16,7 @@ struct PreviewView: View {
   let onDismiss: () -> Void
   let onPaste: (String) -> Void
   var onOpenEditor: ((ClipboardItem, NSRect) -> Void)?
+  var onOpenImageEditor: ((ClipboardItem) -> Void)?
   var onCloseAll: (() -> Void)?  // Callback to close both preview and drawer
 
   @State private var editableContent: String
@@ -50,7 +51,9 @@ struct PreviewView: View {
     item: ClipboardItem, clipboardManager: ClipboardManager, pinboardManager: PinboardManager,
     editingState: PreviewEditingState, arrowXPosition: CGFloat = 250,
     onDismiss: @escaping () -> Void, onPaste: @escaping (String) -> Void,
-    onOpenEditor: ((ClipboardItem, NSRect) -> Void)? = nil, onCloseAll: (() -> Void)? = nil
+    onOpenEditor: ((ClipboardItem, NSRect) -> Void)? = nil,
+    onOpenImageEditor: ((ClipboardItem) -> Void)? = nil,
+    onCloseAll: (() -> Void)? = nil
   ) {
     self.item = item
     self.clipboardManager = clipboardManager
@@ -60,6 +63,7 @@ struct PreviewView: View {
     self.onDismiss = onDismiss
     self.onPaste = onPaste
     self.onOpenEditor = onOpenEditor
+    self.onOpenImageEditor = onOpenImageEditor
     self.onCloseAll = onCloseAll
     self._editableContent = State(initialValue: item.content)
     self._originalContent = State(initialValue: item.content)
@@ -84,16 +88,7 @@ struct PreviewView: View {
   }
 
   var body: some View {
-    // For images, use the dedicated ImageEditorView
-    if item.type == .image, let nsImage = item.nsImage {
-      ImageEditorView(
-        originalImage: nsImage,
-        clipboardManager: clipboardManager,
-        onDismiss: onDismiss
-      )
-    } else {
-      previewWithArrow
-    }
+    previewWithArrow
   }
 
   var previewWithArrow: some View {
@@ -113,10 +108,7 @@ struct PreviewView: View {
 
             // Main arrow body with gradient
             ArrowShape()
-              .fill(
-                Color.black.opacity(0.3)
-
-              )
+              .fill(Brand.gray300)
               .frame(width: arrowWidth, height: arrowHeight)
 
           }
@@ -201,7 +193,7 @@ struct PreviewView: View {
           ShareButtonView(item: item)
             .frame(width: 20, height: 20)
 
-          // Edit button - opens rich text editor in new window
+          // Edit button - opens rich text editor or image annotation editor in new window
           if item.type == .text || item.type == .url {
             Button {
               // Get current window frame to position editor
@@ -215,7 +207,18 @@ struct PreviewView: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 4)
                 .background(Color.primary.opacity(0.1))
-                .cornerRadius(4)
+            }
+            .buttonStyle(.plain)
+          } else if item.type == .image {
+            Button {
+              onOpenImageEditor?(item)
+            } label: {
+              Text("Edit")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.primary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 4)
+                .background(Color.primary.opacity(0.1))
             }
             .buttonStyle(.plain)
           }
@@ -223,11 +226,13 @@ struct PreviewView: View {
       }
       .padding(.horizontal, 16)
       .padding(.vertical, 12)
-      .background(Color.black.opacity(0.3))
+      .background(Brand.gray100)
 
       // Content area
       Group {
         switch item.type {
+        case .image:
+          imagePreview
         case .file:
           filePreview
         case .url:
@@ -244,7 +249,37 @@ struct PreviewView: View {
 
       // Footer
       Group {
-        if item.type == .url {
+        if item.type == .image {
+          // Footer for image types: dimensions on left, Copy to Clipboard on right
+          HStack {
+            if let nsImage = item.nsImage {
+              Text("\(Int(nsImage.size.width)) × \(Int(nsImage.size.height))")
+                .font(.system(size: 11))
+                .foregroundStyle(Brand.gray600)
+            }
+
+            Spacer()
+
+            Button {
+              copyImageToClipboard()
+            } label: {
+              HStack(spacing: 4) {
+                Image(systemName: "doc.on.clipboard")
+                  .font(.system(size: 10))
+                Text("Copy to Clipboard")
+                  .font(.system(size: 11, weight: .medium))
+              }
+              .foregroundStyle(.white)
+              .padding(.horizontal, 12)
+              .padding(.vertical, 6)
+              .background(Brand.black)
+            }
+            .buttonStyle(.plain)
+          }
+          .padding(.horizontal, 16)
+          .padding(.vertical, 10)
+          .background(Brand.gray100)
+        } else if item.type == .url {
           // Footer for URL types: URL on left, Open in browser button on right
           HStack {
             if let url = URL(string: item.content) {
@@ -266,37 +301,36 @@ struct PreviewView: View {
                 Text("Open in \(defaultBrowserName)")
                   .font(.system(size: 11, weight: .medium))
               }
-              .foregroundStyle(.primary)
+              .foregroundStyle(.white)
               .padding(.horizontal, 12)
               .padding(.vertical, 6)
-              .background(appColor)
-              .cornerRadius(6)
+              .background(Brand.black)
             }
             .buttonStyle(.plain)
           }
           .padding(.horizontal, 16)
           .padding(.vertical, 10)
-          .background(Color.black.opacity(0.3))
+          .background(Brand.gray100)
         } else {
           // Footer with stats for other types
           HStack {
             Text("\(characterCount) characters")
               .font(.system(size: 11))
-              .foregroundStyle(.secondary)
+              .foregroundStyle(Brand.gray600)
 
             Text("·")
-              .foregroundStyle(.secondary.opacity(0.5))
+              .foregroundStyle(Brand.gray500)
 
             Text("\(wordCount) \(wordCount == 1 ? "word" : "words")")
               .font(.system(size: 11))
-              .foregroundStyle(.secondary)
+              .foregroundStyle(Brand.gray600)
 
             Text("·")
-              .foregroundStyle(.secondary.opacity(0.5))
+              .foregroundStyle(Brand.gray500)
 
             Text("\(lineCount) \(lineCount == 1 ? "line" : "lines")")
               .font(.system(size: 11))
-              .foregroundStyle(.secondary)
+              .foregroundStyle(Brand.gray600)
 
             Spacer()
 
@@ -311,35 +345,28 @@ struct PreviewView: View {
                   Text("Show in Finder")
                     .font(.system(size: 11, weight: .medium))
                 }
-                .foregroundStyle(.primary)
+                .foregroundStyle(.white)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
-                .background(appColor)
-                .cornerRadius(6)
+                .background(Brand.black)
               }
               .buttonStyle(.plain)
             }
           }
           .padding(.horizontal, 16)
           .padding(.vertical, 10)
-          .background(Color.black.opacity(0.3))
+          .background(Brand.gray100)
         }
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .background(
-      ZStack {
-        Color.black.opacity(0.85)
-        VisualEffectBlur(material: .hudWindow, blendingMode: .behindWindow)
-      }
-    )
-    .clipShape(RoundedRectangle(cornerRadius: 12))
+    .background(Brand.white)
+    .clipShape(Rectangle())
     .overlay(
-      RoundedRectangle(cornerRadius: 12)
+      Rectangle()
         .stroke(Color.primary.opacity(0.15), lineWidth: 1)
     )
-    // subtle lighter shadow below
-    .shadow(color: Color.black.opacity(0.05), radius: 20, x: 0, y: -15)
+
   }
 
   var textPreview: some View {
@@ -375,6 +402,19 @@ struct PreviewView: View {
       }
       .padding(16)
       .frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+  }
+
+  var imagePreview: some View {
+    ZStack {
+      CheckerboardBackground()
+
+      if let nsImage = item.nsImage {
+        Image(nsImage: nsImage)
+          .resizable()
+          .aspectRatio(contentMode: .fit)
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
+      }
     }
   }
 
@@ -438,6 +478,13 @@ struct PreviewView: View {
     return cleanedName.prefix(1).capitalized + cleanedName.dropFirst()
   }
 
+  private func copyImageToClipboard() {
+    guard let nsImage = item.nsImage else { return }
+    let pasteboard = NSPasteboard.general
+    pasteboard.clearContents()
+    pasteboard.writeObjects([nsImage])
+  }
+
   private func openInBrowser() {
     guard let url = URL(string: item.content) else { return }
     NSWorkspace.shared.open(url)
@@ -495,18 +542,15 @@ struct FilePreviewRow: View {
       if isVideoFile {
         VideoPlayerView(url: url)
           .frame(maxWidth: .infinity, maxHeight: 280)
-          .cornerRadius(8)
           .clipped()
       } else if isAudioFile {
         AudioPlayerView(url: url)
           .frame(maxWidth: .infinity)
-          .cornerRadius(8)
       } else if isImageFile, let image = imageFromFile {
         Image(nsImage: image)
           .resizable()
           .aspectRatio(contentMode: .fit)
           .frame(maxWidth: .infinity, maxHeight: 250)
-          .cornerRadius(8)
           .background(Color.black.opacity(0.1))
       }
 
@@ -525,16 +569,16 @@ struct FilePreviewRow: View {
           HStack(spacing: 8) {
             Text(url.deletingLastPathComponent().path)
               .font(.system(size: 11))
-              .foregroundStyle(.secondary)
+              .foregroundStyle(Brand.gray600)
               .lineLimit(1)
               .truncationMode(.middle)
 
             if isVideoFile || isAudioFile || isImageFile {
               Text("•")
-                .foregroundStyle(.secondary.opacity(0.5))
+                .foregroundStyle(Brand.gray500)
               Text(mediaTypeLabel)
                 .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Brand.gray600)
             }
           }
         }
@@ -544,7 +588,6 @@ struct FilePreviewRow: View {
       .padding(.horizontal, 12)
       .padding(.vertical, 8)
       .background(Color(nsColor: .separatorColor).opacity(0.2))
-      .cornerRadius(8)
     }
   }
 }
@@ -601,7 +644,7 @@ struct AudioPlayerView: View {
           RoundedRectangle(cornerRadius: 2)
             .fill(
               i < Int((currentTime / max(duration, 1)) * 40)
-                ? Color.purple : Color.purple.opacity(0.3)
+                ? Brand.gray500 : Brand.gray500.opacity(0.3)
             )
             .frame(width: 4, height: CGFloat.random(in: 10...40))
         }
@@ -618,7 +661,7 @@ struct AudioPlayerView: View {
         } label: {
           Image(systemName: isPlaying ? "pause.circle.fill" : "play.circle.fill")
             .font(.system(size: 36))
-            .foregroundStyle(.purple)
+            .foregroundStyle(Brand.gray500)
         }
         .buttonStyle(.plain)
 
@@ -629,16 +672,16 @@ struct AudioPlayerView: View {
               player?.seek(to: CMTime(seconds: currentTime, preferredTimescale: 600))
             }
           }
-          .tint(.purple)
+          .tint(Brand.black)
 
           HStack {
             Text(formatTime(currentTime))
               .font(.system(size: 10, design: .monospaced))
-              .foregroundStyle(.secondary)
+              .foregroundStyle(Brand.gray600)
             Spacer()
             Text(formatTime(duration))
               .font(.system(size: 10, design: .monospaced))
-              .foregroundStyle(.secondary)
+              .foregroundStyle(Brand.gray600)
           }
         }
       }
@@ -861,7 +904,6 @@ private struct PinboardDropdownLabel: View {
     .padding(.horizontal, 8)
     .padding(.vertical, 4)
     .background(Color.primary.opacity(0.1))
-    .cornerRadius(4)
   }
 }
 
@@ -905,7 +947,7 @@ struct ShareButtonView: NSViewRepresentable {
     button.bezelStyle = .inline
     button.target = context.coordinator
     button.action = #selector(Coordinator.showSharePicker(_:))
-    button.contentTintColor = .white.withAlphaComponent(0.6)
+    button.contentTintColor = .labelColor.withAlphaComponent(0.6)
     button.setContentHuggingPriority(.required, for: .horizontal)
     button.setContentHuggingPriority(.required, for: .vertical)
     return button
@@ -949,7 +991,7 @@ struct ShareButtonView: NSViewRepresentable {
     private func shareItems(for item: ClipboardItem) -> [Any] {
       switch item.type {
       case .image:
-        if let imageData = item.imageData, let image = NSImage(data: imageData) {
+        if let image = item.nsImage {
           return [image]
         }
         return []

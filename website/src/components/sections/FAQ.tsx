@@ -35,23 +35,27 @@ function FAQItem({ q, a }: { q: string; a: string }) {
   const [open, setOpen] = useState(false);
 
   return (
-    <div className="border-b border-white/[0.06] last:border-b-0">
+    <div className="border-b border-[var(--gray-200)] last:border-b-0">
       <button
         onClick={() => setOpen(!open)}
         className="flex w-full items-center justify-between gap-4 py-5 text-left group"
       >
-        <span className="text-[15px] font-semibold text-white/80 group-hover:text-white/95 transition-colors">
+        <span className="text-[15px] font-medium text-[var(--black)] group-hover:text-[var(--gray-700)] transition-colors">
           {q}
         </span>
         <span className="shrink-0">
           <svg
-            className={`h-4 w-4 text-white/30 transition-transform duration-200 ${open ? "rotate-45" : ""}`}
+            className={`h-4 w-4 text-[var(--gray-400)] transition-transform duration-200 ${open ? "rotate-45" : ""}`}
             fill="none"
             viewBox="0 0 24 24"
             stroke="currentColor"
-            strokeWidth={2}
+            strokeWidth={1.5}
           >
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M12 4.5v15m7.5-7.5h-15"
+            />
           </svg>
         </span>
       </button>
@@ -61,10 +65,10 @@ function FAQItem({ q, a }: { q: string; a: string }) {
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.25, ease: "easeInOut" }}
+            transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
             className="overflow-hidden"
           >
-            <p className="pb-5 text-[14px] text-white/45 leading-relaxed max-w-[600px]">
+            <p className="pb-5 text-[14px] text-[var(--gray-500)] leading-relaxed max-w-[600px]">
               {a}
             </p>
           </motion.div>
@@ -77,21 +81,19 @@ function FAQItem({ q, a }: { q: string; a: string }) {
 export function FAQ() {
   return (
     <section id="faq" className="relative py-32">
-      <div className="mx-auto max-w-[var(--container)] px-6">
+      <div className="mx-auto max-w-[var(--container)] px-10">
         <div className="max-w-[640px] mx-auto">
           <FadeIn>
             <div className="text-center mb-12">
-              <p className="text-[13px] font-semibold uppercase tracking-widest text-white/30 mb-4">
-                FAQ
-              </p>
-              <h2 className="text-3xl md:text-4xl font-extrabold tracking-tight">
+              <p className="section-label mb-4">FAQ</p>
+              <h2 style={{ fontSize: "clamp(32px, 5vw, 48px)" }}>
                 Common questions
               </h2>
             </div>
           </FadeIn>
 
           <FadeIn delay={0.1}>
-            <div className="glass p-2">
+            <div className="border border-[var(--gray-200)]">
               <div className="px-6">
                 {faqs.map((faq) => (
                   <FAQItem key={faq.q} q={faq.q} a={faq.a} />

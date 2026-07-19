@@ -57,56 +57,38 @@ const milestones = [
   },
 ];
 
-const statusStyles = {
-  current: {
-    dot: "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]",
-    line: "bg-emerald-400/30",
-    badge: "bg-emerald-500/15 text-emerald-400",
-    badgeLabel: "Now",
-  },
-  upcoming: {
-    dot: "bg-cyan-400 shadow-[0_0_8px_rgba(0,212,255,0.4)]",
-    line: "bg-cyan-400/20",
-    badge: "bg-cyan-500/15 text-cyan-400",
-    badgeLabel: "Next",
-  },
-  future: {
-    dot: "bg-purple-400 shadow-[0_0_8px_rgba(139,92,246,0.4)]",
-    line: "bg-purple-400/15",
-    badge: "bg-purple-500/15 text-purple-400",
-    badgeLabel: "Soon",
-  },
+const statusLabels = {
+  current: "Now",
+  upcoming: "Next",
+  future: "Soon",
 };
 
 export function Roadmap() {
   return (
     <section id="roadmap" className="relative py-32">
-      <div className="mx-auto max-w-[var(--container)] px-6">
+      <div className="mx-auto max-w-[var(--container)] px-10">
         <FadeIn>
           <div className="text-center mb-20">
-            <p className="text-[13px] font-semibold uppercase tracking-widest text-cyan-400/70 mb-4">
-              Roadmap
-            </p>
-            <h2 className="text-4xl md:text-5xl font-extrabold tracking-tight">
+            <p className="section-label mb-4">Roadmap</p>
+            <h2 style={{ fontSize: "clamp(32px, 5vw, 48px)" }}>
               Where we&apos;re headed
             </h2>
-            <p className="mt-4 text-lg text-white/40 max-w-lg mx-auto">
-              Superclip is growing fast. Here&apos;s what&apos;s coming &mdash; and after
-              that, you decide.
+            <p className="mt-4 text-[17px] text-[var(--gray-500)] max-w-lg mx-auto">
+              Superclip is growing fast. Here&apos;s what&apos;s coming &mdash;
+              and after that, you decide.
             </p>
           </div>
         </FadeIn>
 
         <div className="relative max-w-[680px] mx-auto">
           {/* Timeline line */}
-          <div className="absolute left-[19px] md:left-1/2 md:-translate-x-px top-0 bottom-0 w-px bg-gradient-to-b from-emerald-400/30 via-cyan-400/20 to-purple-400/10" />
+          <div className="absolute left-[19px] md:left-1/2 md:-translate-x-px top-0 bottom-0 w-px bg-[var(--gray-200)]" />
 
           {milestones.map((milestone, i) => {
-            const style = statusStyles[milestone.status];
             const isEven = i % 2 === 0;
 
             return (
-              <FadeIn key={milestone.title} delay={i * 0.1}>
+              <FadeIn key={milestone.title} delay={i * 0.08}>
                 <div
                   className={`relative flex items-start gap-6 mb-12 last:mb-0
                     md:gap-0 ${isEven ? "md:flex-row" : "md:flex-row-reverse"}
@@ -114,36 +96,41 @@ export function Roadmap() {
                 >
                   {/* Dot */}
                   <div className="absolute left-[15px] md:left-1/2 md:-translate-x-1/2 top-1 z-10">
-                    <div className={`h-[10px] w-[10px] rounded-full ${style.dot}`} />
+                    <div
+                      className={`h-[10px] w-[10px] ${
+                        milestone.status === "current"
+                          ? "bg-[var(--black)]"
+                          : "border border-[var(--gray-300)] bg-[var(--white)]"
+                      }`}
+                    />
                   </div>
 
                   {/* Card */}
-                  <div
-                    className={`ml-10 md:ml-0 md:w-[calc(50%-32px)] glass p-6 transition-all duration-200 hover:translate-y-[-2px] glass-hover`}
-                  >
+                  <div className="ml-10 md:ml-0 md:w-[calc(50%-32px)] border border-[var(--gray-200)] p-6">
                     <div className="flex items-center gap-2 mb-3">
-                      <span
-                        className={`inline-flex h-5 items-center rounded-full px-2 text-[10px] font-bold uppercase tracking-wider ${style.badge}`}
-                      >
-                        {style.badgeLabel}
+                      <span className="inline-flex h-5 items-center border border-[var(--gray-700)] px-2 font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--black)]">
+                        {statusLabels[milestone.status]}
                       </span>
-                      <span className="text-[12px] text-white/30">
+                      <span className="font-mono text-[11px] text-[var(--gray-400)]">
                         {milestone.date}
                       </span>
                     </div>
-                    <h3 className="text-[16px] font-bold text-white/90 mb-2">
+                    <h3
+                      className="text-[16px] text-[var(--black)] mb-2"
+                      style={{ fontFamily: "var(--font-serif)" }}
+                    >
                       {milestone.title}
                     </h3>
-                    <p className="text-[13px] text-white/40 leading-relaxed mb-4">
+                    <p className="text-[13px] text-[var(--gray-500)] leading-relaxed mb-4">
                       {milestone.description}
                     </p>
                     <ul className="space-y-1.5">
                       {milestone.features.map((feat) => (
                         <li
                           key={feat}
-                          className="flex items-center gap-2 text-[12px] text-white/35"
+                          className="flex items-center gap-2 text-[12px] text-[var(--gray-400)]"
                         >
-                          <span className="h-1 w-1 rounded-full bg-white/20 shrink-0" />
+                          <span className="h-1 w-1 bg-[var(--gray-300)] shrink-0" />
                           {feat}
                         </li>
                       ))}

@@ -15,7 +15,7 @@ class FloatingOverlayPanel: NSPanel {
   private let pngData: Data
 
   /// Fixed width for all toast overlays so they stack uniformly.
-  static let toastWidth: CGFloat = 280
+  static let toastWidth: CGFloat = 240
 
   init(thumbnail: NSImage, pngData: Data) {
     self.thumbnailImage = thumbnail
@@ -42,7 +42,7 @@ class FloatingOverlayPanel: NSPanel {
   private func setupWindow() {
     backgroundColor = .clear
     isOpaque = false
-    hasShadow = true
+    hasShadow = false
     level = .floating
     isMovableByWindowBackground = false
     isMovable = false
@@ -118,24 +118,43 @@ class FloatingOverlayPanel: NSPanel {
   }
 
   private func saveImage() {
+    let dataToSave = pngData
+    let timestamp = formattedTimestamp()
+
+    // Present NSSavePanel from a regular NSWindow (not NSPanel) to avoid
+    // AppKit assertion crashes in accessory/menu-bar apps.
+    let hostWindow = NSWindow(
+      contentRect: NSRect(x: 0, y: 0, width: 1, height: 1),
+      styleMask: [.titled],
+      backing: .buffered,
+      defer: false
+    )
+    hostWindow.isReleasedWhenClosed = false
+    hostWindow.center()
+    hostWindow.alphaValue = 0
+    hostWindow.orderFront(nil)
+
     let savePanel = NSSavePanel()
     savePanel.allowedContentTypes = [.png]
-    savePanel.nameFieldStringValue = "Screenshot \(formattedTimestamp()).png"
+    savePanel.nameFieldStringValue = "Screenshot \(timestamp).png"
     savePanel.canCreateDirectories = true
-    savePanel.level = .floating
 
-    // App must be active for the save panel to present
-    NSApp.activate(ignoringOtherApps: true)
+    // Default to the app's image store directory
+    let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+    let imagesDir = appSupport.appendingPathComponent("Superclip/images", isDirectory: true)
+    savePanel.directoryURL = imagesDir
 
-    let dataToSave = pngData
-    savePanel.begin { response in
+    savePanel.beginSheetModal(for: hostWindow) { [weak self] response in
+      defer { hostWindow.close() }
       guard response == .OK, let url = savePanel.url else { return }
       try? dataToSave.write(to: url)
+      self?.dismissOverlay()
     }
   }
 
   private func annotateImage() {
     guard let appDelegate = appDelegate else { return }
+    guard let image = NSImage(data: pngData) else { return }
 
     let editorFrame: NSRect
     if let screen = NSScreen.main {
@@ -152,18 +171,7 @@ class FloatingOverlayPanel: NSPanel {
       editorFrame = NSRect(x: 100, y: 100, width: 800, height: 600)
     }
 
-    let item = ClipboardItem(
-      content: "Screenshot",
-      type: .image,
-      imageData: pngData,
-      sourceApp: SourceApp(
-        bundleIdentifier: Bundle.main.bundleIdentifier,
-        name: "Superclip Screenshot",
-        icon: NSApp.applicationIconImage
-      )
-    )
-
-    appDelegate.showRichTextEditorWindow(for: item, fromPreviewFrame: editorFrame)
+    appDelegate.showImageEditorWindow(image: image, pngData: pngData, fromFrame: editorFrame)
     dismissOverlay()
   }
 

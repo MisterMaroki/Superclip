@@ -19,14 +19,14 @@ export function FadeIn({
 }: FadeInProps) {
   const [ref, inView] = useInView({
     triggerOnce: true,
-    threshold: 0.1,
+    threshold: 0.15,
   });
 
   const offsets = {
-    up: { y: 40 },
-    down: { y: -40 },
-    left: { x: 40 },
-    right: { x: -40 },
+    up: { y: 16 },
+    down: { y: -16 },
+    left: { x: 16 },
+    right: { x: -16 },
     none: {},
   };
 
@@ -36,9 +36,9 @@ export function FadeIn({
       initial={{ opacity: 0, ...offsets[direction] }}
       animate={inView ? { opacity: 1, x: 0, y: 0 } : {}}
       transition={{
-        duration: 0.7,
+        duration: 0.5,
         delay,
-        ease: [0.25, 0.1, 0.25, 1],
+        ease: [0.16, 1, 0.3, 1],
       }}
       className={className}
     >

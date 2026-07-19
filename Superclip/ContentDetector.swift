@@ -85,14 +85,58 @@ enum ContentDetector {
         pattern: #"[\+]?[(]?[0-9]{1,4}[)]?[-\s\./0-9]{7,15}"#
     )
 
+    /// Matches URLs so we can strip them before phone detection.
+    private static let urlRegex = try! NSRegularExpression(
+        pattern: #"https?://\S+"#
+    )
+
     private static func containsPhone(_ text: String) -> Bool {
-        let range = NSRange(text.startIndex..., in: text)
-        guard let match = phoneRegex.firstMatch(in: text, range: range) else { return false }
-        // Extra validation: the matched string must contain at least 7 actual digits
-        let matchRange = Range(match.range, in: text)!
-        let matched = String(text[matchRange])
-        let digitCount = matched.filter { $0.isNumber }.count
-        return digitCount >= 7
+        // Strip URLs first — long numeric paths (e.g. Discord IDs) cause false positives.
+        let stripped = urlRegex.stringByReplacingMatches(
+            in: text, range: NSRange(text.startIndex..., in: text), withTemplate: ""
+        )
+        let range = NSRange(stripped.startIndex..., in: stripped)
+        let matches = phoneRegex.matches(in: stripped, range: range)
+
+        for match in matches {
+            guard let matchRange = Range(match.range, in: stripped) else { continue }
+            let matched = String(stripped[matchRange])
+            let digitCount = matched.filter { $0.isNumber }.count
+            guard digitCount >= 7 else { continue }
+
+            // Reject matches embedded in alphanumeric-hyphen tokens
+            // (e.g. "claude-opus-4-5-20251101", "v2.3.1234567")
+            if matchEmbeddedInIdentifier(in: stripped, matchRange: matchRange) {
+                continue
+            }
+
+            return true
+        }
+
+        return false
+    }
+
+    /// Walk outward from match looking for letters connected via alphanumerics/hyphens/dots.
+    /// If found, the match is part of an identifier (version string, model ID, etc.), not a phone number.
+    private static func matchEmbeddedInIdentifier(in text: String, matchRange: Range<String.Index>) -> Bool {
+        // Walk backwards
+        var idx = matchRange.lowerBound
+        while idx > text.startIndex {
+            let prev = text.index(before: idx)
+            let c = text[prev]
+            if c.isLetter { return true }
+            if c.isNumber || c == "-" || c == "." { idx = prev; continue }
+            break
+        }
+        // Walk forwards
+        idx = matchRange.upperBound
+        while idx < text.endIndex {
+            let c = text[idx]
+            if c.isLetter { return true }
+            if c.isNumber || c == "-" || c == "." { idx = text.index(after: idx); continue }
+            break
+        }
+        return false
     }
 
     // MARK: - JSON Detection

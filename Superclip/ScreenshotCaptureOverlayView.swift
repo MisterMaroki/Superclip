@@ -135,8 +135,8 @@ struct ScreenshotCaptureOverlayView: View {
           .padding(.horizontal, 14)
           .padding(.vertical, 8)
           .background(
-            RoundedRectangle(cornerRadius: 8)
-              .fill(mode == captureMode ? Color.accentColor : Color.clear)
+            Rectangle()
+              .fill(mode == captureMode ? Color.white : Color.clear)
           )
         }
         .buttonStyle(.plain)
@@ -153,7 +153,6 @@ struct ScreenshotCaptureOverlayView: View {
           .padding(.horizontal, 6)
           .padding(.vertical, 2)
           .background(Color.primary.opacity(0.2))
-          .cornerRadius(4)
         Text("Cancel")
           .font(.system(size: 13))
       }
@@ -170,7 +169,6 @@ struct ScreenshotCaptureOverlayView: View {
           .padding(.horizontal, 6)
           .padding(.vertical, 2)
           .background(Color.primary.opacity(0.2))
-          .cornerRadius(4)
         Text("Switch mode")
           .font(.system(size: 13))
       }
@@ -179,7 +177,6 @@ struct ScreenshotCaptureOverlayView: View {
     .padding(.horizontal, 20)
     .padding(.vertical, 12)
     .background(Color.black.opacity(0.6))
-    .cornerRadius(10)
   }
 
   // MARK: - Area Mode
@@ -242,7 +239,6 @@ struct ScreenshotCaptureOverlayView: View {
       .padding(.horizontal, 8)
       .padding(.vertical, 4)
       .background(Color.black.opacity(0.7))
-      .cornerRadius(4)
       .position(
         x: rect.midX,
         y: rect.maxY + 20
@@ -280,7 +276,6 @@ struct ScreenshotCaptureOverlayView: View {
         }
         .padding(20)
         .background(Color.black.opacity(0.5))
-        .cornerRadius(12)
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -314,7 +309,6 @@ struct ScreenshotCaptureOverlayView: View {
     }
     .padding(24)
     .background(Color.black.opacity(0.5))
-    .cornerRadius(12)
     .contentShape(Rectangle())
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .background(Color.clear)

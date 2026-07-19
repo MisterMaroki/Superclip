@@ -16,18 +16,17 @@ export function InlineCTA({
   return (
     <FadeIn>
       <div className="mt-16 flex flex-col sm:flex-row items-center justify-center gap-4 text-center">
-        <p className="text-[14px] text-white/35">{text}</p>
+        <p className="text-[14px] text-[var(--gray-500)]">{text}</p>
         <a
           href={href}
-          className="inline-flex h-10 items-center gap-2 rounded-full px-5 text-[13px] font-semibold text-white transition-all duration-200 hover:brightness-110 shrink-0"
-          style={{ background: "var(--gradient-primary)" }}
+          className="inline-flex h-10 items-center gap-2 border border-[var(--black)] bg-[var(--black)] px-5 text-[13px] font-medium tracking-[0.025em] text-[var(--white)] transition-colors duration-150 hover:bg-[var(--gray-800)] shrink-0"
         >
           <svg
             className="h-3.5 w-3.5"
             fill="none"
             viewBox="0 0 24 24"
             stroke="currentColor"
-            strokeWidth={2.5}
+            strokeWidth={2}
           >
             <path
               strokeLinecap="round"

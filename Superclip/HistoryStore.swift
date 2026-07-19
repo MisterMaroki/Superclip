@@ -56,6 +56,7 @@ class HistoryStore {
         do {
             let data = try Data(contentsOf: fileURL)
             let codableItems = try decoder.decode([CodableClipboardItem].self, from: data)
+
             return codableItems.map { $0.toClipboardItem() }
         } catch {
             // If the file is corrupted, log and return empty

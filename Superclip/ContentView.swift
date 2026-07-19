@@ -85,11 +85,15 @@ struct ContentView: View {
   @State private var selectedFilter: FilterTag = .all
   @State private var editingPinboard: Pinboard?
   @State private var editingPinboardName: String = ""
+  @State private var editingPinboardColor: PinboardColor = .red
   @FocusState private var isEditingPinboard: Bool
   @State private var dragLocation: CGPoint? = nil
   @State private var dragMonitorTimer: Timer? = nil
   @State private var dragMouseUpMonitor: Any? = nil
   @State private var cardCenterXPositions: [Int: CGFloat] = [:]  // index -> center X in screen coords
+  @State private var previewUpdateWorkItem: DispatchWorkItem? = nil
+  @State private var renderWindowCenter: Int = 0
+  @State private var measuredCardSize: CGFloat = 200
 
   var currentItems: [ClipboardItem] {
     switch viewMode {
@@ -122,6 +126,21 @@ struct ContentView: View {
     return currentItems[navigationState.selectedIndex]
   }
 
+  /// Windowed rendering: only ForEach items within this range.
+  private var renderWindowStart: Int {
+    let total = currentItems.count
+    guard total > 0 else { return 0 }
+    let clamped = min(max(0, renderWindowCenter), total - 1)
+    return max(0, clamped - 25)
+  }
+
+  private var renderWindowEnd: Int {
+    let total = currentItems.count
+    guard total > 0 else { return 0 }
+    let clamped = min(max(0, renderWindowCenter), total - 1)
+    return min(total, clamped + 26)
+  }
+
   var body: some View {
     VStack(spacing: 0) {
       // New header design
@@ -132,13 +151,8 @@ struct ContentView: View {
       itemsListView
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .background(
-      ZStack {
-        VisualEffectBlur(material: .fullScreenUI, blendingMode: .behindWindow)
-        Color.black.opacity(0.15)
-      }
-    )
-    .clipShape(RoundedRectangle(cornerRadius: 12))
+    .background(Brand.white)
+    .clipShape(Rectangle())
     .background(
       // Invisible overlay to detect drag outside
       GeometryReader { geometry in
@@ -147,9 +161,8 @@ struct ContentView: View {
             if itemId != nil {
               // Start monitoring mouse location when drag starts
               // Get frame in screen coordinates
-              let frame = geometry.frame(in: .global)
               DispatchQueue.main.async {
-                startDragMonitoring(frame: frame)
+                startDragMonitoring()
               }
             } else {
               // Stop monitoring when drag ends
@@ -159,8 +172,7 @@ struct ContentView: View {
           .onAppear {
             // Also monitor when view appears in case drag is already active
             if DragState.shared.draggedItemId != nil {
-              let frame = geometry.frame(in: .global)
-              startDragMonitoring(frame: frame)
+              startDragMonitoring()
             }
           }
       }
@@ -268,7 +280,7 @@ struct ContentView: View {
 
   // MARK: - Drag Monitoring
 
-  private func startDragMonitoring(frame: CGRect) {
+  private func startDragMonitoring() {
     stopDragMonitoring()  // Clean up any existing timer
 
     let dismissCallback = dismiss
@@ -335,8 +347,11 @@ struct ContentView: View {
   }
 
   private func updatePreviewForIndex(_ index: Int, attempt: Int) {
+    // Cancel any previously queued preview update to avoid piling up work during rapid navigation
+    previewUpdateWorkItem?.cancel()
+
     let delay: Double = attempt == 1 ? 0.05 : 0.15
-    DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+    let workItem = DispatchWorkItem { [self] in
       guard navigationState.isPreviewVisible,
         index == navigationState.selectedIndex,
         index < currentItems.count
@@ -351,6 +366,23 @@ struct ContentView: View {
         // Retry if position not ready yet
         updatePreviewForIndex(index, attempt: attempt + 1)
       }
+    }
+    previewUpdateWorkItem = workItem
+    DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
+  }
+
+  private func updateRenderWindow(for selectedIndex: Int) {
+    let threshold = 10
+    let total = currentItems.count
+    guard total > 0 else {
+      renderWindowCenter = 0
+      return
+    }
+    let clamped = min(selectedIndex, total - 1)
+    let wStart = renderWindowStart
+    let wEnd = renderWindowEnd
+    if clamped < wStart + threshold || clamped >= wEnd - threshold {
+      renderWindowCenter = clamped
     }
   }
 
@@ -411,66 +443,6 @@ struct ContentView: View {
     }
   }
 
-  // Start monitoring directly from drag callback (more reliable)
-  private func startDragMonitoringFromDrag() {
-    stopDragMonitoring()  // Clean up any existing timer
-
-    let dismissCallback = dismiss
-
-    dragMonitorTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { timer in
-      guard DragState.shared.draggedItemId != nil else {
-        timer.invalidate()
-        return
-      }
-
-      // Get current window frame dynamically (in case window moved)
-      var currentWindow: NSWindow?
-      for w in NSApp.windows {
-        if w is ContentPanel && w.isVisible {
-          currentWindow = w
-          break
-        }
-      }
-
-      guard let windowFrame = currentWindow?.frame else {
-        timer.invalidate()
-        return
-      }
-
-      // Get current mouse location in screen coordinates (bottom-left origin)
-      let mouseLocation = NSEvent.mouseLocation
-
-      // Window frame and mouse location are both in screen coordinates with bottom-left origin
-      let isOutside =
-        mouseLocation.x < windowFrame.minX || mouseLocation.x > windowFrame.maxX
-        || mouseLocation.y < windowFrame.minY || mouseLocation.y > windowFrame.maxY
-
-      if isOutside {
-        // Close the drawer when dragged outside
-        timer.invalidate()
-        DragState.shared.draggedItemId = nil  // Clear drag state
-        DispatchQueue.main.async {
-          dismissCallback(false)
-        }
-      }
-    }
-
-    // Make sure timer runs on main run loop in common mode
-    if let timer = dragMonitorTimer {
-      RunLoop.main.add(timer, forMode: .common)
-    }
-
-    // Monitor for mouse up to detect when drag ends (cancelled or completed)
-    dragMouseUpMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseUp) { [self] event in
-      // When mouse is released, clear drag state after a brief delay
-      // (allows drop handlers to process first)
-      DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-        DragState.shared.draggedItemId = nil
-      }
-      return event
-    }
-  }
-
   // MARK: - Header View
 
   var headerView: some View {
@@ -482,7 +454,7 @@ struct ContentView: View {
           HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
               .font(.system(size: 13))
-              .foregroundStyle(.primary.opacity(0.5))
+              .foregroundStyle(.primary.opacity(0.6))
             TextField("Search...", text: $searchText)
               .textFieldStyle(.plain)
               .font(.system(size: 14))
@@ -498,7 +470,7 @@ struct ContentView: View {
               } label: {
                 Image(systemName: "xmark.circle.fill")
                   .font(.system(size: 12))
-                  .foregroundStyle(.primary.opacity(0.5))
+                  .foregroundStyle(.primary.opacity(0.6))
               }
               .buttonStyle(.plain)
             }
@@ -506,8 +478,7 @@ struct ContentView: View {
           }
           .padding(.horizontal, 12)
           .padding(.vertical, 7)
-          .background(Color.primary.opacity(0.1))
-          .cornerRadius(8)
+          .background(Brand.gray100)
           .frame(width: 220)
         } else {
           HeaderIconButton(icon: "magnifyingglass") {
@@ -541,11 +512,12 @@ struct ContentView: View {
             // Editing mode (only when not searching)
             PinboardEditView(
               name: $editingPinboardName,
-              color: pinboard.color,
+              color: $editingPinboardColor,
               isFocused: $isEditingPinboard,
               onSave: {
                 var updated = pinboard
                 updated.name = editingPinboardName.isEmpty ? "Untitled" : editingPinboardName
+                updated.color = editingPinboardColor
 
                 pinboardManager.updatePinboard(updated)
 
@@ -581,6 +553,7 @@ struct ContentView: View {
               onEdit: {
                 editingPinboard = pinboard
                 editingPinboardName = pinboard.name
+                editingPinboardColor = pinboard.color
                 isEditingPinboard = true
                 onEditingPinboardChanged?(true)
               },
@@ -600,13 +573,6 @@ struct ContentView: View {
               },
               onDrop: { itemId in
                 pinboardManager.addItem(itemId, to: pinboard)
-                if let updatedPinboard = pinboardManager.pinboards.first(where: {
-                  $0.id == pinboard.id
-                }) {
-                  viewMode = .pinboard(updatedPinboard)
-                } else {
-                  viewMode = .pinboard(pinboard)
-                }
               }
             )
           }
@@ -618,6 +584,7 @@ struct ContentView: View {
             let newPinboard = pinboardManager.createPinboard(name: "Untitled", color: .red)
             editingPinboard = newPinboard
             editingPinboardName = "Untitled"
+            editingPinboardColor = .red
             isEditingPinboard = true
             onEditingPinboardChanged?(true)
             viewMode = .pinboard(newPinboard)
@@ -680,16 +647,16 @@ struct ContentView: View {
               ? "doc.on.clipboard" : "magnifyingglass"
           )
           .font(.system(size: 40))
-          .foregroundStyle(.primary.opacity(0.3))
+          .foregroundStyle(.primary.opacity(0.45))
 
           Text(emptyStateMessage)
             .font(.system(size: 13))
-            .foregroundStyle(.primary.opacity(0.5))
+            .foregroundStyle(Brand.gray600)
 
           if viewMode == .clipboard && clipboardManager.history.isEmpty {
             Text("Copy something to get started")
               .font(.system(size: 12))
-              .foregroundStyle(.primary.opacity(0.35))
+              .foregroundStyle(Brand.gray500)
           }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -697,7 +664,14 @@ struct ContentView: View {
         ScrollViewReader { proxy in
           ScrollView(.horizontal, showsIndicators: false) {
             LazyHStack(spacing: 14) {
-              ForEach(Array(currentItems.enumerated()), id: \.element.id) { index, item in
+              // Leading spacer for virtualized items before the render window
+              if renderWindowStart > 0 {
+                Color.clear
+                  .frame(width: CGFloat(renderWindowStart) * (measuredCardSize + 14) - 14, height: 1)
+                  .allowsHitTesting(false)
+              }
+              ForEach(Array(currentItems[renderWindowStart..<renderWindowEnd].enumerated()), id: \.element.id) { relativeIndex, item in
+                let index = renderWindowStart + relativeIndex
                 ClipboardItemCard(
                   item: item,
                   index: index + 1,
@@ -719,7 +693,7 @@ struct ContentView: View {
                   },
                   onDragStart: {
                     DragState.shared.draggedItemId = item.id
-                    startDragMonitoringFromDrag()
+                    startDragMonitoring()
                   },
                   onDragEnd: {
                     DispatchQueue.main.asyncAfter(deadline: .now()) {
@@ -753,13 +727,23 @@ struct ContentView: View {
                   pinboards: pinboardManager.pinboards,
                   currentAppName: "Current App"
                 )
-                .id("\(item.id)-\(index == navigationState.selectedIndex)")
+                .equatable()
+                .id(item.id)
+                .onAppear {
+                  // Lazy-fetch link metadata when a URL card becomes visible
+                  if item.type == .url {
+                    clipboardManager.ensureLinkMetadata(item)
+                  }
+                }
                 .background(
                   GeometryReader { geo in
                     Color.clear
                       .onAppear {
                         let frame = geo.frame(in: .global)
                         cardCenterXPositions[index] = frame.midX
+                        if frame.size.width > 0 && measuredCardSize != frame.size.width {
+                          measuredCardSize = frame.size.width
+                        }
                       }
                       .onChange(of: geo.frame(in: .global)) { newFrame in
                         cardCenterXPositions[index] = newFrame.midX
@@ -767,10 +751,17 @@ struct ContentView: View {
                   }
                 )
               }
+              // Trailing spacer for virtualized items after the render window
+              if renderWindowEnd < currentItems.count {
+                Color.clear
+                  .frame(width: CGFloat(currentItems.count - renderWindowEnd) * (measuredCardSize + 14) - 14, height: 1)
+                  .allowsHitTesting(false)
+              }
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 16)
             .onAppear {
+              renderWindowCenter = navigationState.selectedIndex
               navigationState.itemCount = currentItems.count
               if navigationState.selectedIndex >= currentItems.count {
                 navigationState.selectedIndex = 0
@@ -778,17 +769,16 @@ struct ContentView: View {
             }
             .onChange(of: currentItems.count) { newCount in
               navigationState.itemCount = newCount
+              updateRenderWindow(for: min(navigationState.selectedIndex, max(0, newCount - 1)))
             }
             .onChange(of: viewMode) { _ in
               // Ensure itemCount is synced when switching between clipboard and pinboard
               navigationState.itemCount = currentItems.count
             }
             .onChange(of: navigationState.selectedIndex) { newIndex in
+              updateRenderWindow(for: newIndex)
               if newIndex < currentItems.count {
-                let selectedId = "\(currentItems[newIndex].id)-true"
-                withAnimation(.easeInOut(duration: 0.2)) {
-                  proxy.scrollTo(selectedId)
-                }
+                proxy.scrollTo(currentItems[newIndex].id, anchor: .center)
               }
             }
           }
@@ -808,7 +798,20 @@ struct ContentView: View {
 
 }
 
-struct ClipboardItemCard: View {
+struct ClipboardItemCard: View, Equatable {
+  nonisolated static func == (lhs: ClipboardItemCard, rhs: ClipboardItemCard) -> Bool {
+    lhs.item == rhs.item &&
+    lhs.index == rhs.index &&
+    lhs.isSelected == rhs.isSelected &&
+    lhs.quickAccessNumber == rhs.quickAccessNumber &&
+    lhs.showSourceAppIcons == rhs.showSourceAppIcons &&
+    lhs.showTimestamps == rhs.showTimestamps &&
+    lhs.showLinkPreviews == rhs.showLinkPreviews &&
+    lhs.syntaxHighlighting == rhs.syntaxHighlighting &&
+    lhs.currentAppName == rhs.currentAppName &&
+    (lhs.isSelected ? lhs.holdProgress == rhs.holdProgress : true)
+  }
+
   let item: ClipboardItem
   let index: Int
   let isSelected: Bool
@@ -844,7 +847,7 @@ struct ClipboardItemCard: View {
           if showTimestamps {
             Text(" · " + item.timeAgo)
               .font(.system(size: 10))
-              .foregroundStyle(.primary.opacity(0.4))
+              .foregroundStyle(Brand.gray500)
           }
         }
         .lineLimit(1)
@@ -859,7 +862,7 @@ struct ClipboardItemCard: View {
           Image(nsImage: icon)
             .resizable()
             .frame(width: 16, height: 16)
-            .cornerRadius(3)
+            .clipShape(Rectangle())
         }
       }
       .padding(.horizontal, 10)
@@ -875,11 +878,10 @@ struct ClipboardItemCard: View {
         if item.type == .text {
           Text("\(item.content.count)")
             .font(.system(size: 10, weight: .medium, design: .monospaced))
-            .foregroundStyle(.primary.opacity(0.6))
+            .foregroundStyle(Brand.gray600)
             .padding(.horizontal, 6)
             .padding(.vertical, 3)
-            .background(Color.black.opacity(0.5))
-            .cornerRadius(4)
+            .background(Brand.gray200)
             .padding(8)
         }
       }
@@ -887,21 +889,33 @@ struct ClipboardItemCard: View {
       .background(contentBackground)
     }
     .aspectRatio(1, contentMode: .fit)
-    .clipShape(RoundedRectangle(cornerRadius: 10))
+    .clipShape(Rectangle())
     .overlay(
-      RoundedRectangle(cornerRadius: 10)
-        .stroke(isSelected ? Color.primary.opacity(0.8) : Color.clear, lineWidth: 2)
+      Rectangle()
+        .stroke(isSelected ? Brand.black : Brand.gray200, lineWidth: 1)
     )
     .overlay(alignment: .bottomLeading) {
       if let number = quickAccessNumber {
         Text(number == 0 ? "0" : "\(number)")
           .font(.system(size: 11, weight: .bold, design: .rounded))
-          .foregroundStyle(.primary)
+          .foregroundStyle(.white)
           .frame(width: 20, height: 20)
-          .background(Color.accentColor.opacity(0.9))
-          .cornerRadius(5)
+          .background(Brand.black)
           .padding(6)
           .transition(.scale.combined(with: .opacity))
+      }
+    }
+    .overlay(alignment: .bottomTrailing) {
+      let memberPinboards = pinboards.filter { $0.itemIds.contains(item.id) }
+      if !memberPinboards.isEmpty {
+        HStack(spacing: 3) {
+          ForEach(memberPinboards) { pinboard in
+            Circle()
+              .fill(pinboard.color.color)
+              .frame(width: 8, height: 8)
+          }
+        }
+        .padding(6)
       }
     }
     .overlay {
@@ -932,17 +946,6 @@ struct ClipboardItemCard: View {
       }
     }
     .animation(.easeOut(duration: 0.15), value: quickAccessNumber != nil)
-    // Hold-to-edit glow effect (layered for soft bloom) - only for selected card
-    .shadow(
-      color: Color.primary.opacity(isSelected ? holdProgress * 0.5 : 0),
-      radius: isSelected ? 6 * holdProgress : 0
-    )
-    .shadow(
-      color: Color.blue.opacity(isSelected ? holdProgress * 0.3 : 0),
-      radius: isSelected ? 10 * holdProgress : 0
-    )
-    .shadow(color: .black.opacity(isSelected ? 0.3 : 0.15), radius: isSelected ? 8 : 4, y: 2)
-    .scaleEffect(isSelected ? 1.02 : 1.0)
     .animation(.easeOut(duration: 0.15), value: isSelected)
     .contentShape(Rectangle())
     .onTapGesture {
@@ -1017,7 +1020,7 @@ struct ClipboardItemCard: View {
       provider.registerObject(item.content as NSString, visibility: .all)
 
     case .image:
-      if let imageData = item.imageData, let nsImage = NSImage(data: imageData) {
+      if let nsImage = item.nsImage {
         provider.registerObject(nsImage, visibility: .all)
       }
 
@@ -1046,29 +1049,17 @@ struct ClipboardItemCard: View {
 
   // MARK: - Dynamic card colors
 
-  /// Header tinted by source app accent color
+  /// Header background
   private var headerBackground: Color {
-    if let accentColor = item.sourceApp?.accentColor {
-      return accentColor.opacity(0.18)
-    }
-    return Color.primary.opacity(0.08)
+    Brand.gray100
   }
 
-  /// Content area tinted by content type
+  /// Content area background
   private var contentBackground: Color {
     if item.detectedTags.contains(.color), let parsed = parsedColor {
       return parsed.opacity(0.4)
     }
-    switch item.type {
-    case .image:
-      return Color.primary.opacity(0.02)
-    case .url:
-      return Color.blue.opacity(0.04)
-    case .file:
-      return Color.orange.opacity(0.03)
-    case .text:
-      return Color.primary.opacity(0.04)
-    }
+    return Brand.white
   }
 
   /// Parse the first color value found in the item content
@@ -1168,12 +1159,11 @@ struct ClipboardItemCard: View {
 
   var imageContentView: some View {
     Group {
-      if let nsImage = item.nsImage {
-        Image(nsImage: nsImage)
+      if let thumb = item.thumbnail {
+        Image(nsImage: thumb)
           .resizable()
           .aspectRatio(contentMode: .fit)
           .frame(maxWidth: .infinity, maxHeight: .infinity)
-          .cornerRadius(4)
       } else {
         VStack {
           Image(systemName: "photo")
@@ -1214,15 +1204,12 @@ struct ClipboardItemCard: View {
               .resizable()
               .aspectRatio(contentMode: .fit)
               .frame(maxWidth: .infinity, maxHeight: .infinity)
-              .cornerRadius(4)
           } else if isVideoFile(url) {
             VideoThumbnailView(url: url)
               .frame(maxWidth: .infinity, maxHeight: .infinity)
-              .cornerRadius(4)
           } else if isAudioFile(url) {
             AudioFileThumbnailView(url: url)
               .frame(maxWidth: .infinity, maxHeight: .infinity)
-              .cornerRadius(4)
           } else {
             singleFileView(url: url)
           }
@@ -1244,7 +1231,7 @@ struct ClipboardItemCard: View {
             if urls.count > 4 {
               Text("+ \(urls.count - 4) more...")
                 .font(.system(size: 11))
-                .foregroundStyle(.primary.opacity(0.45))
+                .foregroundStyle(Brand.gray500)
             }
           }
           .padding(10)
@@ -1278,14 +1265,12 @@ struct ClipboardItemCard: View {
         .resizable()
         .aspectRatio(contentMode: .fill)
         .frame(width: 20, height: 20)
-        .cornerRadius(3)
         .clipped()
     } else if isVideoFile(url) {
       ZStack {
         Rectangle()
-          .fill(Color.gray.opacity(0.3))
+          .fill(Brand.gray200)
           .frame(width: 20, height: 20)
-          .cornerRadius(3)
         Image(systemName: "play.fill")
           .font(.system(size: 8))
           .foregroundStyle(.primary)
@@ -1293,12 +1278,11 @@ struct ClipboardItemCard: View {
     } else if isAudioFile(url) {
       ZStack {
         Rectangle()
-          .fill(Color.purple.opacity(0.3))
+          .fill(Brand.gray200)
           .frame(width: 20, height: 20)
-          .cornerRadius(3)
         Image(systemName: "waveform")
           .font(.system(size: 10))
-          .foregroundStyle(.purple)
+          .foregroundStyle(Brand.gray600)
       }
     } else if let icon = NSWorkspace.shared.icon(forFile: url.path) as NSImage? {
       Image(nsImage: icon)
@@ -1328,29 +1312,28 @@ struct ClipboardItemCard: View {
             .resizable()
             .aspectRatio(contentMode: .fit)
             .frame(width: 36, height: 36)
-            .cornerRadius(6)
           Text(metadata.displayURL)
             .font(.system(size: 10))
-            .foregroundStyle(.primary.opacity(0.3))
+            .foregroundStyle(Brand.gray500)
             .lineLimit(1)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.blue.opacity(0.04))
+        .background(Brand.gray100)
       } else {
         // Placeholder with link symbol
         VStack(spacing: 6) {
           Image(systemName: "link.circle.fill")
             .font(.system(size: 36))
-            .foregroundStyle(.blue.opacity(0.35))
+            .foregroundStyle(Brand.gray500)
           if let displayURL = item.linkMetadata?.displayURL {
             Text(displayURL)
               .font(.system(size: 10))
-              .foregroundStyle(.primary.opacity(0.3))
+              .foregroundStyle(Brand.gray500)
               .lineLimit(1)
           }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.blue.opacity(0.04))
+        .background(Brand.gray100)
       }
 
       // Footer with title and URL
@@ -1364,13 +1347,13 @@ struct ClipboardItemCard: View {
 
         Text(item.linkMetadata?.displayURL ?? item.content)
           .font(.system(size: 11))
-          .foregroundStyle(.blue.opacity(0.55))
+          .foregroundStyle(Brand.gray500)
           .lineLimit(1)
       }
       .padding(.horizontal, 10)
       .padding(.vertical, 8)
       .frame(maxWidth: .infinity, alignment: .leading)
-      .background(Color.blue.opacity(0.06))
+      .background(Brand.gray100)
     }
   }
 }
@@ -1509,15 +1492,13 @@ struct VideoThumbnailView: View {
         Image(systemName: "play.circle.fill")
           .font(.system(size: 36))
           .foregroundStyle(.primary.opacity(0.9))
-          .shadow(color: .black.opacity(0.3), radius: 4)
 
         Text("VIDEO")
           .font(.system(size: 10, weight: .semibold))
           .foregroundStyle(.primary.opacity(0.8))
           .padding(.horizontal, 8)
           .padding(.vertical, 2)
-          .background(Color.black.opacity(0.5))
-          .cornerRadius(4)
+          .background(Brand.gray200)
       }
     }
     .onAppear {
@@ -1558,8 +1539,8 @@ struct AudioFileThumbnailView: View {
       // Waveform visualization
       HStack(spacing: 3) {
         ForEach(0..<20, id: \.self) { i in
-          RoundedRectangle(cornerRadius: 2)
-            .fill(Color.purple.opacity(0.6))
+          Rectangle()
+            .fill(Brand.gray500)
             .frame(width: 6, height: CGFloat.random(in: 15...50))
         }
       }
@@ -1568,20 +1549,20 @@ struct AudioFileThumbnailView: View {
       HStack(spacing: 8) {
         Image(systemName: "waveform.circle.fill")
           .font(.system(size: 24))
-          .foregroundStyle(.purple)
+          .foregroundStyle(Brand.gray500)
 
         VStack(alignment: .leading, spacing: 2) {
           Text("AUDIO")
             .font(.system(size: 10, weight: .semibold))
-            .foregroundStyle(.secondary)
+            .foregroundStyle(Brand.gray600)
           Text(url.pathExtension.uppercased())
             .font(.system(size: 9))
-            .foregroundStyle(.tertiary)
+            .foregroundStyle(Brand.gray500)
         }
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .background(Color.purple.opacity(0.1))
+    .background(Brand.gray100)
   }
 }
 
@@ -1631,7 +1612,7 @@ struct FilterPillButton: View {
         Text(tag.rawValue)
           .font(.system(size: 11, weight: isSelected ? .semibold : .medium))
       }
-      .foregroundStyle(isSelected ? AnyShapeStyle(.primary) : AnyShapeStyle(.primary.opacity(0.6)))
+      .foregroundStyle(isSelected ? AnyShapeStyle(.primary) : AnyShapeStyle(Brand.gray600))
       .padding(.horizontal, 10)
       .padding(.vertical, 5)
       .background(
@@ -1639,7 +1620,6 @@ struct FilterPillButton: View {
           ? Color.primary.opacity(0.18)
           : (isHovered ? Color.primary.opacity(0.1) : Color.primary.opacity(0.05))
       )
-      .cornerRadius(14)
     }
     .buttonStyle(.plain)
     .onHover { hovering in
@@ -1675,24 +1655,12 @@ struct ContentTagBadge: View {
     }
   }
 
-  var badgeColor: Color {
-    switch tag {
-    case .color: return .purple
-    case .email: return .blue
-    case .phone: return .green
-    case .code: return .orange
-    case .json: return .yellow
-    case .address: return .cyan
-    }
-  }
-
   var body: some View {
     Image(systemName: icon)
       .font(.system(size: 8, weight: .semibold))
-      .foregroundStyle(badgeColor)
+      .foregroundStyle(Brand.gray500)
       .frame(width: 16, height: 16)
-      .background(badgeColor.opacity(0.15))
-      .cornerRadius(4)
+      .background(Brand.gray100)
       .help(label)
   }
 }
@@ -1726,8 +1694,7 @@ struct HeaderIconButton: View {
         .font(.system(size: 15))
         .foregroundStyle(.primary.opacity(0.85))
         .frame(width: 32, height: 32)
-        .background(isHovered ? Color.primary.opacity(0.12) : Color.clear)
-        .cornerRadius(8)
+        .background(isHovered ? Brand.gray200 : Color.clear)
         .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
@@ -1756,16 +1723,15 @@ struct ClipboardTabButton: View {
           if let count = itemCount {
             Text("\(count)")
               .font(.system(size: 11, weight: .medium, design: .rounded))
-              .foregroundStyle(.primary.opacity(0.6))
+              .foregroundStyle(Brand.gray600)
           }
         }
         .frame(minWidth: 28, minHeight: 28)
         .padding(.horizontal, 6)
         .background(
           isSelected
-            ? Color.primary.opacity(0.18) : (isHovered ? Color.primary.opacity(0.1) : Color.clear)
+            ? Brand.gray200 : (isHovered ? Brand.gray100 : Color.clear)
         )
-        .cornerRadius(8)
       } else {
         HStack(spacing: 7) {
           Image(systemName: "sparkle.text.clipboard")
@@ -1777,20 +1743,18 @@ struct ClipboardTabButton: View {
           if let count = itemCount {
             Text("\(count)")
               .font(.system(size: 11, weight: .medium, design: .rounded))
-              .foregroundStyle(.primary.opacity(0.5))
+              .foregroundStyle(Brand.gray600)
               .padding(.horizontal, 6)
               .padding(.vertical, 2)
-              .background(Color.primary.opacity(0.1))
-              .cornerRadius(4)
+              .background(Brand.gray100)
           }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 7)
         .background(
           isSelected
-            ? Color.primary.opacity(0.18) : (isHovered ? Color.primary.opacity(0.1) : Color.clear)
+            ? Brand.gray200 : (isHovered ? Brand.gray100 : Color.clear)
         )
-        .cornerRadius(10)
       }
     }
     .buttonStyle(.plain)
@@ -1817,13 +1781,13 @@ struct PinboardTabButton: View {
 
   private var backgroundColor: Color {
     if isDragOver {
-      return Color.primary.opacity(0.4)
+      return Brand.gray300
     } else if dragState.draggedItemId != nil {
-      return Color.primary.opacity(0.2)
+      return Brand.gray200
     } else if isSelected {
-      return Color.primary.opacity(0.15)
+      return Brand.gray200
     } else if isHovered {
-      return Color.primary.opacity(0.1)
+      return Brand.gray100
     } else {
       return Color.clear
     }
@@ -1839,12 +1803,11 @@ struct PinboardTabButton: View {
           if let count = itemCount {
             Text("\(count)")
               .font(.system(size: 11, weight: .medium, design: .rounded))
-              .foregroundStyle(.primary.opacity(0.6))
+              .foregroundStyle(Brand.gray600)
           }
         }
         .padding(10)
         .background(backgroundColor)
-        .cornerRadius(8)
       } else {
         HStack(spacing: 7) {
           Circle()
@@ -1856,17 +1819,15 @@ struct PinboardTabButton: View {
           if let count = itemCount {
             Text("\(count)")
               .font(.system(size: 11, weight: .medium, design: .rounded))
-              .foregroundStyle(.primary.opacity(0.5))
+              .foregroundStyle(Brand.gray600)
               .padding(.horizontal, 6)
               .padding(.vertical, 2)
-              .background(Color.primary.opacity(0.1))
-              .cornerRadius(4)
+              .background(Brand.gray100)
           }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 7)
         .background(backgroundColor)
-        .cornerRadius(10)
       }
     }
     .contentShape(Rectangle())
@@ -1994,39 +1955,57 @@ struct PinboardColorPicker: View {
 
 struct PinboardEditView: View {
   @Binding var name: String
-  let color: PinboardColor
+  @Binding var color: PinboardColor
   @FocusState.Binding var isFocused: Bool
   let onSave: () -> Void
   let onCancel: () -> Void
 
   var body: some View {
-    HStack(spacing: 6) {
-      Circle()
-        .fill(color.color)
-        .frame(width: 6, height: 6)
+    VStack(alignment: .leading, spacing: 4) {
+      HStack(spacing: 6) {
+        Circle()
+          .fill(color.color)
+          .frame(width: 6, height: 6)
 
-      TextField("Untitled", text: $name)
-        .textFieldStyle(.plain)
-        .font(.system(size: 12))
-        .foregroundStyle(.primary)
-        .focused($isFocused)
-        .frame(width: 120)
-        .onSubmit {
-          onSave()
+        TextField("Untitled", text: $name)
+          .textFieldStyle(.plain)
+          .font(.system(size: 12))
+          .foregroundStyle(.primary)
+          .focused($isFocused)
+          .frame(width: 120)
+          .onSubmit {
+            onSave()
+          }
+          .onKeyPress(.return) {
+            onSave()
+            return .handled
+          }
+          .onKeyPress(.escape) {
+            onCancel()
+            return .handled
+          }
+      }
+
+      HStack(spacing: 4) {
+        ForEach(PinboardColor.allCases, id: \.self) { option in
+          Circle()
+            .fill(option.color)
+            .frame(width: 10, height: 10)
+            .overlay(
+              Circle()
+                .stroke(Color.primary.opacity(color == option ? 0.8 : 0), lineWidth: 1.5)
+            )
+            .onTapGesture {
+              color = option
+            }
         }
-        .onKeyPress(.return) {
-          onSave()
-          return .handled
-        }
-        .onKeyPress(.escape) {
-          onCancel()
-          return .handled
-        }
+      }
+      .padding(.leading, 12)
     }
     .padding(.horizontal, 8)
     .padding(.vertical, 6)
-    .background(Color.primary.opacity(0.15))
-    .cornerRadius(6)
+    .background(Brand.gray100)
+    .overlay(Rectangle().stroke(Brand.gray200, lineWidth: 1))
     .onAppear {
       isFocused = true
     }

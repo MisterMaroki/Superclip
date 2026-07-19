@@ -98,17 +98,17 @@ struct HotkeyRecorderView: View {
             } label: {
                 Text(isRecording ? "Press shortcut..." : config.displayString)
                     .font(.system(size: 12, weight: .medium, design: .monospaced))
-                    .foregroundStyle(isRecording ? .orange : .primary.opacity(0.7))
+                    .foregroundStyle(isRecording ? .white : Brand.gray700)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 5)
                     .frame(minWidth: 100)
                     .background(
-                        RoundedRectangle(cornerRadius: 6)
-                            .fill(isRecording ? Color.orange.opacity(0.1) : Color.primary.opacity(0.08))
+                        Rectangle()
+                            .fill(isRecording ? Brand.black : Color.primary.opacity(0.08))
                     )
                     .overlay(
-                        RoundedRectangle(cornerRadius: 6)
-                            .stroke(isRecording ? Color.orange.opacity(0.5) : (isHovered ? Color.primary.opacity(0.2) : Color.primary.opacity(0.12)), lineWidth: 1)
+                        Rectangle()
+                            .stroke(isRecording ? Brand.black : (isHovered ? Color.primary.opacity(0.2) : Color.primary.opacity(0.12)), lineWidth: 1)
                     )
                     .animation(.easeInOut(duration: 0.15), value: isRecording)
             }

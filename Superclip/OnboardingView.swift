@@ -10,18 +10,12 @@ import SwiftUI
 // MARK: - Design Tokens (matching website)
 
 private enum OB {
-    static let bg = Color(red: 0.02, green: 0.02, blue: 0.027)
-    static let fg = Color(red: 0.94, green: 0.94, blue: 0.96)
-    static let fgMuted = Color(red: 0.94, green: 0.94, blue: 0.96).opacity(0.55)
-    static let fgSubtle = Color(red: 0.94, green: 0.94, blue: 0.96).opacity(0.3)
-    static let cyan = Color(red: 0, green: 0.83, blue: 1)
-    static let purple = Color(red: 0.545, green: 0.36, blue: 0.965)
-    static let emerald = Color(red: 0.063, green: 0.725, blue: 0.506)
-    static let pink = Color(red: 0.925, green: 0.286, blue: 0.6)
-    static let orange = Color(red: 0.961, green: 0.62, blue: 0.043)
-    static let glassBg = Color.white.opacity(0.04)
-    static let glassBorder = Color.white.opacity(0.08)
-    static let glassHover = Color.white.opacity(0.07)
+    static let bg = Brand.white
+    static let fg = Brand.black
+    static let fgMuted = Brand.gray500
+    static let fgSubtle = Brand.gray500
+    static let glassBg = Brand.white
+    static let glassBorder = Brand.gray200
 }
 
 // MARK: - Main View
@@ -43,12 +37,11 @@ struct OnboardingView: View {
                 // Page indicator dots
                 HStack(spacing: 8) {
                     ForEach(0..<3) { index in
-                        Capsule()
+                        Rectangle()
                             .fill(index == currentPage
-                                  ? AnyShapeStyle(LinearGradient(colors: [OB.cyan, OB.purple], startPoint: .leading, endPoint: .trailing))
-                                  : AnyShapeStyle(Color.white.opacity(0.15)))
-                            .frame(width: index == currentPage ? 24 : 8, height: 8)
-                            .animation(.spring(response: 0.4, dampingFraction: 0.8), value: currentPage)
+                                  ? AnyShapeStyle(Brand.black)
+                                  : AnyShapeStyle(Brand.gray200))
+                            .frame(width: 8, height: 8)
                     }
                 }
                 .padding(.top, 36)
@@ -85,7 +78,6 @@ struct OnboardingView: View {
             }
         }
         .frame(width: 520, height: 600)
-        .preferredColorScheme(.dark)
     }
 
     private var continueLabel: String {
@@ -112,37 +104,7 @@ private struct GradientBlobs: View {
     let page: Int
 
     var body: some View {
-        ZStack {
-            // Cyan blob — top right
-            Circle()
-                .fill(
-                    RadialGradient(
-                        colors: [OB.cyan.opacity(0.12), OB.cyan.opacity(0)],
-                        center: .center,
-                        startRadius: 0,
-                        endRadius: 200
-                    )
-                )
-                .frame(width: 400, height: 400)
-                .offset(x: page == 0 ? 140 : (page == 1 ? 60 : 100),
-                        y: page == 0 ? -160 : (page == 1 ? -100 : -140))
-                .animation(.easeInOut(duration: 1.0), value: page)
-
-            // Purple blob — bottom left
-            Circle()
-                .fill(
-                    RadialGradient(
-                        colors: [OB.purple.opacity(0.1), OB.purple.opacity(0)],
-                        center: .center,
-                        startRadius: 0,
-                        endRadius: 180
-                    )
-                )
-                .frame(width: 360, height: 360)
-                .offset(x: page == 0 ? -120 : (page == 1 ? -80 : -100),
-                        y: page == 0 ? 140 : (page == 1 ? 100 : 120))
-                .animation(.easeInOut(duration: 1.0), value: page)
-        }
+        EmptyView()
     }
 }
 
@@ -162,19 +124,9 @@ private struct GradientButton: View {
                 .frame(maxWidth: .infinity)
                 .frame(height: 48)
                 .background(
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: [OB.cyan, OB.purple],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                        .shadow(color: OB.cyan.opacity(isHovered ? 0.4 : 0.25), radius: isHovered ? 24 : 16, y: 4)
-                        .shadow(color: OB.purple.opacity(isHovered ? 0.2 : 0.12), radius: isHovered ? 32 : 24, y: 8)
+                    Rectangle()
+                        .fill(Brand.black)
                 )
-                .scaleEffect(isHovered ? 1.02 : 1.0)
-                .animation(.easeOut(duration: 0.2), value: isHovered)
         }
         .buttonStyle(.plain)
         .onHover { hovering in
@@ -191,11 +143,11 @@ private struct GlassCard<Content: View>: View {
     var body: some View {
         content()
             .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(OB.glassBg)
+                Rectangle()
+                    .fill(Brand.white)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .stroke(OB.glassBorder, lineWidth: 1)
+                        Rectangle()
+                            .stroke(Brand.gray200, lineWidth: 1)
                     )
             )
     }
@@ -208,28 +160,14 @@ private struct WelcomePage: View {
         VStack(spacing: 28) {
             Spacer()
 
-            // App icon with glow
-            ZStack {
-                Circle()
-                    .fill(
-                        RadialGradient(
-                            colors: [OB.cyan.opacity(0.2), Color.clear],
-                            center: .center,
-                            startRadius: 20,
-                            endRadius: 60
-                        )
-                    )
-                    .frame(width: 120, height: 120)
-
-                Image(nsImage: NSApp.applicationIconImage)
-                    .resizable()
-                    .frame(width: 80, height: 80)
-                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-                    .shadow(color: .black.opacity(0.4), radius: 12, y: 6)
-            }
+            // App icon
+            Image(nsImage: NSApp.applicationIconImage)
+                .resizable()
+                .frame(width: 80, height: 80)
+                .clipShape(Rectangle())
 
             VStack(spacing: 10) {
-                Text("Your clipboard, \(Text("supercharged.").foregroundColor(OB.cyan))")
+                Text("Your clipboard, \(Text("supercharged.").fontWeight(.black))")
                     .font(.system(size: 28, weight: .bold))
 
                 Text("Everything you copy, organized and ready to use.")
@@ -241,32 +179,27 @@ private struct WelcomePage: View {
                 FeatureRow(
                     icon: "clock.arrow.circlepath",
                     title: "Clipboard History",
-                    subtitle: "Every copy saved and searchable",
-                    gradient: [OB.cyan, OB.purple]
+                    subtitle: "Every copy saved and searchable"
                 )
                 FeatureRow(
                     icon: "pin.fill",
                     title: "Pinboards",
-                    subtitle: "Color-coded boards for your favorites",
-                    gradient: [OB.purple, OB.pink]
+                    subtitle: "Color-coded boards for your favorites"
                 )
                 FeatureRow(
                     icon: "text.cursor",
                     title: "Snippets",
-                    subtitle: "Type a trigger, expand into full text",
-                    gradient: [OB.pink, OB.orange]
+                    subtitle: "Type a trigger, expand into full text"
                 )
                 FeatureRow(
                     icon: "bolt.fill",
                     title: "Quick Actions",
-                    subtitle: "Convert colors, format JSON, and more",
-                    gradient: [OB.orange, OB.cyan]
+                    subtitle: "Convert colors, format JSON, and more"
                 )
                 FeatureRow(
                     icon: "text.viewfinder",
                     title: "Text Sniper",
-                    subtitle: "Extract text from anywhere on screen",
-                    gradient: [OB.emerald, OB.cyan]
+                    subtitle: "Extract text from anywhere on screen"
                 )
             }
             .padding(.horizontal, 36)
@@ -280,21 +213,14 @@ private struct FeatureRow: View {
     let icon: String
     let title: String
     let subtitle: String
-    let gradient: [Color]
 
     var body: some View {
         GlassCard {
             HStack(spacing: 14) {
-                // Gradient icon box
+                // Icon box
                 ZStack {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: gradient,
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
+                    Rectangle()
+                        .fill(Brand.black)
                         .frame(width: 36, height: 36)
 
                     Image(systemName: icon)
@@ -330,24 +256,9 @@ private struct PermissionsPage: View {
             Spacer()
 
             // Icon
-            ZStack {
-                Circle()
-                    .fill(
-                        RadialGradient(
-                            colors: [OB.purple.opacity(0.2), Color.clear],
-                            center: .center,
-                            startRadius: 10,
-                            endRadius: 50
-                        )
-                    )
-                    .frame(width: 100, height: 100)
-
-                Image(systemName: "lock.shield.fill")
-                    .font(.system(size: 40, weight: .medium))
-                    .foregroundStyle(
-                        LinearGradient(colors: [OB.cyan, OB.purple], startPoint: .topLeading, endPoint: .bottomTrailing)
-                    )
-            }
+            Image(systemName: "lock.shield.fill")
+                .font(.system(size: 40, weight: .medium))
+                .foregroundStyle(Brand.black)
 
             VStack(spacing: 10) {
                 Text("Quick permissions")
@@ -423,15 +334,13 @@ private struct PermissionRow: View {
             HStack(spacing: 14) {
                 // Status icon
                 ZStack {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(isGranted
-                              ? LinearGradient(colors: [OB.emerald, OB.emerald.opacity(0.7)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                              : LinearGradient(colors: [Color.white.opacity(0.06), Color.white.opacity(0.03)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                    Rectangle()
+                        .fill(isGranted ? Brand.black : Brand.gray200)
                         .frame(width: 36, height: 36)
 
                     Image(systemName: isGranted ? "checkmark" : "lock")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(isGranted ? .white : Color.white.opacity(0.4))
+                        .foregroundColor(isGranted ? .white : Brand.gray500)
                 }
                 .animation(.spring(response: 0.4, dampingFraction: 0.7), value: isGranted)
 
@@ -444,13 +353,13 @@ private struct PermissionRow: View {
                         if isRequired {
                             Text("Required")
                                 .font(.system(size: 10, weight: .semibold))
-                                .foregroundColor(OB.orange)
+                                .foregroundColor(Brand.black)
                                 .padding(.horizontal, 7)
                                 .padding(.vertical, 3)
                                 .background(
-                                    Capsule()
-                                        .fill(OB.orange.opacity(0.12))
-                                        .overlay(Capsule().stroke(OB.orange.opacity(0.2), lineWidth: 1))
+                                    Rectangle()
+                                        .fill(Brand.gray100)
+                                        .overlay(Rectangle().stroke(Brand.gray200, lineWidth: 1))
                                 )
                         } else {
                             Text("Optional")
@@ -459,9 +368,9 @@ private struct PermissionRow: View {
                                 .padding(.horizontal, 7)
                                 .padding(.vertical, 3)
                                 .background(
-                                    Capsule()
-                                        .fill(Color.white.opacity(0.04))
-                                        .overlay(Capsule().stroke(Color.white.opacity(0.06), lineWidth: 1))
+                                    Rectangle()
+                                        .fill(Brand.gray100)
+                                        .overlay(Rectangle().stroke(Brand.gray200, lineWidth: 1))
                                 )
                         }
                     }
@@ -476,13 +385,13 @@ private struct PermissionRow: View {
                     Button(action: action) {
                         Text("Grant")
                             .font(.system(size: 12, weight: .semibold))
-                            .foregroundColor(.white.opacity(0.85))
+                            .foregroundColor(Brand.black)
                             .padding(.horizontal, 14)
                             .padding(.vertical, 7)
                             .background(
-                                Capsule()
-                                    .fill(Color.white.opacity(isHovered ? 0.12 : 0.08))
-                                    .overlay(Capsule().stroke(Color.white.opacity(0.1), lineWidth: 1))
+                                Rectangle()
+                                    .fill(Brand.gray100)
+                                    .overlay(Rectangle().stroke(Brand.gray200, lineWidth: 1))
                             )
                     }
                     .buttonStyle(.plain)
@@ -490,7 +399,7 @@ private struct PermissionRow: View {
                 } else {
                     Text("Granted")
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(OB.emerald)
+                        .foregroundColor(Brand.black)
                 }
             }
             .padding(14)
@@ -505,25 +414,10 @@ private struct ReadyPage: View {
         VStack(spacing: 28) {
             Spacer()
 
-            // Success icon with glow
-            ZStack {
-                Circle()
-                    .fill(
-                        RadialGradient(
-                            colors: [OB.emerald.opacity(0.2), Color.clear],
-                            center: .center,
-                            startRadius: 10,
-                            endRadius: 50
-                        )
-                    )
-                    .frame(width: 100, height: 100)
-
-                Image(systemName: "checkmark.seal.fill")
-                    .font(.system(size: 44, weight: .medium))
-                    .foregroundStyle(
-                        LinearGradient(colors: [OB.emerald, OB.cyan], startPoint: .topLeading, endPoint: .bottomTrailing)
-                    )
-            }
+            // Success icon
+            Image(systemName: "checkmark.seal.fill")
+                .font(.system(size: 44, weight: .medium))
+                .foregroundStyle(Brand.black)
 
             VStack(spacing: 10) {
                 Text("You\u{2019}re all set!")
@@ -536,9 +430,9 @@ private struct ReadyPage: View {
             }
 
             VStack(spacing: 8) {
-                ShortcutRow(keys: "\u{2318}\u{21E7}A", label: "Open clipboard history", glow: true)
-                ShortcutRow(keys: "\u{2318}\u{21E7}C", label: "Copy & open paste stack", glow: false)
-                ShortcutRow(keys: "\u{2318}\u{21E7}`", label: "Text Sniper (screen OCR)", glow: false)
+                ShortcutRow(keys: "\u{2318}\u{21E7}A", label: "Open clipboard history")
+                ShortcutRow(keys: "\u{2318}\u{21E7}C", label: "Copy & open paste stack")
+                ShortcutRow(keys: "\u{2318}\u{21E7}`", label: "Text Sniper (screen OCR)")
             }
             .padding(.horizontal, 36)
 
@@ -550,25 +444,23 @@ private struct ReadyPage: View {
 private struct ShortcutRow: View {
     let keys: String
     let label: String
-    let glow: Bool
 
     var body: some View {
         GlassCard {
             HStack(spacing: 14) {
                 Text(keys)
                     .font(.system(size: 13, weight: .semibold, design: .monospaced))
-                    .foregroundColor(glow ? OB.cyan.opacity(0.9) : Color.white.opacity(0.6))
+                    .foregroundColor(Brand.black)
                     .frame(width: 64, alignment: .center)
                     .padding(.vertical, 6)
                     .padding(.horizontal, 8)
                     .background(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(Color.white.opacity(0.04))
+                        Rectangle()
+                            .fill(Brand.gray100)
                             .overlay(
-                                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                    .stroke(glow ? OB.cyan.opacity(0.25) : Color.white.opacity(0.08), lineWidth: 1)
+                                Rectangle()
+                                    .stroke(Brand.gray200, lineWidth: 1)
                             )
-                            .shadow(color: glow ? OB.cyan.opacity(0.12) : Color.clear, radius: 8)
                     )
 
                 Text(label)

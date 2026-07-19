@@ -32,7 +32,7 @@ class LinkMetadataService {
     provider.startFetchingMetadata(for: url) { [weak self] metadata, error in
       guard let metadata = metadata, error == nil else {
         // Create basic metadata without image
-        let basicMetadata = LinkMetadata(title: nil, url: url, imageData: nil)
+        let basicMetadata = LinkMetadata(title: nil, url: url)
         DispatchQueue.main.async {
           completion(basicMetadata)
         }
@@ -56,18 +56,20 @@ class LinkMetadataService {
         }
       }
 
-      // Load image first, then icon as fallback
+      // Load image first, then icon as fallback.
+      // The LinkMetadata convenience init persists image/icon data to disk
+      // so they don't live in memory.
       loadImageData(from: metadata.imageProvider) { imageData in
         loadImageData(from: metadata.iconProvider) { iconData in
-          let linkMetadata = LinkMetadata(
+          let linkMeta = LinkMetadata(
             title: title,
             url: url,
             imageData: imageData,
             iconData: iconData
           )
-          self?.cache.setObject(linkMetadata, forKey: url as NSURL)
+          self?.cache.setObject(linkMeta, forKey: url as NSURL)
           DispatchQueue.main.async {
-            completion(linkMetadata)
+            completion(linkMeta)
           }
         }
       }
@@ -96,6 +98,9 @@ class ClipboardManager: ObservableObject {
   private let undoTimeout: TimeInterval = 30.0  // 30 seconds to undo
   private var undoCleanupTimer: Timer?
 
+  // O(1) dedup lookup — mirrors the uniqueIdentifiers present in `history`
+  private var knownIdentifiers = Set<String>()
+
   // Persistence
   let historyStore = HistoryStore()
 
@@ -108,15 +113,13 @@ class ClipboardManager: ObservableObject {
     let loaded = historyStore.load()
     if !loaded.isEmpty {
       history = loaded
+      knownIdentifiers = Set(loaded.map(\.uniqueIdentifier))
     }
 
     // Start monitoring clipboard changes (if enabled)
     if settings.monitorClipboard {
       startMonitoring()
     }
-
-    // Start undo cleanup timer
-    startUndoCleanupTimer()
 
     // Load initial clipboard content (picks up whatever is currently on the pasteboard)
     loadCurrentClipboard()
@@ -127,9 +130,17 @@ class ClipboardManager: ObservableObject {
     // Auto-save: observe history changes and schedule debounced writes
     observeHistoryForPersistence()
 
-    // Re-fetch link metadata for URL items loaded from disk (metadata is not persisted)
-    if settings.detectLinks {
-      refetchLinkMetadataForLoadedItems()
+    // Link metadata is fetched lazily via ensureLinkMetadata(_:) when items
+    // become visible, instead of re-fetching all URL items at startup.
+
+    // Clean up orphaned image/RTF files — defer to let addToHistory settle first
+    DispatchQueue.main.async { [weak self] in
+      guard let self = self else { return }
+      let validIDs = Set(self.history.map(\.id))
+      DispatchQueue.global(qos: .utility).async {
+        ImageStore.shared.cleanupOrphans(keeping: validIDs)
+        RTFStore.shared.cleanupOrphans(keeping: validIDs)
+      }
     }
   }
 
@@ -156,11 +167,11 @@ class ClipboardManager: ObservableObject {
     historyStore.saveImmediately(items: history)
   }
 
-  /// Re-fetch link metadata for URL items loaded from disk (metadata is intentionally not persisted).
-  private func refetchLinkMetadataForLoadedItems() {
-    for item in history where item.type == .url && item.linkMetadata == nil {
-      fetchLinkMetadata(for: item)
-    }
+  /// Lazy link metadata: fetch only when the card becomes visible.
+  /// Call from the view layer when a URL item is about to appear on screen.
+  func ensureLinkMetadata(_ item: ClipboardItem) {
+    guard settings.detectLinks, item.type == .url, item.linkMetadata == nil else { return }
+    fetchLinkMetadata(for: item)
   }
 
   private func observeSettings() {
@@ -182,7 +193,13 @@ class ClipboardManager: ObservableObject {
       .sink { [weak self] newSize in
         guard let self = self else { return }
         if newSize > 0 && self.history.count > newSize {
-          self.history = Array(self.history.prefix(newSize))
+          let trimmed = self.history[newSize...]
+          for item in trimmed {
+            self.knownIdentifiers.remove(item.uniqueIdentifier)
+            if item.hasImage { ImageStore.shared.delete(for: item.id) }
+            if item.hasRTF   { RTFStore.shared.delete(for: item.id) }
+          }
+          self.history.removeSubrange(newSize...)
         }
       }
       .store(in: &cancellables)
@@ -198,7 +215,18 @@ class ClipboardManager: ObservableObject {
 
   private func cleanupExpiredDeletedItems() {
     let now = Date()
+    let expired = deletedItems.filter { now.timeIntervalSince($0.timestamp) > undoTimeout }
+    for record in expired {
+      if record.item.hasImage { ImageStore.shared.delete(for: record.item.id) }
+      if record.item.hasRTF   { RTFStore.shared.delete(for: record.item.id) }
+    }
     deletedItems.removeAll { now.timeIntervalSince($0.timestamp) > undoTimeout }
+
+    // Stop timer when no deleted items remain
+    if deletedItems.isEmpty {
+      undoCleanupTimer?.invalidate()
+      undoCleanupTimer = nil
+    }
   }
 
   private func startMonitoring() {
@@ -281,13 +309,15 @@ class ClipboardManager: ObservableObject {
         if let image = NSImage(data: imageData) {
           description = "\(Int(image.size.width))×\(Int(image.size.height))"
         }
-        addToHistory(
-          item: ClipboardItem(
-            content: description,
-            type: .image,
-            imageData: imageData,
-            sourceApp: sourceApp
-          ))
+        var item = ClipboardItem(
+          content: description,
+          type: .image,
+          imageData: imageData,
+          sourceApp: sourceApp
+        )
+        ImageStore.shared.save(data: imageData, for: item.id)
+        item.imageData = nil  // Release in-memory bytes; load from disk on demand
+        addToHistory(item: item)
         return
       }
     }
@@ -309,14 +339,16 @@ class ClipboardManager: ObservableObject {
           if let image = NSImage(data: imageData) {
             description = "\(Int(image.size.width))×\(Int(image.size.height))"
           }
-          addToHistory(
-            item: ClipboardItem(
-              content: description,
-              type: .image,
-              imageData: imageData,
-              fileURLs: urls,  // Keep file URL for reference
-              sourceApp: sourceApp
-            ))
+          var item = ClipboardItem(
+            content: description,
+            type: .image,
+            imageData: imageData,
+            fileURLs: urls,  // Keep file URL for reference
+            sourceApp: sourceApp
+          )
+          ImageStore.shared.save(data: imageData, for: item.id)
+          item.imageData = nil  // Release in-memory bytes; load from disk on demand
+          addToHistory(item: item)
           return
         }
 
@@ -380,10 +412,11 @@ class ClipboardManager: ObservableObject {
         timestamp: item.timestamp,
         type: item.type,
         imageData: item.imageData,
+        hasImage: item.hasImage,
         fileURLs: item.fileURLs,
         sourceApp: item.sourceApp,
         linkMetadata: item.linkMetadata,
-        rtfData: item.rtfData,
+        hasRTF: item.hasRTF,
         detectedTags: ContentDetector.detect(text: item.content)
       )
     }
@@ -391,6 +424,7 @@ class ClipboardManager: ObservableObject {
     DispatchQueue.main.async {
       // Check if content already exists in history (dedup logic)
       if self.settings.deduplicateItems,
+        self.knownIdentifiers.contains(identifier),
         let existingIndex = self.history.firstIndex(where: { $0.uniqueIdentifier == identifier })
       {
         // Remove existing item and move to front with updated timestamp
@@ -401,16 +435,18 @@ class ClipboardManager: ObservableObject {
           timestamp: Date(),
           type: existingItem.type,
           imageData: existingItem.imageData,
+          hasImage: existingItem.hasImage,
           fileURLs: existingItem.fileURLs,
           sourceApp: existingItem.sourceApp,
           linkMetadata: existingItem.linkMetadata,
-          rtfData: existingItem.rtfData,
+          hasRTF: existingItem.hasRTF,
           detectedTags: existingItem.detectedTags
         )
         self.history.insert(updatedItem, at: 0)
       } else {
         // New item - insert at beginning
         self.history.insert(taggedItem, at: 0)
+        self.knownIdentifiers.insert(identifier)
 
         // If it's a URL, fetch link metadata (if enabled)
         if taggedItem.type == .url && self.settings.detectLinks {
@@ -420,7 +456,12 @@ class ClipboardManager: ObservableObject {
         // Limit history size (0 = unlimited)
         let maxSize = self.settings.maxHistorySize
         if maxSize > 0 && self.history.count > maxSize {
-          self.history = Array(self.history.prefix(maxSize))
+          for item in self.history[maxSize...] {
+            self.knownIdentifiers.remove(item.uniqueIdentifier)
+            if item.hasImage { ImageStore.shared.delete(for: item.id) }
+            if item.hasRTF   { RTFStore.shared.delete(for: item.id) }
+          }
+          self.history.removeSubrange(maxSize...)
         }
       }
     }
@@ -446,18 +487,20 @@ class ClipboardManager: ObservableObject {
     changeCount = pasteboard.changeCount
 
     DispatchQueue.main.async {
+      let current = self.history.first(where: { $0.id == item.id }) ?? item
       self.history.removeAll { $0.id == item.id }
       let updatedItem = ClipboardItem(
-        id: item.id,
-        content: item.content,
+        id: current.id,
+        content: current.content,
         timestamp: Date(),
-        type: item.type,
-        imageData: item.imageData,
-        fileURLs: item.fileURLs,
-        sourceApp: item.sourceApp,
-        linkMetadata: item.linkMetadata,
-        rtfData: item.rtfData,
-        detectedTags: item.detectedTags
+        type: current.type,
+        imageData: current.imageData,
+        hasImage: current.hasImage,
+        fileURLs: current.fileURLs,
+        sourceApp: current.sourceApp,
+        linkMetadata: current.linkMetadata,
+        hasRTF: current.hasRTF,
+        detectedTags: current.detectedTags
       )
       self.history.insert(updatedItem, at: 0)
     }
@@ -468,11 +511,8 @@ class ClipboardManager: ObservableObject {
 
     switch item.type {
     case .image:
-      if let imageData = item.imageData {
-        // Try to determine the image type and set appropriate pasteboard type
-        if let image = NSImage(data: imageData) {
-          pasteboard.writeObjects([image])
-        }
+      if let image = item.nsImage {
+        pasteboard.writeObjects([image])
       }
     case .file:
       if let urls = item.fileURLs {
@@ -484,7 +524,7 @@ class ClipboardManager: ObservableObject {
       }
       pasteboard.setString(item.content, forType: .string)
     case .text:
-      // If item has rich text formatting, include RTF data
+      // If item has rich text formatting, include RTF data (loaded from disk on demand)
       if let rtfData = item.rtfData {
         pasteboard.setData(rtfData, forType: .rtf)
       }
@@ -496,21 +536,24 @@ class ClipboardManager: ObservableObject {
 
     // Move item to the front of the list (most recently used)
     DispatchQueue.main.async {
+      // Read latest version from history to preserve async updates (e.g. link metadata)
+      let current = self.history.first(where: { $0.id == item.id }) ?? item
       // Remove the item from its current position
       self.history.removeAll { $0.id == item.id }
 
       // Create a new item with updated timestamp and insert at front
       let updatedItem = ClipboardItem(
-        id: item.id,
-        content: item.content,
+        id: current.id,
+        content: current.content,
         timestamp: Date(),
-        type: item.type,
-        imageData: item.imageData,
-        fileURLs: item.fileURLs,
-        sourceApp: item.sourceApp,
-        linkMetadata: item.linkMetadata,
-        rtfData: item.rtfData,
-        detectedTags: item.detectedTags
+        type: current.type,
+        imageData: current.imageData,
+        hasImage: current.hasImage,
+        fileURLs: current.fileURLs,
+        sourceApp: current.sourceApp,
+        linkMetadata: current.linkMetadata,
+        hasRTF: current.hasRTF,
+        detectedTags: current.detectedTags
       )
       self.history.insert(updatedItem, at: 0)
     }
@@ -536,8 +579,14 @@ class ClipboardManager: ObservableObject {
         let record = DeletedItemRecord(item: item, index: index, timestamp: Date())
         self.deletedItems.append(record)
 
-        // Remove from history
+        // Remove from history and dedup set
         self.history.remove(at: index)
+        self.knownIdentifiers.remove(item.uniqueIdentifier)
+
+        // Start undo cleanup timer if not already running
+        if self.undoCleanupTimer == nil {
+          self.startUndoCleanupTimer()
+        }
       }
     }
   }
@@ -557,6 +606,7 @@ class ClipboardManager: ObservableObject {
         // Insert back at the original position (or at the end if history is shorter now)
         let insertIndex = min(lastDeleted.index, self.history.count)
         self.history.insert(lastDeleted.item, at: insertIndex)
+        self.knownIdentifiers.insert(lastDeleted.item.uniqueIdentifier)
       }
     }
   }
@@ -618,10 +668,11 @@ class ClipboardManager: ObservableObject {
           timestamp: existingItem.timestamp,
           type: newType,
           imageData: existingItem.imageData,
+          hasImage: existingItem.hasImage,
           fileURLs: existingItem.fileURLs,
           sourceApp: existingItem.sourceApp,
           linkMetadata: newMetadata,
-          rtfData: existingItem.rtfData,
+          hasRTF: existingItem.hasRTF,
           detectedTags: newTags
         )
         self.history[index] = updatedItem
@@ -639,7 +690,7 @@ class ClipboardManager: ObservableObject {
     DispatchQueue.main.async {
       if let index = self.history.firstIndex(where: { $0.id == item.id }) {
         let existingItem = self.history[index]
-        // Convert attributed string to RTF data
+        // Convert attributed string to RTF data and save directly to disk
         let rtfData = try? attributedString.data(
           from: NSRange(location: 0, length: attributedString.length),
           documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf]
@@ -662,6 +713,7 @@ class ClipboardManager: ObservableObject {
           timestamp: existingItem.timestamp,
           type: newType,
           imageData: existingItem.imageData,
+          hasImage: existingItem.hasImage,
           fileURLs: existingItem.fileURLs,
           sourceApp: existingItem.sourceApp,
           linkMetadata: newMetadata,
@@ -681,8 +733,12 @@ class ClipboardManager: ObservableObject {
   func clearHistory() {
     DispatchQueue.main.async {
       self.history.removeAll()
+      self.knownIdentifiers.removeAll()
       // Also delete the persisted file so cleared history doesn't come back
       self.historyStore.deleteHistoryFile()
+      ImageStore.shared.deleteAll()
+      LinkImageStore.shared.deleteAll()
+      RTFStore.shared.deleteAll()
     }
   }
 
@@ -728,6 +784,7 @@ class ClipboardManager: ObservableObject {
         sourceApp: sourceApp
       )
       history.insert(item, at: 0)
+      knownIdentifiers.insert(item.uniqueIdentifier)
       // First element = rightmost card = the one to pin
       if index == 0 {
         pinCardId = item.id

@@ -661,13 +661,12 @@ struct ColorSpectrumView: View {
             Circle()
               .stroke(Color.white, lineWidth: 2)
           )
-          .shadow(color: .black.opacity(0.3), radius: 2, x: 0, y: 1)
           .position(
             x: (hue / 360.0) * size.width,
             y: (1.0 - saturation) * size.height
           )
       }
-      .clipShape(RoundedRectangle(cornerRadius: 6))
+      .clipShape(Rectangle())
       .contentShape(Rectangle())
       .gesture(
         DragGesture(minimumDistance: 0)
@@ -680,7 +679,6 @@ struct ColorSpectrumView: View {
       )
     }
     .frame(height: 80)
-    .cornerRadius(6)
   }
 }
 
@@ -696,7 +694,7 @@ struct ColorChannelSlider: View {
     HStack(spacing: 4) {
       Text(label)
         .font(.system(size: 10, weight: .medium))
-        .foregroundStyle(.secondary)
+        .foregroundStyle(Brand.gray600)
         .frame(width: 12, alignment: .trailing)
 
       GeometryReader { geo in
@@ -716,7 +714,6 @@ struct ColorChannelSlider: View {
           Circle()
             .fill(color)
             .frame(width: 12, height: 12)
-            .shadow(color: .black.opacity(0.15), radius: 1, x: 0, y: 1)
             .offset(x: max(0, CGFloat(fraction) * (geo.size.width - 12)))
         }
         .frame(height: 12)
@@ -734,7 +731,7 @@ struct ColorChannelSlider: View {
 
       Text("\(Int(value))")
         .font(.system(size: 10, design: .monospaced))
-        .foregroundStyle(.secondary)
+        .foregroundStyle(Brand.gray600)
         .frame(width: 28, alignment: .trailing)
     }
   }
@@ -775,16 +772,16 @@ struct InlineColorEditor: View {
         )
 
         VStack(spacing: 4) {
-          RoundedRectangle(cornerRadius: 6)
+          Rectangle()
             .fill(previewColor)
             .frame(width: 48, height: 48)
             .overlay(
-              RoundedRectangle(cornerRadius: 6)
+              Rectangle()
                 .stroke(Color.primary.opacity(0.2), lineWidth: 1)
             )
           Text(hexText)
             .font(.system(size: 9, weight: .medium, design: .monospaced))
-            .foregroundStyle(.secondary)
+            .foregroundStyle(Brand.gray600)
         }
       }
 
@@ -818,7 +815,6 @@ struct InlineColorEditor: View {
     }
     .padding(10)
     .background(Color.primary.opacity(0.04))
-    .cornerRadius(8)
   }
 }
 
@@ -940,7 +936,6 @@ struct QuickActionsBar: View {
       .padding(.horizontal, 10)
       .padding(.vertical, 5)
       .background(Color.primary.opacity(0.08))
-      .cornerRadius(6)
     }
     .buttonStyle(.plain)
     .contentShape(Rectangle())
@@ -961,17 +956,17 @@ struct QuickActionsBar: View {
         HStack(spacing: 6) {
           Image(systemName: "bolt.fill")
             .font(.system(size: 10))
-            .foregroundStyle(.secondary)
+            .foregroundStyle(Brand.gray600)
           Text("Quick Actions")
             .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(.secondary)
+            .foregroundStyle(Brand.gray600)
           Spacer()
 
           // Feedback toast
           if let msg = feedback.message {
             Text(msg)
               .font(.system(size: 10, weight: .medium))
-              .foregroundStyle(.green)
+              .foregroundStyle(Brand.black)
               .transition(.opacity.combined(with: .scale))
           }
         }
@@ -1002,10 +997,9 @@ struct QuickActionsBar: View {
             } label: {
               Image(systemName: isColorEditorExpanded ? "chevron.up" : "slider.horizontal.3")
                 .font(.system(size: 11))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Brand.gray600)
                 .frame(width: 24, height: 24)
                 .background(Color.primary.opacity(0.06))
-                .cornerRadius(4)
             }
             .buttonStyle(.plain)
           }
@@ -1059,7 +1053,6 @@ struct QuickActionsBar: View {
               .padding(.horizontal, 10)
               .padding(.vertical, 5)
               .background(Color.primary.opacity(0.08))
-              .cornerRadius(6)
             }
             .buttonStyle(.plain)
             .contentShape(Rectangle())
@@ -1090,26 +1083,26 @@ struct ColorChipView: View {
 
   var body: some View {
     HStack(spacing: 5) {
-      RoundedRectangle(cornerRadius: 3)
+      Rectangle()
         .fill(chipColor)
         .frame(width: 20, height: 20)
         .overlay(
-          RoundedRectangle(cornerRadius: 3)
+          Rectangle()
             .stroke(Color.primary.opacity(0.2), lineWidth: 1)
         )
       Text(state.original.raw)
         .font(.system(size: 10, weight: .medium, design: .monospaced))
-        .foregroundStyle(.primary.opacity(0.8))
+        .foregroundStyle(Brand.gray700)
         .lineLimit(1)
     }
     .padding(.horizontal, 6)
     .padding(.vertical, 4)
     .background(
-      RoundedRectangle(cornerRadius: 6)
+      Rectangle()
         .fill(isSelected ? Color.accentColor.opacity(0.15) : Color.primary.opacity(0.06))
     )
     .overlay(
-      RoundedRectangle(cornerRadius: 6)
+      Rectangle()
         .stroke(isSelected ? Color.accentColor.opacity(0.5) : Color.clear, lineWidth: 1.5)
     )
     .contentShape(Rectangle())

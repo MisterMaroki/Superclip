@@ -18,6 +18,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   var previewWindow: NSWindow?
   var settingsWindow: NSWindow?
   var richTextEditorWindows: [RichTextEditorPanel] = []
+  var imageEditorWindows: [ImageEditorPanel] = []
   var hotKey: HotKey?
   var pasteStackHotKey: HotKey?
   var ocrHotKey: HotKey?
@@ -96,6 +97,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   func applicationWillTerminate(_ notification: Notification) {
     if settingsManager.clearOnQuit {
       clipboardManager.historyStore.deleteHistoryFile()
+      ImageStore.shared.deleteAll()
+      LinkImageStore.shared.deleteAll()
+      RTFStore.shared.deleteAll()
       clipboardManager.clearHistory()
     } else {
       clipboardManager.saveHistoryImmediately()
@@ -109,6 +113,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     // Don't close if rich text editor windows are open
     if richTextEditorWindows.contains(where: { $0.isVisible }) {
+      return
+    }
+    // Don't close if image editor windows are open
+    if imageEditorWindows.contains(where: { $0.isVisible }) {
       return
     }
     // Don't close if floating overlay windows are visible
@@ -328,6 +336,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
           }
           if panelWindow.isSearching {
             panelWindow.navigationState.shouldCloseSearch = true
+            panelWindow.hasNavigatedFromSearch = true
           }
           panelWindow.navigationState.moveLeft()
           return nil
@@ -339,18 +348,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
           }
           if panelWindow.isSearching {
             panelWindow.navigationState.shouldCloseSearch = true
+            panelWindow.hasNavigatedFromSearch = true
           }
           panelWindow.navigationState.moveRight()
           return nil
         case 125:  // Down arrow
           if panelWindow.isSearching {
             panelWindow.navigationState.shouldCloseSearch = true
+            panelWindow.hasNavigatedFromSearch = true
           }
           panelWindow.navigationState.moveRight()
           return nil
         case 126:  // Up arrow
           if panelWindow.isSearching {
             panelWindow.navigationState.shouldCloseSearch = true
+            panelWindow.hasNavigatedFromSearch = true
           }
           panelWindow.navigationState.moveLeft()
           return nil
@@ -365,8 +377,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
           panelWindow.navigationState.focusSearch()
           return nil
         case 51:  // Backspace key - delete selected item
-          // Don't delete if user is searching
+          // Don't delete if user is searching - backspace always affects search text
           if panelWindow.isSearching {
+            panelWindow.hasNavigatedFromSearch = false
             return event  // Allow backspace in search field
           }
           // Don't delete if user is editing text in preview
@@ -396,8 +409,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return event  // Allow space to be typed in the text editor
           }
 
-          // Don't handle if user is searching
-          if panelWindow.isSearching {
+          // Don't handle if user is actively typing in the search field
+          // (but allow space to trigger preview if user has navigated with arrows)
+          if panelWindow.isSearching && !panelWindow.hasNavigatedFromSearch {
             return event  // Allow space to be typed in the search field
           }
 
@@ -456,6 +470,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
           }
           return nil
         default:
+          // Reset navigation flag when user types while search is active
+          if panelWindow.isSearchFieldFocused {
+            panelWindow.hasNavigatedFromSearch = false
+          }
           // Type-to-search: if printable character and not editing, capture keystrokes
           // Keep capturing until search field is actually focused
           if !panelWindow.isEditingPinboard && !panelWindow.isSearchFieldFocused,
@@ -514,11 +532,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
           return event
         }
         let isRichTextEditorWindow = self.richTextEditorWindows.contains { $0 === event.window }
+        let isImageEditorWindow = self.imageEditorWindows.contains { $0 === event.window }
         let isSettingsWindow = event.window === self.settingsWindow
         let isFloatingOverlay = self.floatingOverlayWindows.contains { $0 === event.window }
         if event.window != panelWindow && event.window != self.previewWindow
           && event.window != self.pasteStackWindow && !isRichTextEditorWindow
-          && !isSettingsWindow && !isFloatingOverlay
+          && !isImageEditorWindow && !isSettingsWindow && !isFloatingOverlay
         {
           DispatchQueue.main.async {
             // Close both preview and drawer when clicking outside the app
@@ -563,6 +582,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         // If rich text editor is becoming key, don't close
         if let keyWin = keyWindow, self.richTextEditorWindows.contains(where: { $0 === keyWin }) {
+          return
+        }
+        // If image editor is becoming key, don't close
+        if let keyWin = keyWindow, self.imageEditorWindows.contains(where: { $0 === keyWin }) {
           return
         }
         // If settings window is becoming key, don't close
@@ -792,12 +815,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
       let isDrawerWindow = clickWindow === self.contentWindow
       let isPasteStackWindow = clickWindow === self.pasteStackWindow
       let isRichTextEditorWindow = self.richTextEditorWindows.contains { $0 === clickWindow }
+      let isImageEditorWindow = self.imageEditorWindows.contains { $0 === clickWindow }
       let isSettingsWindow = clickWindow === self.settingsWindow
       let isFloatingOverlay = self.floatingOverlayWindows.contains { $0 === clickWindow }
 
       // If click is outside all our windows, close both preview and drawer
       if !isPreviewWindow && !isDrawerWindow && !isPasteStackWindow && !isRichTextEditorWindow
-        && !isSettingsWindow && !isFloatingOverlay
+        && !isImageEditorWindow && !isSettingsWindow && !isFloatingOverlay
       {
         DispatchQueue.main.async {
           self.closeReviewWindow(andPaste: false)
@@ -897,6 +921,40 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
   func removeRichTextEditorWindow(_ panel: RichTextEditorPanel) {
     richTextEditorWindows.removeAll { $0 === panel }
+  }
+
+  // MARK: - Image Editor Window
+
+  func showImageEditorWindow(image: NSImage, pngData: Data, fromFrame frame: NSRect) {
+    let editorPanel = ImageEditorPanel(image: image, pngData: pngData, frame: frame)
+    editorPanel.appDelegate = self
+
+    editorPanel.onSave = { _, _ in
+      // The editor's performSave() already wrote the image to the clipboard.
+      // Let the polling timer detect the change so it appears in history.
+    }
+
+    editorPanel.onCancel = {
+      // Nothing special needed on cancel
+    }
+
+    imageEditorWindows.append(editorPanel)
+
+    // Switch to regular activation policy so the editor appears in the Dock
+    // and Mission Control treats it like a normal window.
+    NSApp.setActivationPolicy(.regular)
+
+    editorPanel.makeKeyAndOrderFront(nil)
+    NSApp.activate(ignoringOtherApps: true)
+  }
+
+  func removeImageEditorWindow(_ panel: ImageEditorPanel) {
+    imageEditorWindows.removeAll { $0 === panel }
+
+    // When all image editor windows are closed, revert to accessory mode.
+    if imageEditorWindows.isEmpty {
+      NSApp.setActivationPolicy(.accessory)
+    }
   }
 
   // MARK: - Settings Window
@@ -1176,7 +1234,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         description = "\(width)\u{00D7}\(height)"
       }
 
-      let item = ClipboardItem(
+      var item = ClipboardItem(
         content: description,
         type: .image,
         imageData: pngData,
@@ -1186,6 +1244,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
           icon: NSApp.applicationIconImage
         )
       )
+      if let data = pngData {
+        ImageStore.shared.save(data: data, for: item.id)
+      }
+      item.imageData = nil  // Release in-memory bytes; load from disk on demand
 
       DispatchQueue.main.async {
         self.clipboardManager.history.insert(item, at: 0)

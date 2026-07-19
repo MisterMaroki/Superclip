@@ -15,7 +15,7 @@ interface FeatureRequest {
 const STORAGE_KEY = "superclip-features";
 const VOTE_KEY = "superclip-votes";
 const RATE_LIMIT_KEY = "superclip-rate-limit";
-const RATE_LIMIT_MS = 60_000; // 1 request per minute
+const RATE_LIMIT_MS = 60_000;
 
 function generateId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -33,11 +33,36 @@ function getStoredFeatures(): FeatureRequest[] {
 
 function getDefaultFeatures(): FeatureRequest[] {
   return [
-    { id: "default-1", title: "Snippet templates with variables", votes: 24, createdAt: "2026-01-28" },
-    { id: "default-2", title: "Sync clipboard across Macs via iCloud", votes: 19, createdAt: "2026-01-27" },
-    { id: "default-3", title: "Custom themes and color schemes", votes: 15, createdAt: "2026-01-26" },
-    { id: "default-4", title: "Clipboard rules (auto-format, auto-clean URLs)", votes: 12, createdAt: "2026-01-25" },
-    { id: "default-5", title: "Raycast / Alfred integration", votes: 9, createdAt: "2026-01-24" },
+    {
+      id: "default-1",
+      title: "Snippet templates with variables",
+      votes: 24,
+      createdAt: "2026-01-28",
+    },
+    {
+      id: "default-2",
+      title: "Sync clipboard across Macs via iCloud",
+      votes: 19,
+      createdAt: "2026-01-27",
+    },
+    {
+      id: "default-3",
+      title: "Custom themes and color schemes",
+      votes: 15,
+      createdAt: "2026-01-26",
+    },
+    {
+      id: "default-4",
+      title: "Clipboard rules (auto-format, auto-clean URLs)",
+      votes: 12,
+      createdAt: "2026-01-25",
+    },
+    {
+      id: "default-5",
+      title: "Raycast / Alfred integration",
+      votes: 9,
+      createdAt: "2026-01-24",
+    },
   ];
 }
 
@@ -66,7 +91,9 @@ export function FeatureRequests() {
   const [features, setFeatures] = useState<FeatureRequest[]>([]);
   const [votedIds, setVotedIds] = useState<Set<string>>(new Set());
   const [newTitle, setNewTitle] = useState("");
-  const [submitState, setSubmitState] = useState<"idle" | "success" | "rate-limited">("idle");
+  const [submitState, setSubmitState] = useState<
+    "idle" | "success" | "rate-limited"
+  >("idle");
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -141,26 +168,16 @@ export function FeatureRequests() {
 
   return (
     <section id="feature-requests" className="relative py-32">
-      <div
-        className="pointer-events-none absolute top-0 left-1/2 -translate-x-1/2 h-[1px] w-[600px]"
-        style={{
-          background:
-            "linear-gradient(90deg, transparent, rgba(139,92,246,0.2), transparent)",
-        }}
-        aria-hidden
-      />
-
-      <div className="mx-auto max-w-[var(--container)] px-6">
+      <div className="mx-auto max-w-[var(--container)] px-10">
         <FadeIn>
           <div className="text-center mb-16">
-            <p className="text-[13px] font-semibold uppercase tracking-widest text-purple-400/70 mb-4">
-              Feature Requests
-            </p>
-            <h2 className="text-4xl md:text-5xl font-extrabold tracking-tight">
+            <p className="section-label mb-4">Feature Requests</p>
+            <h2 style={{ fontSize: "clamp(32px, 5vw, 48px)" }}>
               You decide what&apos;s next
             </h2>
-            <p className="mt-4 text-lg text-white/40 max-w-lg mx-auto">
-              Submit feature ideas and vote anonymously. The most popular requests shape our roadmap.
+            <p className="mt-4 text-[17px] text-[var(--gray-500)] max-w-lg mx-auto">
+              Submit feature ideas and vote anonymously. The most popular
+              requests shape our roadmap.
             </p>
           </div>
         </FadeIn>
@@ -169,24 +186,19 @@ export function FeatureRequests() {
           {/* Submit Form */}
           <FadeIn delay={0.1}>
             <form onSubmit={handleSubmit} className="mb-8">
-              <div className="glass flex items-center gap-3 p-2 pr-3">
+              <div className="flex items-center gap-3 border border-[var(--gray-200)] p-2 pr-3">
                 <input
                   type="text"
                   value={newTitle}
                   onChange={(e) => setNewTitle(e.target.value)}
                   placeholder="Suggest a feature..."
                   maxLength={120}
-                  className="flex-1 bg-transparent px-4 py-2.5 text-[14px] text-white/80 placeholder:text-white/25 outline-none"
+                  className="flex-1 bg-transparent px-4 py-2.5 text-[14px] text-[var(--black)] placeholder:text-[var(--gray-400)] outline-none"
                 />
                 <button
                   type="submit"
                   disabled={!newTitle.trim()}
-                  className="shrink-0 inline-flex h-9 items-center rounded-lg px-4 text-[13px] font-semibold text-white transition-all duration-200 disabled:opacity-30 disabled:cursor-not-allowed hover:brightness-110"
-                  style={{
-                    background: newTitle.trim()
-                      ? "var(--gradient-primary)"
-                      : "rgba(255,255,255,0.06)",
-                  }}
+                  className="shrink-0 inline-flex h-9 items-center border border-[var(--black)] bg-[var(--black)] px-4 text-[13px] font-medium tracking-[0.025em] text-[var(--white)] transition-colors duration-150 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-[var(--gray-800)]"
                 >
                   Submit
                 </button>
@@ -199,7 +211,7 @@ export function FeatureRequests() {
                     initial={{ opacity: 0, y: -4 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0 }}
-                    className="mt-2 text-[12px] text-emerald-400 text-center"
+                    className="mt-2 text-[12px] text-[var(--black)] text-center"
                   >
                     Feature submitted! Thanks for your input.
                   </motion.p>
@@ -209,7 +221,7 @@ export function FeatureRequests() {
                     initial={{ opacity: 0, y: -4 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0 }}
-                    className="mt-2 text-[12px] text-amber-400 text-center"
+                    className="mt-2 text-[12px] text-[var(--gray-500)] text-center"
                   >
                     Please wait a minute before submitting again.
                   </motion.p>
@@ -219,83 +231,84 @@ export function FeatureRequests() {
           </FadeIn>
 
           {/* Feature List */}
-          <FadeIn delay={0.2}>
-            <div className="space-y-2">
-              {mounted &&
-                sorted.map((feature, i) => {
-                  const hasVoted = votedIds.has(feature.id);
+          <FadeIn delay={0.15}>
+            <div
+              className="border border-[var(--gray-200)]"
+              style={{ background: "var(--gray-200)" }}
+            >
+              <div className="grid gap-px">
+                {mounted &&
+                  sorted.map((feature, i) => {
+                    const hasVoted = votedIds.has(feature.id);
 
-                  return (
-                    <motion.div
-                      key={feature.id}
-                      layout
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.3, delay: i * 0.03 }}
-                      className="glass glass-hover flex items-center gap-4 px-5 py-4 transition-all duration-200"
-                    >
-                      {/* Vote Button */}
-                      <button
-                        onClick={() => handleVote(feature.id)}
-                        disabled={hasVoted}
-                        className={`shrink-0 flex flex-col items-center gap-0.5 transition-all duration-200 ${
-                          hasVoted
-                            ? "cursor-default"
-                            : "cursor-pointer hover:scale-110"
-                        }`}
-                        aria-label={`Vote for ${feature.title}`}
+                    return (
+                      <motion.div
+                        key={feature.id}
+                        layout
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.3, delay: i * 0.03 }}
+                        className="flex items-center gap-4 bg-[var(--white)] px-5 py-4"
                       >
-                        <svg
-                          className={`h-4 w-4 transition-colors ${
-                            hasVoted ? "text-cyan-400" : "text-white/25 hover:text-cyan-400"
+                        {/* Vote Button */}
+                        <button
+                          onClick={() => handleVote(feature.id)}
+                          disabled={hasVoted}
+                          className={`shrink-0 flex flex-col items-center gap-0.5 transition-all duration-150 ${
+                            hasVoted
+                              ? "cursor-default"
+                              : "cursor-pointer hover:scale-110"
                           }`}
-                          fill={hasVoted ? "currentColor" : "none"}
-                          viewBox="0 0 24 24"
-                          stroke="currentColor"
-                          strokeWidth={2}
+                          aria-label={`Vote for ${feature.title}`}
                         >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            d="M4.5 15.75l7.5-7.5 7.5 7.5"
-                          />
-                        </svg>
-                        <span
-                          className={`text-[13px] font-bold tabular-nums ${
-                            hasVoted ? "text-cyan-400" : "text-white/40"
-                          }`}
-                        >
-                          {feature.votes}
-                        </span>
-                      </button>
+                          <svg
+                            className={`h-4 w-4 transition-colors ${
+                              hasVoted
+                                ? "text-[var(--black)]"
+                                : "text-[var(--gray-300)] hover:text-[var(--black)]"
+                            }`}
+                            fill={hasVoted ? "currentColor" : "none"}
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                            strokeWidth={2}
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              d="M4.5 15.75l7.5-7.5 7.5 7.5"
+                            />
+                          </svg>
+                          <span
+                            className={`font-mono text-[13px] font-bold tabular-nums ${
+                              hasVoted
+                                ? "text-[var(--black)]"
+                                : "text-[var(--gray-400)]"
+                            }`}
+                          >
+                            {feature.votes}
+                          </span>
+                        </button>
 
-                      {/* Feature Title */}
-                      <span className="text-[14px] text-white/70 leading-snug">
-                        {feature.title}
-                      </span>
-
-                      {/* Rank indicator for top 3 */}
-                      {i < 3 && (
-                        <span
-                          className={`ml-auto shrink-0 inline-flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold ${
-                            i === 0
-                              ? "bg-amber-400/15 text-amber-400"
-                              : i === 1
-                                ? "bg-gray-300/15 text-gray-400"
-                                : "bg-orange-400/10 text-orange-400/70"
-                          }`}
-                        >
-                          {i + 1}
+                        {/* Feature Title */}
+                        <span className="text-[14px] text-[var(--gray-600)] leading-snug">
+                          {feature.title}
                         </span>
-                      )}
-                    </motion.div>
-                  );
-                })}
+
+                        {/* Rank indicator for top 3 */}
+                        {i < 3 && (
+                          <span className="ml-auto shrink-0 inline-flex h-5 w-5 items-center justify-center border border-[var(--gray-200)] font-mono text-[10px] font-bold text-[var(--gray-500)]">
+                            {i + 1}
+                          </span>
+                        )}
+                      </motion.div>
+                    );
+                  })}
+              </div>
             </div>
           </FadeIn>
 
-          <FadeIn delay={0.3}>
-            <p className="mt-6 text-center text-[12px] text-white/20">
+          <FadeIn delay={0.25}>
+            <p className="mt-6 text-center font-mono text-[11px] text-[var(--gray-400)]">
               All submissions and votes are anonymous. One vote per feature.
             </p>
           </FadeIn>

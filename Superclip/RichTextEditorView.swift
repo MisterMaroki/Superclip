@@ -44,11 +44,10 @@ struct RichTextEditorView: View {
                 } label: {
                     Text("Cancel")
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.primary.opacity(0.8))
+                        .foregroundStyle(Brand.gray700)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
                         .background(Color.primary.opacity(0.1))
-                        .cornerRadius(6)
                 }
                 .buttonStyle(.plain)
                 .keyboardShortcut(.escape, modifiers: [])
@@ -72,7 +71,6 @@ struct RichTextEditorView: View {
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
                 .background(Color.primary.opacity(0.05))
-                .cornerRadius(6)
 
                 Spacer()
 
@@ -90,14 +88,13 @@ struct RichTextEditorView: View {
                     .foregroundColor(.white)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
-                    .background(Color.green)
-                    .cornerRadius(6)
+                    .background(Brand.black)
                 }
                 .buttonStyle(.plain)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
-            .background(.ultraThinMaterial)
+            .background(Brand.gray100)
 
             // Rich text editor
             RichTextViewRepresentable(
@@ -111,21 +108,21 @@ struct RichTextEditorView: View {
             HStack {
                 Text("\(characterCount) characters")
                     .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Brand.gray600)
 
                 Text("\u{00B7}")
-                    .foregroundStyle(.secondary.opacity(0.5))
+                    .foregroundStyle(Brand.gray600)
 
                 Text("\(wordCount) \(wordCount == 1 ? "word" : "words")")
                     .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Brand.gray600)
 
                 Text("\u{00B7}")
-                    .foregroundStyle(.secondary.opacity(0.5))
+                    .foregroundStyle(Brand.gray600)
 
                 Text("\(lineCount) \(lineCount == 1 ? "line" : "lines")")
                     .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Brand.gray600)
 
                 Spacer()
 
@@ -133,24 +130,19 @@ struct RichTextEditorView: View {
                 HStack(spacing: 12) {
                     Text("Esc to cancel")
                         .font(.system(size: 10))
-                        .foregroundStyle(.secondary.opacity(0.6))
+                        .foregroundStyle(Brand.gray600)
                     Text("\u{2318}+Enter to save")
                         .font(.system(size: 10))
-                        .foregroundStyle(.secondary.opacity(0.6))
+                        .foregroundStyle(Brand.gray600)
                 }
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
-            .background(.ultraThinMaterial)
+            .background(Brand.gray100)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(
-            ZStack {
-                Color.black.opacity(0.85)
-                VisualEffectBlur(material: .hudWindow, blendingMode: .behindWindow)
-            }
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .background(Brand.white)
+        .clipShape(Rectangle())
         .onReceive(NotificationCenter.default.publisher(for: .richTextEditorSave)) { notification in
             // Check if this notification is for our window
             if let panel = notification.object as? RichTextEditorPanel,
@@ -250,7 +242,7 @@ struct FormatButton: View {
         Button(action: action) {
             Image(systemName: icon)
                 .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.primary.opacity(0.8))
+                .foregroundStyle(Brand.gray700)
                 .frame(width: 28, height: 24)
                 .contentShape(Rectangle())
         }

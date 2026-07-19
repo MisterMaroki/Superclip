@@ -5,16 +5,39 @@
 
 import Foundation
 import AppKit
+import ImageIO
 
 struct SourceApp: Equatable {
     let bundleIdentifier: String?
     let name: String
-    let icon: NSImage?
-    
+
+    /// Shared icon cache keyed by bundle identifier — avoids duplicating the same
+    /// NSImage across hundreds of clipboard items from the same app.
+    private static let iconCache = NSCache<NSString, NSImage>()
+
+    /// The icon is resolved lazily from the cache so that each unique bundle ID
+    /// stores only one copy in memory.
+    var icon: NSImage? {
+        guard let bid = bundleIdentifier else { return nil }
+        let key = bid as NSString
+        if let cached = Self.iconCache.object(forKey: key) {
+            return cached
+        }
+        if let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bid) {
+            let img = NSWorkspace.shared.icon(forFile: appURL.path)
+            Self.iconCache.setObject(img, forKey: key)
+            return img
+        }
+        return nil
+    }
+
     init(bundleIdentifier: String?, name: String, icon: NSImage?) {
         self.bundleIdentifier = bundleIdentifier
         self.name = name
-        self.icon = icon
+        // Pre-populate the cache when an icon is provided directly (e.g. from the running app)
+        if let icon = icon, let bid = bundleIdentifier {
+            Self.iconCache.setObject(icon, forKey: bid as NSString)
+        }
     }
     
     // Get color based on app (you could expand this with more app-specific colors)
@@ -69,31 +92,68 @@ struct SourceApp: Equatable {
 
 import SwiftUI
 
-// Link metadata for URL previews
+// Link metadata for URL previews.
+// Image/icon data is stored on disk (via LinkImageStore) and loaded lazily —
+// only the lightweight title/url/flags are kept in memory.
 class LinkMetadata: NSObject {
     let title: String?
     let url: URL
-    let imageData: Data?
-    let iconData: Data?
+    /// Whether an image file exists on disk for this metadata.
+    let hasImage: Bool
+    /// Whether an icon file exists on disk for this metadata.
+    let hasIcon: Bool
 
-    init(title: String?, url: URL, imageData: Data?, iconData: Data? = nil) {
+    /// In-memory image cache shared across all LinkMetadata instances.
+    private static let imageCache: NSCache<NSURL, NSImage> = {
+        let c = NSCache<NSURL, NSImage>()
+        c.countLimit = 15
+        c.totalCostLimit = 20 * 1024 * 1024  // 20 MB
+        return c
+    }()
+    private static let iconCache: NSCache<NSURL, NSImage> = {
+        let c = NSCache<NSURL, NSImage>()
+        c.countLimit = 30
+        c.totalCostLimit = 5 * 1024 * 1024   // 5 MB
+        return c
+    }()
+
+    init(title: String?, url: URL, hasImage: Bool = false, hasIcon: Bool = false) {
         self.title = title
         self.url = url
-        self.imageData = imageData
-        self.iconData = iconData
+        self.hasImage = hasImage
+        self.hasIcon = hasIcon
         super.init()
     }
 
+    /// Convenience initializer that persists raw image/icon data to disk.
+    convenience init(title: String?, url: URL, imageData: Data?, iconData: Data?) {
+        let hasImg = imageData != nil
+        let hasIcn = iconData != nil
+        self.init(title: title, url: url, hasImage: hasImg, hasIcon: hasIcn)
+        if let data = imageData { LinkImageStore.shared.saveImage(data, for: url) }
+        if let data = iconData  { LinkImageStore.shared.saveIcon(data, for: url) }
+    }
+
     var image: NSImage? {
-        guard let data = imageData else { return nil }
-        return NSImage(data: data)
+        guard hasImage else { return nil }
+        let key = url as NSURL
+        if let cached = Self.imageCache.object(forKey: key) { return cached }
+        guard let data = LinkImageStore.shared.loadImage(for: url),
+              let img = NSImage(data: data) else { return nil }
+        Self.imageCache.setObject(img, forKey: key, cost: data.count)
+        return img
     }
 
     var icon: NSImage? {
-        guard let data = iconData else { return nil }
-        return NSImage(data: data)
+        guard hasIcon else { return nil }
+        let key = url as NSURL
+        if let cached = Self.iconCache.object(forKey: key) { return cached }
+        guard let data = LinkImageStore.shared.loadIcon(for: url),
+              let img = NSImage(data: data) else { return nil }
+        Self.iconCache.setObject(img, forKey: key, cost: data.count)
+        return img
     }
-    
+
     var displayURL: String {
         var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
         components?.scheme = nil
@@ -106,12 +166,12 @@ class LinkMetadata: NSObject {
         }
         return display
     }
-    
+
     override func isEqual(_ object: Any?) -> Bool {
         guard let other = object as? LinkMetadata else { return false }
         return url == other.url && title == other.title
     }
-    
+
     override var hash: Int {
         var hasher = Hasher()
         hasher.combine(url)
@@ -120,16 +180,78 @@ class LinkMetadata: NSObject {
     }
 }
 
+// MARK: - Link Image Store
+
+/// On-disk storage for link metadata images and icons.
+/// Files are stored in ~/Library/Application Support/Superclip/link-images/
+class LinkImageStore {
+    static let shared = LinkImageStore()
+
+    private let imageDir: URL
+    private let iconDir: URL
+
+    private init() {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let base = appSupport.appendingPathComponent("Superclip/link-images", isDirectory: true)
+        imageDir = base.appendingPathComponent("images", isDirectory: true)
+        iconDir = base.appendingPathComponent("icons", isDirectory: true)
+        try? FileManager.default.createDirectory(at: imageDir, withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(at: iconDir, withIntermediateDirectories: true)
+    }
+
+    func saveImage(_ data: Data, for url: URL) {
+        try? data.write(to: imageFile(for: url), options: .atomic)
+    }
+
+    func saveIcon(_ data: Data, for url: URL) {
+        try? data.write(to: iconFile(for: url), options: .atomic)
+    }
+
+    func loadImage(for url: URL) -> Data? {
+        try? Data(contentsOf: imageFile(for: url))
+    }
+
+    func loadIcon(for url: URL) -> Data? {
+        try? Data(contentsOf: iconFile(for: url))
+    }
+
+    func deleteAll() {
+        try? FileManager.default.removeItem(at: imageDir)
+        try? FileManager.default.removeItem(at: iconDir)
+        try? FileManager.default.createDirectory(at: imageDir, withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(at: iconDir, withIntermediateDirectories: true)
+    }
+
+    // MARK: - Private
+
+    private func safeFilename(for url: URL) -> String {
+        // SHA-like short hash from the URL string to avoid filesystem-unsafe characters
+        let str = url.absoluteString
+        var hash: UInt64 = 5381
+        for byte in str.utf8 { hash = hash &* 33 &+ UInt64(byte) }
+        return String(hash, radix: 16)
+    }
+
+    private func imageFile(for url: URL) -> URL {
+        imageDir.appendingPathComponent(safeFilename(for: url) + ".dat")
+    }
+
+    private func iconFile(for url: URL) -> URL {
+        iconDir.appendingPathComponent(safeFilename(for: url) + ".dat")
+    }
+}
+
 struct ClipboardItem: Identifiable, Equatable {
     let id: UUID
     let content: String
     let timestamp: Date
     let type: ClipboardType
-    let imageData: Data?
+    var imageData: Data?
+    let hasImage: Bool
     let fileURLs: [URL]?
     let sourceApp: SourceApp?
     var linkMetadata: LinkMetadata?
-    var rtfData: Data?  // Rich text formatting data (RTF format)
+    let hasRTF: Bool  // Whether RTF data exists on disk
     var detectedTags: Set<ContentTag>  // Auto-detected content sub-categories
 
     enum ClipboardType: String, Codable {
@@ -139,17 +261,28 @@ struct ClipboardItem: Identifiable, Equatable {
         case url
     }
 
-    init(id: UUID = UUID(), content: String, timestamp: Date = Date(), type: ClipboardType = .text, imageData: Data? = nil, fileURLs: [URL]? = nil, sourceApp: SourceApp? = nil, linkMetadata: LinkMetadata? = nil, rtfData: Data? = nil, detectedTags: Set<ContentTag> = []) {
+    init(id: UUID = UUID(), content: String, timestamp: Date = Date(), type: ClipboardType = .text, imageData: Data? = nil, hasImage: Bool? = nil, fileURLs: [URL]? = nil, sourceApp: SourceApp? = nil, linkMetadata: LinkMetadata? = nil, rtfData: Data? = nil, hasRTF: Bool? = nil, detectedTags: Set<ContentTag> = []) {
         self.id = id
         self.content = content
         self.timestamp = timestamp
         self.type = type
         self.imageData = imageData
+        self.hasImage = hasImage ?? (imageData != nil)
         self.fileURLs = fileURLs
         self.sourceApp = sourceApp
         self.linkMetadata = linkMetadata
-        self.rtfData = rtfData
+        self.hasRTF = hasRTF ?? (rtfData != nil)
         self.detectedTags = detectedTags
+        // Persist RTF data to disk immediately, then release from memory
+        if let rtfData = rtfData {
+            RTFStore.shared.save(data: rtfData, for: id)
+        }
+    }
+
+    /// RTF data loaded on demand from disk. Not held in memory.
+    var rtfData: Data? {
+        guard hasRTF else { return nil }
+        return RTFStore.shared.loadData(for: id)
     }
 
     // Get attributed string from RTF data
@@ -160,7 +293,7 @@ struct ClipboardItem: Identifiable, Equatable {
 
     // Check if item has rich text formatting
     var hasRichText: Bool {
-        rtfData != nil
+        hasRTF
     }
     
     // Type label for display
@@ -220,30 +353,101 @@ struct ClipboardItem: Identifiable, Equatable {
         }
     }
     
+    private static let relativeFormatter: RelativeDateTimeFormatter = {
+        let f = RelativeDateTimeFormatter()
+        f.unitsStyle = .abbreviated
+        return f
+    }()
+
     var timeAgo: String {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .abbreviated
-        return formatter.localizedString(for: timestamp, relativeTo: Date())
+        Self.relativeFormatter.localizedString(for: timestamp, relativeTo: Date())
     }
     
-    /// Cache decoded NSImages to avoid re-decoding PNG data on every access.
-    private static let imageCache = NSCache<NSUUID, NSImage>()
+    /// Full-resolution image cache — only for active preview/paste. Kept tiny.
+    private static let fullImageCache: NSCache<NSUUID, NSImage> = {
+        let cache = NSCache<NSUUID, NSImage>()
+        cache.countLimit = 3
+        cache.totalCostLimit = 50 * 1024 * 1024  // 50 MB
+        return cache
+    }()
 
+    /// Thumbnail cache for card display — small images, modest count.
+    private static let thumbnailCache: NSCache<NSUUID, NSImage> = {
+        let cache = NSCache<NSUUID, NSImage>()
+        cache.countLimit = 30
+        cache.totalCostLimit = 20 * 1024 * 1024  // 20 MB
+        return cache
+    }()
+
+    /// Full-resolution image — loaded on demand from memory or disk.
+    /// Used for preview, paste, share, drag-and-drop. Evicts aggressively.
     var nsImage: NSImage? {
-        guard let data = imageData else { return nil }
         let key = id as NSUUID
-        if let cached = Self.imageCache.object(forKey: key) {
+        if let cached = Self.fullImageCache.object(forKey: key) {
             return cached
         }
-        guard let image = NSImage(data: data) else { return nil }
-        Self.imageCache.setObject(image, forKey: key)
+        let data = imageData ?? ImageStore.shared.loadData(for: id)
+        guard let data = data, let image = NSImage(data: data) else { return nil }
+        let cost = Int(image.size.width * image.size.height * 4)
+        Self.fullImageCache.setObject(image, forKey: key, cost: cost)
         return image
     }
 
+    /// Downscaled thumbnail for card display (~220pt wide).
+    /// Uses CGImageSource to create a thumbnail directly from compressed data,
+    /// avoiding the cost of fully decoding the image into memory.
+    var thumbnail: NSImage? {
+        let key = id as NSUUID
+        if let cached = Self.thumbnailCache.object(forKey: key) {
+            return cached
+        }
+        // Try to generate thumbnail directly from compressed data (no full decode)
+        let data = imageData ?? ImageStore.shared.loadData(for: id)
+        guard let data = data else { return nil }
+        if let thumb = Self.createThumbnailFromData(data, maxDimension: 440) {
+            let cost = Int(thumb.size.width * thumb.size.height * 4)
+            Self.thumbnailCache.setObject(thumb, forKey: key, cost: cost)
+            return thumb
+        }
+        return nil
+    }
+
+    /// Evict full-resolution image from cache (call after preview/paste is done).
+    static func evictFullImage(for id: UUID) {
+        fullImageCache.removeObject(forKey: id as NSUUID)
+    }
+
+    /// Create a thumbnail directly from compressed image data using CGImageSource.
+    /// This avoids fully decoding the image into an uncompressed bitmap.
+    private static func createThumbnailFromData(_ data: Data, maxDimension: CGFloat) -> NSImage? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        let options: [CFString: Any] = [
+            kCGImageSourceThumbnailMaxPixelSize: maxDimension,
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+        ]
+        guard let cgThumb = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
+        return NSImage(cgImage: cgThumb, size: NSSize(width: cgThumb.width, height: cgThumb.height))
+    }
+
+    /// Image dimensions parsed from the content string (e.g. "1920×1080")
+    /// or read from the compressed data via CGImageSource — avoids loading the full image.
     var imageDimensions: String? {
-        guard let image = nsImage else { return nil }
-        let width = Int(image.size.width)
-        let height = Int(image.size.height)
+        // Content is stored as "WIDTHxHEIGHT" at capture time — try parsing it first
+        let parts = content.split(separator: "×")
+        if parts.count == 2, let w = Int(parts[0].trimmingCharacters(in: .whitespaces)),
+           let h = Int(parts[1].trimmingCharacters(in: .whitespaces)) {
+            return "\(w) × \(h)"
+        }
+        // Fallback: read dimensions from compressed data metadata (no full decode)
+        let data = imageData ?? ImageStore.shared.loadData(for: id)
+        guard let data = data,
+              let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? Int,
+              let height = properties[kCGImagePropertyPixelHeight] as? Int else {
+            return nil
+        }
         return "\(width) × \(height)"
     }
     
@@ -273,8 +477,10 @@ struct ClipboardItem: Identifiable, Equatable {
     
     static func == (lhs: ClipboardItem, rhs: ClipboardItem) -> Bool {
         lhs.id == rhs.id
+            && lhs.content == rhs.content
+            && lhs.type == rhs.type
             && lhs.linkMetadata === rhs.linkMetadata
-            && lhs.rtfData == rhs.rtfData
+            && lhs.hasRTF == rhs.hasRTF
             && lhs.detectedTags == rhs.detectedTags
     }
 }
@@ -294,12 +500,8 @@ struct CodableSourceApp: Codable {
     }
 
     func toSourceApp() -> SourceApp {
-        var icon: NSImage?
-        if let bundleId = bundleIdentifier,
-           let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId) {
-            icon = NSWorkspace.shared.icon(forFile: appURL.path)
-        }
-        return SourceApp(bundleIdentifier: bundleIdentifier, name: name, icon: icon)
+        // Icon is resolved lazily from the shared cache — no need to load here
+        return SourceApp(bundleIdentifier: bundleIdentifier, name: name, icon: nil)
     }
 }
 
@@ -308,28 +510,56 @@ struct CodableClipboardItem: Codable {
     let content: String
     let timestamp: Date
     let type: ClipboardItem.ClipboardType
-    let imageBase64: String?
+    let hasImage: Bool
+    let hasRTF: Bool
     let fileURLPaths: [String]?
     let sourceApp: CodableSourceApp?
-    let rtfBase64: String?
+    let rtfBase64: String?  // Legacy: kept for migration from older history.json files
     let detectedTags: Set<ContentTag>?
+
+    enum CodingKeys: String, CodingKey {
+        case id, content, timestamp, type, hasImage, hasRTF, fileURLPaths, sourceApp, rtfBase64, detectedTags
+    }
 
     init(from item: ClipboardItem) {
         self.id = item.id
         self.content = item.content
         self.timestamp = item.timestamp
         self.type = item.type
-        self.imageBase64 = item.imageData?.base64EncodedString()
+        self.hasImage = item.hasImage
+        self.hasRTF = item.hasRTF
         self.fileURLPaths = item.fileURLs?.map { $0.path }
         self.sourceApp = item.sourceApp.map { CodableSourceApp(from: $0) }
-        self.rtfBase64 = item.rtfData?.base64EncodedString()
+        // Don't re-serialize RTF to base64 — it's already on disk via RTFStore.
+        // Only include base64 if data hasn't been migrated to disk yet.
+        self.rtfBase64 = nil
         self.detectedTags = item.detectedTags.isEmpty ? nil : item.detectedTags
     }
 
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        content = try container.decode(String.self, forKey: .content)
+        timestamp = try container.decode(Date.self, forKey: .timestamp)
+        type = try container.decode(ClipboardItem.ClipboardType.self, forKey: .type)
+        hasImage = try container.decodeIfPresent(Bool.self, forKey: .hasImage) ?? false
+        fileURLPaths = try container.decodeIfPresent([String].self, forKey: .fileURLPaths)
+        sourceApp = try container.decodeIfPresent(CodableSourceApp.self, forKey: .sourceApp)
+        rtfBase64 = try container.decodeIfPresent(String.self, forKey: .rtfBase64)
+        detectedTags = try container.decodeIfPresent(Set<ContentTag>.self, forKey: .detectedTags)
+        // hasRTF: true if the flag is set, OR if legacy base64 data exists, OR if an RTF file exists on disk
+        let flagValue = try container.decodeIfPresent(Bool.self, forKey: .hasRTF) ?? false
+        hasRTF = flagValue || rtfBase64 != nil || RTFStore.shared.exists(for: id)
+    }
+
     func toClipboardItem() -> ClipboardItem {
-        let imageData = imageBase64.flatMap { Data(base64Encoded: $0) }
+        // Migrate legacy base64 RTF data to disk if needed
+        if let base64 = rtfBase64, let data = Data(base64Encoded: base64),
+           !RTFStore.shared.exists(for: id) {
+            RTFStore.shared.save(data: data, for: id)
+        }
+
         let fileURLs = fileURLPaths?.map { URL(fileURLWithPath: $0) }
-        let rtfData = rtfBase64.flatMap { Data(base64Encoded: $0) }
         let source = sourceApp?.toSourceApp()
 
         return ClipboardItem(
@@ -337,11 +567,13 @@ struct CodableClipboardItem: Codable {
             content: content,
             timestamp: timestamp,
             type: type,
-            imageData: imageData,
+            imageData: nil,
+            hasImage: hasImage,
             fileURLs: fileURLs,
             sourceApp: source,
             linkMetadata: nil,  // Re-fetched on demand
-            rtfData: rtfData,
+            rtfData: nil,       // Loaded on demand from RTFStore
+            hasRTF: hasRTF,
             detectedTags: detectedTags ?? []
         )
     }

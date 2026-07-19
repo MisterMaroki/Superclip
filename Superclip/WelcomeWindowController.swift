@@ -22,8 +22,7 @@ final class WelcomeWindowController: NSWindowController, NSWindowDelegate {
         win.titleVisibility = .hidden
         win.isMovableByWindowBackground = true
         win.isReleasedWhenClosed = false
-        win.backgroundColor = NSColor(red: 0.02, green: 0.02, blue: 0.027, alpha: 1)
-        win.appearance = NSAppearance(named: .darkAqua)
+        win.backgroundColor = .windowBackgroundColor
         super.init(window: win)
         win.delegate = self
     }

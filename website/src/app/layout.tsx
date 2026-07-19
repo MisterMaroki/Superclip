@@ -112,7 +112,7 @@ function JsonLd() {
       "Native macOS clipboard manager with clipboard history, pinboards, snippets, quick actions, smart filters, paste stack, and built-in OCR. Half the price of Paste.",
     url: siteUrl,
     applicationCategory: "UtilitiesApplication",
-    operatingSystem: "macOS 12+",
+    operatingSystem: "macOS 14+",
     offers: [
       {
         "@type": "Offer",
@@ -216,7 +216,7 @@ function JsonLd() {
         name: "What macOS versions does Superclip support?",
         acceptedAnswer: {
           "@type": "Answer",
-          text: "Superclip requires macOS 12 (Monterey) or later. It runs natively on both Apple Silicon and Intel Macs.",
+          text: "Superclip requires macOS 14 (Sonoma) or later. It runs natively on both Apple Silicon and Intel Macs.",
         },
       },
     ],

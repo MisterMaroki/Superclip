@@ -103,7 +103,7 @@ export function Pricing() {
                 <span className="h-3 w-px bg-[var(--gray-200)]" />
                 <span>No credit card</span>
                 <span className="h-3 w-px bg-[var(--gray-200)]" />
-                <span>macOS 12+</span>
+                <span>macOS 14+</span>
               </div>
             </div>
 

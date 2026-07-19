@@ -27,7 +27,7 @@ const faqs = [
   },
   {
     q: "What macOS versions are supported?",
-    a: "Superclip requires macOS 12 (Monterey) or later. It runs natively on both Apple Silicon and Intel Macs.",
+    a: "Superclip requires macOS 14 (Sonoma) or later. It runs natively on both Apple Silicon and Intel Macs.",
   },
 ];
 

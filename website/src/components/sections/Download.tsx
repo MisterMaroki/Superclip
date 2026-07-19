@@ -20,7 +20,8 @@ export function Download() {
             {/* Download Button */}
             <div className="mt-10">
               <a
-                href="#"
+                href="/Superclip.dmg"
+                download
                 className="inline-flex h-16 items-center gap-3 border border-[var(--black)] bg-[var(--black)] px-12 text-[17px] font-medium tracking-[0.025em] text-[var(--white)] transition-colors duration-150 hover:bg-[var(--gray-800)]"
               >
                 <svg
@@ -46,7 +47,7 @@ export function Download() {
                 "No account needed",
                 "No credit card",
                 "30-second setup",
-                "macOS 12+",
+                "macOS 14+",
               ].map((text) => (
                 <span key={text} className="flex items-center gap-1.5">
                   <svg

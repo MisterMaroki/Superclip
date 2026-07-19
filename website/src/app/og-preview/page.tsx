@@ -408,7 +408,7 @@ export default function OgPreviewPage() {
 									color: "rgba(255,255,255,0.5)",
 								}}
 							>
-								macOS 12+
+								macOS 14+
 							</span>
 						</div>
 					</div>

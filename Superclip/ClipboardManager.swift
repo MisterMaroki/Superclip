@@ -5,6 +5,7 @@
 
 import AppKit
 import Combine
+import ImageIO
 import LinkPresentation
 
 // Link metadata fetching service
@@ -101,6 +102,10 @@ class ClipboardManager: ObservableObject {
   // O(1) dedup lookup — mirrors the uniqueIdentifiers present in `history`
   private var knownIdentifiers = Set<String>()
 
+  /// Returns true for items that must survive history trimming (e.g. pinned
+  /// to a pinboard). Set by the AppDelegate once managers are wired up.
+  var isItemProtected: ((UUID) -> Bool)?
+
   // Persistence
   let historyStore = HistoryStore()
 
@@ -119,10 +124,11 @@ class ClipboardManager: ObservableObject {
     // Start monitoring clipboard changes (if enabled)
     if settings.monitorClipboard {
       startMonitoring()
+      // Load initial clipboard content (picks up whatever is currently on the
+      // pasteboard). Only when monitoring is on — capturing at launch while
+      // the user has monitoring disabled is a privacy violation.
+      loadCurrentClipboard()
     }
-
-    // Load initial clipboard content (picks up whatever is currently on the pasteboard)
-    loadCurrentClipboard()
 
     // Observe settings changes
     observeSettings()
@@ -191,18 +197,29 @@ class ClipboardManager: ObservableObject {
       .dropFirst()
       .receive(on: DispatchQueue.main)
       .sink { [weak self] newSize in
-        guard let self = self else { return }
-        if newSize > 0 && self.history.count > newSize {
-          let trimmed = self.history[newSize...]
-          for item in trimmed {
-            self.knownIdentifiers.remove(item.uniqueIdentifier)
-            if item.hasImage { ImageStore.shared.delete(for: item.id) }
-            if item.hasRTF   { RTFStore.shared.delete(for: item.id) }
-          }
-          self.history.removeSubrange(newSize...)
-        }
+        self?.trimHistory(to: newSize)
       }
       .store(in: &cancellables)
+  }
+
+  /// Trim history to `maxSize`, oldest first, skipping pinned items —
+  /// pinboards reference history items by ID, so trimming a pinned item
+  /// would silently destroy content the user chose to keep.
+  private func trimHistory(to maxSize: Int) {
+    guard maxSize > 0, history.count > maxSize else { return }
+    var overflow = history.count - maxSize
+    var index = history.count - 1
+    while overflow > 0 && index >= 0 {
+      let item = history[index]
+      if isItemProtected?(item.id) != true {
+        knownIdentifiers.remove(item.uniqueIdentifier)
+        if item.hasImage { ImageStore.shared.delete(for: item.id) }
+        if item.hasRTF   { RTFStore.shared.delete(for: item.id) }
+        history.remove(at: index)
+        overflow -= 1
+      }
+      index -= 1
+    }
   }
 
   private func startUndoCleanupTimer() {
@@ -304,13 +321,10 @@ class ClipboardManager: ObservableObject {
     // often have both image data and a file URL reference
     if types.contains(.png) || types.contains(.tiff) {
       if let imageData = pasteboard.data(forType: .png) ?? pasteboard.data(forType: .tiff) {
-        // Create a description for the image
-        var description = "Image"
-        if let image = NSImage(data: imageData) {
-          description = "\(Int(image.size.width))×\(Int(image.size.height))"
-        }
+        // Read dimensions from the compressed header — NSImage(data:) fully
+        // decodes the bitmap just to answer a size question.
         var item = ClipboardItem(
-          content: description,
+          content: Self.imageDescription(from: imageData),
           type: .image,
           imageData: imageData,
           sourceApp: sourceApp
@@ -332,23 +346,25 @@ class ClipboardManager: ObservableObject {
           "jpg", "jpeg", "png", "gif", "bmp", "tiff", "tif", "webp", "heic", "heif",
         ]
         if urls.count == 1, let url = urls.first,
-          imageExtensions.contains(url.pathExtension.lowercased()),
-          let imageData = try? Data(contentsOf: url)
+          imageExtensions.contains(url.pathExtension.lowercased())
         {
-          var description = "Image"
-          if let image = NSImage(data: imageData) {
-            description = "\(Int(image.size.width))×\(Int(image.size.height))"
+          // Read + hash the file off the main thread — a large image file
+          // would otherwise beachball the whole app inside the poll timer.
+          DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self, let imageData = try? Data(contentsOf: url) else { return }
+            var item = ClipboardItem(
+              content: Self.imageDescription(from: imageData),
+              type: .image,
+              imageData: imageData,
+              fileURLs: urls,  // Keep file URL for reference
+              sourceApp: sourceApp
+            )
+            ImageStore.shared.save(data: imageData, for: item.id)
+            item.imageData = nil  // Release in-memory bytes; load from disk on demand
+            DispatchQueue.main.async {
+              self.addToHistory(item: item)
+            }
           }
-          var item = ClipboardItem(
-            content: description,
-            type: .image,
-            imageData: imageData,
-            fileURLs: urls,  // Keep file URL for reference
-            sourceApp: sourceApp
-          )
-          ImageStore.shared.save(data: imageData, for: item.id)
-          item.imageData = nil  // Release in-memory bytes; load from disk on demand
-          addToHistory(item: item)
           return
         }
 
@@ -395,11 +411,32 @@ class ClipboardManager: ObservableObject {
     }
   }
 
-  private func addToHistory(item: ClipboardItem) {
+  func addToHistory(item: ClipboardItem) {
     let identifier = item.uniqueIdentifier
 
     // Check if already at front
     if let firstItem = history.first, firstItem.uniqueIdentifier == identifier {
+      deleteStores(forDiscarded: item, keptId: firstItem.id)
+      // Bump the timestamp so the re-copy registers as recent activity and
+      // observers (e.g. an active paste stack) see a change event for it.
+      DispatchQueue.main.async {
+        if let current = self.history.first, current.uniqueIdentifier == identifier {
+          self.history[0] = ClipboardItem(
+            id: current.id,
+            content: current.content,
+            timestamp: Date(),
+            type: current.type,
+            imageData: current.imageData,
+            hasImage: current.hasImage,
+            imageHash: current.imageHash,
+            fileURLs: current.fileURLs,
+            sourceApp: current.sourceApp,
+            linkMetadata: current.linkMetadata,
+            hasRTF: current.hasRTF,
+            detectedTags: current.detectedTags
+          )
+        }
+      }
       return
     }
 
@@ -413,6 +450,7 @@ class ClipboardManager: ObservableObject {
         type: item.type,
         imageData: item.imageData,
         hasImage: item.hasImage,
+        imageHash: item.imageHash,
         fileURLs: item.fileURLs,
         sourceApp: item.sourceApp,
         linkMetadata: item.linkMetadata,
@@ -429,6 +467,7 @@ class ClipboardManager: ObservableObject {
       {
         // Remove existing item and move to front with updated timestamp
         let existingItem = self.history.remove(at: existingIndex)
+        self.deleteStores(forDiscarded: taggedItem, keptId: existingItem.id)
         let updatedItem = ClipboardItem(
           id: existingItem.id,
           content: existingItem.content,
@@ -436,6 +475,7 @@ class ClipboardManager: ObservableObject {
           type: existingItem.type,
           imageData: existingItem.imageData,
           hasImage: existingItem.hasImage,
+          imageHash: existingItem.imageHash,
           fileURLs: existingItem.fileURLs,
           sourceApp: existingItem.sourceApp,
           linkMetadata: existingItem.linkMetadata,
@@ -454,17 +494,19 @@ class ClipboardManager: ObservableObject {
         }
 
         // Limit history size (0 = unlimited)
-        let maxSize = self.settings.maxHistorySize
-        if maxSize > 0 && self.history.count > maxSize {
-          for item in self.history[maxSize...] {
-            self.knownIdentifiers.remove(item.uniqueIdentifier)
-            if item.hasImage { ImageStore.shared.delete(for: item.id) }
-            if item.hasRTF   { RTFStore.shared.delete(for: item.id) }
-          }
-          self.history.removeSubrange(maxSize...)
-        }
+        self.trimHistory(to: self.settings.maxHistorySize)
       }
     }
+  }
+
+  /// Remove a not-inserted duplicate's on-disk files. Capture eagerly writes
+  /// image/RTF bytes to disk under a fresh UUID before dedup runs; when the
+  /// incoming item is discarded in favor of an existing one, those files
+  /// would otherwise be orphaned until the next launch's cleanup pass.
+  private func deleteStores(forDiscarded item: ClipboardItem, keptId: UUID) {
+    guard item.id != keptId else { return }
+    if item.hasImage { ImageStore.shared.delete(for: item.id) }
+    if item.hasRTF   { RTFStore.shared.delete(for: item.id) }
   }
 
   private func fetchLinkMetadata(for item: ClipboardItem) {
@@ -496,6 +538,7 @@ class ClipboardManager: ObservableObject {
         type: current.type,
         imageData: current.imageData,
         hasImage: current.hasImage,
+        imageHash: current.imageHash,
         fileURLs: current.fileURLs,
         sourceApp: current.sourceApp,
         linkMetadata: current.linkMetadata,
@@ -549,6 +592,7 @@ class ClipboardManager: ObservableObject {
         type: current.type,
         imageData: current.imageData,
         hasImage: current.hasImage,
+        imageHash: current.imageHash,
         fileURLs: current.fileURLs,
         sourceApp: current.sourceApp,
         linkMetadata: current.linkMetadata,
@@ -611,6 +655,17 @@ class ClipboardManager: ObservableObject {
     }
   }
 
+  /// Image dimensions string ("W×H") read from compressed data headers via
+  /// CGImageSource — no full bitmap decode.
+  private static func imageDescription(from data: Data) -> String {
+    guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+      let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+      let width = props[kCGImagePropertyPixelWidth] as? Int,
+      let height = props[kCGImagePropertyPixelHeight] as? Int
+    else { return "Image" }
+    return "\(width)×\(height)"
+  }
+
   /// Determine if a string should be treated as a URL
   private func isValidURL(_ string: String) -> Bool {
     let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -662,6 +717,12 @@ class ClipboardManager: ObservableObject {
         // Re-detect content tags for the updated content
         let newTags = ContentDetector.detect(text: trimmedContent)
 
+        // A plain-text edit invalidates any stored rich text — keeping the
+        // old RTF would paste the pre-edit content into RTF-aware apps.
+        if existingItem.hasRTF {
+          RTFStore.shared.delete(for: existingItem.id)
+        }
+
         let updatedItem = ClipboardItem(
           id: existingItem.id,
           content: trimmedContent,
@@ -669,10 +730,11 @@ class ClipboardManager: ObservableObject {
           type: newType,
           imageData: existingItem.imageData,
           hasImage: existingItem.hasImage,
+          imageHash: existingItem.imageHash,
           fileURLs: existingItem.fileURLs,
           sourceApp: existingItem.sourceApp,
           linkMetadata: newMetadata,
-          hasRTF: existingItem.hasRTF,
+          hasRTF: false,
           detectedTags: newTags
         )
         self.history[index] = updatedItem
@@ -714,6 +776,7 @@ class ClipboardManager: ObservableObject {
           type: newType,
           imageData: existingItem.imageData,
           hasImage: existingItem.hasImage,
+          imageHash: existingItem.imageHash,
           fileURLs: existingItem.fileURLs,
           sourceApp: existingItem.sourceApp,
           linkMetadata: newMetadata,
@@ -734,6 +797,11 @@ class ClipboardManager: ObservableObject {
     DispatchQueue.main.async {
       self.history.removeAll()
       self.knownIdentifiers.removeAll()
+      // Drop pending undos — their backing image/RTF files are wiped below,
+      // so restoring one would produce a permanently broken card.
+      self.deletedItems.removeAll()
+      self.undoCleanupTimer?.invalidate()
+      self.undoCleanupTimer = nil
       // Also delete the persisted file so cleared history doesn't come back
       self.historyStore.deleteHistoryFile()
       ImageStore.shared.deleteAll()

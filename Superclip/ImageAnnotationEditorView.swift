@@ -37,6 +37,7 @@ struct ImageAnnotationEditorView: View {
 
   // Precomputed blur
   @State private var precomputedBlurImage: NSImage?
+  @State private var blurPrecomputeWorkItem: DispatchWorkItem?
 
   // Pinch-to-zoom anchor
   @State private var magnifyAnchorScale: Double = 1.0
@@ -50,6 +51,9 @@ struct ImageAnnotationEditorView: View {
     .red, .orange, .yellow, .green, .blue, .purple, .white, .black,
   ]
 
+  /// Pixel-normalized copy of the original — see `pixelNormalized(_:pngData:)`.
+  private let baseImage: NSImage
+
   init(
     originalImage: NSImage,
     pngData: Data,
@@ -60,7 +64,47 @@ struct ImageAnnotationEditorView: View {
     self.pngData = pngData
     self.onSave = onSave
     self.onDismiss = onDismiss
-    self._editedImage = State(initialValue: originalImage)
+    let normalized = Self.pixelNormalized(originalImage, pngData: pngData)
+    self.baseImage = normalized
+    self._editedImage = State(initialValue: normalized)
+  }
+
+  /// Returns an NSImage whose point size equals its pixel size (72 dpi).
+  /// DPI-tagged images (e.g. macOS screenshots at 144 dpi) otherwise have
+  /// point ≠ pixel dimensions, which corrupts every rect computed against
+  /// `image.size` and then applied to the CGImage: blur redaction regions,
+  /// crop rects, and flatten output resolution.
+  private static func pixelNormalized(_ image: NSImage, pngData: Data) -> NSImage {
+    if let source = CGImageSourceCreateWithData(pngData as CFData, nil),
+      let cg = CGImageSourceCreateImageAtIndex(source, 0, nil)
+    {
+      return NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
+    }
+    if let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+      return NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
+    }
+    return image
+  }
+
+  /// Render into an explicit bitmap context of exact pixel dimensions.
+  /// `NSImage.lockFocus()` rasterizes at the main display's backing scale,
+  /// which halves or doubles exported resolution depending on the screen.
+  private static func renderBitmapCG(
+    width: Int, height: Int, draw: (CGContext) -> Void
+  ) -> CGImage? {
+    guard width > 0, height > 0,
+      let space = CGColorSpace(name: CGColorSpace.sRGB),
+      let ctx = CGContext(
+        data: nil, width: width, height: height,
+        bitsPerComponent: 8, bytesPerRow: 0,
+        space: space,
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+    else { return nil }
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = NSGraphicsContext(cgContext: ctx, flipped: false)
+    draw(ctx)
+    NSGraphicsContext.restoreGraphicsState()
+    return ctx.makeImage()
   }
 
   var imageDimensions: String {
@@ -480,7 +524,7 @@ struct ImageAnnotationEditorView: View {
           } label: {
             Text("Gaussian")
               .font(.system(size: 10, weight: .medium))
-              .foregroundStyle(annotationState.blurStyle == .gaussian ? .white : Brand.gray600)
+              .foregroundStyle(annotationState.blurStyle == .gaussian ? Brand.white : Brand.gray600)
               .padding(.horizontal, 8)
               .padding(.vertical, 4)
               .background(annotationState.blurStyle == .gaussian ? Brand.black : Color.primary.opacity(0.1))
@@ -492,7 +536,7 @@ struct ImageAnnotationEditorView: View {
           } label: {
             Text("Pixelate")
               .font(.system(size: 10, weight: .medium))
-              .foregroundStyle(annotationState.blurStyle == .pixelate ? .white : Brand.gray600)
+              .foregroundStyle(annotationState.blurStyle == .pixelate ? Brand.white : Brand.gray600)
               .padding(.horizontal, 8)
               .padding(.vertical, 4)
               .background(annotationState.blurStyle == .pixelate ? Brand.black : Color.primary.opacity(0.1))
@@ -536,7 +580,7 @@ struct ImageAnnotationEditorView: View {
     } label: {
       Image(systemName: icon)
         .font(.system(size: 12))
-        .foregroundStyle(annotationState.fillMode == mode ? .white : Brand.gray600)
+        .foregroundStyle(annotationState.fillMode == mode ? Brand.white : Brand.gray600)
         .frame(width: 28, height: 28)
         .background(annotationState.fillMode == mode ? Brand.black : Color.primary.opacity(0.08))
     }
@@ -620,10 +664,10 @@ struct ImageAnnotationEditorView: View {
       VStack(spacing: 2) {
         Image(systemName: tool.icon)
           .font(.system(size: 14))
-          .foregroundStyle(isActive ? .white : .white.opacity(0.7))
+          .foregroundStyle(isActive ? Brand.white : .primary.opacity(0.7))
         Text(tool.label)
           .font(.system(size: 8))
-          .foregroundStyle(isActive ? .white : .white.opacity(0.5))
+          .foregroundStyle(isActive ? Brand.white : .primary.opacity(0.5))
       }
       .frame(width: 42, height: 38)
       .background(isActive ? Brand.black : Color.primary.opacity(0.05))
@@ -715,7 +759,7 @@ struct ImageAnnotationEditorView: View {
     isCropping = false
     cropStart = .zero
     cropEnd = .zero
-    editedImage = originalImage
+    editedImage = baseImage
     annotationState.reset()
     precomputedBlurImage = nil
   }
@@ -732,81 +776,89 @@ struct ImageAnnotationEditorView: View {
   }
 
   private func precomputeBlur() {
+    // Debounce + cancel: the radius slider fires per tick, and each compute
+    // renders a full-resolution blurred copy. Without coalescing, one slider
+    // drag on a 5K screenshot spawns dozens of concurrent CoreImage renders.
+    blurPrecomputeWorkItem?.cancel()
     let img = editedImage
     let style = annotationState.blurStyle
     let radius = annotationState.blurRadius
-    DispatchQueue.global(qos: .userInteractive).async {
+    let work = DispatchWorkItem {
       let blurred = BlurTool.precomputeBlurred(
         image: img,
         style: style,
         radius: radius
       )
       DispatchQueue.main.async {
+        // Drop stale results that finish after the parameters changed
+        guard annotationState.blurStyle == style,
+          annotationState.blurRadius == radius,
+          editedImage === img
+        else { return }
         precomputedBlurImage = blurred
       }
     }
+    blurPrecomputeWorkItem = work
+    DispatchQueue.global(qos: .userInteractive).asyncAfter(deadline: .now() + 0.12, execute: work)
   }
 
   private func applyRotation(degrees: Double) {
-    guard editedImage.cgImage(forProposedRect: nil, context: nil, hints: nil) != nil else { return }
+    guard let cg = editedImage.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
 
-    let size = editedImage.size
+    let w = cg.width
+    let h = cg.height
     let radians = degrees * .pi / 180
 
-    let newWidth =
-      abs(size.width * CoreGraphics.cos(radians)) + abs(size.height * CoreGraphics.sin(radians))
-    let newHeight =
-      abs(size.width * CoreGraphics.sin(radians)) + abs(size.height * CoreGraphics.cos(radians))
-    let newSize = NSSize(width: newWidth, height: newHeight)
+    let newWidth = Int((abs(Double(w) * CoreGraphics.cos(radians)) + abs(Double(h) * CoreGraphics.sin(radians))).rounded())
+    let newHeight = Int((abs(Double(w) * CoreGraphics.sin(radians)) + abs(Double(h) * CoreGraphics.cos(radians))).rounded())
 
-    let newImage = NSImage(size: newSize)
-    newImage.lockFocus()
+    guard let outCG = Self.renderBitmapCG(width: newWidth, height: newHeight, draw: { ctx in
+      ctx.translateBy(x: CGFloat(newWidth) / 2, y: CGFloat(newHeight) / 2)
+      ctx.rotate(by: CGFloat(radians))
+      ctx.translateBy(x: -CGFloat(w) / 2, y: -CGFloat(h) / 2)
+      ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
+    }) else { return }
 
-    let transform = NSAffineTransform()
-    transform.translateX(by: newSize.width / 2, yBy: newSize.height / 2)
-    transform.rotate(byDegrees: CGFloat(degrees))
-    transform.translateX(by: -size.width / 2, yBy: -size.height / 2)
-    transform.concat()
-
-    editedImage.draw(in: NSRect(origin: .zero, size: size))
-    newImage.unlockFocus()
-    editedImage = newImage
+    editedImage = NSImage(cgImage: outCG, size: NSSize(width: newWidth, height: newHeight))
+    refreshBlurPreviewIfNeeded()
   }
 
   private func applyFlipHorizontal() {
-    isFlippedHorizontally.toggle()
+    guard let cg = editedImage.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
+    let w = cg.width
+    let h = cg.height
 
-    let size = editedImage.size
-    let newImage = NSImage(size: size)
-    newImage.lockFocus()
+    guard let outCG = Self.renderBitmapCG(width: w, height: h, draw: { ctx in
+      ctx.translateBy(x: CGFloat(w), y: 0)
+      ctx.scaleBy(x: -1, y: 1)
+      ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
+    }) else { return }
 
-    let transform = NSAffineTransform()
-    transform.translateX(by: size.width, yBy: 0)
-    transform.scaleX(by: -1, yBy: 1)
-    transform.concat()
-
-    editedImage.draw(in: NSRect(origin: .zero, size: size))
-    newImage.unlockFocus()
-    editedImage = newImage
-    isFlippedHorizontally = false
+    editedImage = NSImage(cgImage: outCG, size: NSSize(width: w, height: h))
+    refreshBlurPreviewIfNeeded()
   }
 
   private func applyFlipVertical() {
-    isFlippedVertically.toggle()
+    guard let cg = editedImage.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
+    let w = cg.width
+    let h = cg.height
 
-    let size = editedImage.size
-    let newImage = NSImage(size: size)
-    newImage.lockFocus()
+    guard let outCG = Self.renderBitmapCG(width: w, height: h, draw: { ctx in
+      ctx.translateBy(x: 0, y: CGFloat(h))
+      ctx.scaleBy(x: 1, y: -1)
+      ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
+    }) else { return }
 
-    let transform = NSAffineTransform()
-    transform.translateX(by: 0, yBy: size.height)
-    transform.scaleX(by: 1, yBy: -1)
-    transform.concat()
+    editedImage = NSImage(cgImage: outCG, size: NSSize(width: w, height: h))
+    refreshBlurPreviewIfNeeded()
+  }
 
-    editedImage.draw(in: NSRect(origin: .zero, size: size))
-    newImage.unlockFocus()
-    editedImage = newImage
-    isFlippedVertically = false
+  /// The blur preview is a snapshot of the image at compute time — refresh it
+  /// after any transform so committed blurs don't preview stale content.
+  private func refreshBlurPreviewIfNeeded() {
+    if annotationState.selectedTool == .blur || annotationState.annotations.contains(where: { $0.tool == .blur }) {
+      precomputeBlur()
+    }
   }
 
   private func performCrop(normalizedRect: CGRect) {
@@ -847,12 +899,13 @@ struct ImageAnnotationEditorView: View {
 
     editedImage = NSImage(
       cgImage: croppedCGImage,
-      size: NSSize(width: cropWidth, height: cropHeight)
+      size: NSSize(width: croppedCGImage.width, height: croppedCGImage.height)
     )
 
     cropStart = .zero
     cropEnd = .zero
     isCropping = false
+    refreshBlurPreviewIfNeeded()
   }
 
   // MARK: - Flatten & Export
@@ -887,29 +940,27 @@ struct ImageAnnotationEditorView: View {
       }
     }
 
-    // Step 2: Draw non-blur annotations on top
-    let composited = NSImage(size: imageSize)
-    composited.lockFocus()
+    // Step 2: Draw non-blur annotations on top, rendering into an explicit
+    // bitmap context at the image's exact pixel dimensions (lockFocus would
+    // rasterize at the display's backing scale, changing output resolution).
+    guard let workingCG = workingImage.cgImage(forProposedRect: nil, context: nil, hints: nil)
+    else { return (workingImage, nil) }
+    let pixelWidth = workingCG.width
+    let pixelHeight = workingCG.height
+    let pixelSize = NSSize(width: pixelWidth, height: pixelHeight)
 
-    workingImage.draw(in: NSRect(origin: .zero, size: imageSize))
-
-    guard let cgContext = NSGraphicsContext.current?.cgContext else {
-      composited.unlockFocus()
+    let nonBlurAnnotations = annotationState.annotations.filter { $0.tool != .blur }
+    guard let outCG = Self.renderBitmapCG(width: pixelWidth, height: pixelHeight, draw: { ctx in
+      ctx.draw(workingCG, in: CGRect(x: 0, y: 0, width: pixelWidth, height: pixelHeight))
+      for annotation in nonBlurAnnotations {
+        renderAnnotationToCGContext(annotation, context: ctx, imageSize: pixelSize)
+      }
+    }) else {
       return (workingImage, nil)
     }
 
-    let nonBlurAnnotations = annotationState.annotations.filter { $0.tool != .blur }
-    for annotation in nonBlurAnnotations {
-      renderAnnotationToCGContext(annotation, context: cgContext, imageSize: imageSize)
-    }
-
-    composited.unlockFocus()
-
-    // Generate PNG data
-    guard let cgImage = composited.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
-      return (composited, nil)
-    }
-    let rep = NSBitmapImageRep(cgImage: cgImage)
+    let composited = NSImage(cgImage: outCG, size: pixelSize)
+    let rep = NSBitmapImageRep(cgImage: outCG)
     let png = rep.representation(using: .png, properties: [:])
 
     return (composited, png)
@@ -1214,10 +1265,10 @@ struct ToolButton: View {
       VStack(spacing: 4) {
         Image(systemName: icon)
           .font(.system(size: 16))
-          .foregroundStyle(isActive ? .white : .white.opacity(0.7))
+          .foregroundStyle(isActive ? Brand.white : .primary.opacity(0.7))
         Text(label)
           .font(.system(size: 9))
-          .foregroundStyle(isActive ? .white : .white.opacity(0.5))
+          .foregroundStyle(isActive ? Brand.white : .primary.opacity(0.5))
       }
       .frame(width: 50, height: 44)
       .background(isActive ? Brand.black : Color.primary.opacity(0.05))

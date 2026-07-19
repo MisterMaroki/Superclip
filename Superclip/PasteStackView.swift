@@ -331,7 +331,7 @@ struct PasteStackGridTile: View {
             // Index badge
             Text("\(index)")
                 .font(.system(size: 9, weight: .bold, design: .monospaced))
-                .foregroundStyle(.white)
+                .foregroundStyle(Brand.white)
                 .padding(.horizontal, 5)
                 .padding(.vertical, 2)
                 .background(Rectangle().fill(Brand.black.opacity(0.55)))
@@ -346,7 +346,7 @@ struct PasteStackGridTile: View {
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 14))
-                            .foregroundStyle(.white.opacity(0.85))
+                            .foregroundStyle(Brand.white.opacity(0.85))
                     }
                     .buttonStyle(.plain)
                     .padding(4)
@@ -372,7 +372,9 @@ struct PasteStackGridTile: View {
     var tileContent: some View {
         switch item.type {
         case .image:
-            if let thumb = item.thumbnail ?? item.nsImage {
+            // Thumbnail only — falling back to item.nsImage decodes the
+            // full-resolution image inside a list row's body.
+            if let thumb = item.thumbnail {
                 Image(nsImage: thumb)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
@@ -494,6 +496,10 @@ struct PasteStackItemRow: View {
     }
 
     private func generateVideoThumbnail(for url: URL) {
+        if let cached = MediaThumbnailCache.shared.object(forKey: url as NSURL) {
+            mediaThumbnail = cached
+            return
+        }
         DispatchQueue.global(qos: .userInitiated).async {
             let asset = AVAsset(url: url)
             let imageGenerator = AVAssetImageGenerator(asset: asset)
@@ -506,6 +512,7 @@ struct PasteStackItemRow: View {
                 let cgImage = try imageGenerator.copyCGImage(at: time, actualTime: nil)
                 let thumbnail = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
                 DispatchQueue.main.async {
+                    MediaThumbnailCache.shared.setObject(thumbnail, forKey: url as NSURL)
                     self.mediaThumbnail = thumbnail
                 }
             } catch {
@@ -588,7 +595,9 @@ struct PasteStackItemRow: View {
         switch item.type {
         case .image:
             HStack(alignment: .top, spacing: 6) {
-                if let thumb = item.thumbnail ?? item.nsImage {
+                // Thumbnail only — falling back to item.nsImage decodes the
+            // full-resolution image inside a list row's body.
+            if let thumb = item.thumbnail {
                     Image(nsImage: thumb)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
@@ -624,16 +633,14 @@ struct PasteStackItemRow: View {
                 // Show thumbnail for media files
                 if urls.count == 1 {
                     if isImageFile(firstURL) {
-                        // Image file - show image thumbnail
-                        if let image = NSImage(contentsOf: firstURL) {
-                            Image(nsImage: image)
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                                .frame(width: 32, height: 32)
-                                .clipShape(Rectangle())
-                        } else {
-                            defaultFileIcon(for: firstURL)
-                        }
+                        // System icon — decoding the real image at full
+                        // resolution for a 32×32 badge re-ran on every
+                        // body evaluation (including hover changes).
+                        Image(nsImage: NSWorkspace.shared.icon(forFile: firstURL.path))
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: 32, height: 32)
+                            .clipShape(Rectangle())
                     } else if isVideoFile(firstURL) {
                         // Video file - show video thumbnail with play overlay
                         ZStack {

@@ -3,6 +3,7 @@
 //  Superclip
 //
 
+import AppKit
 import Foundation
 
 /// Manages on-disk storage for clipboard image data.
@@ -59,13 +60,19 @@ class ImageStore {
     }
 
     /// Remove image files that are not in the provided set of valid IDs.
+    /// Recently written files are skipped: `validIDs` is a snapshot, and a
+    /// capture landing between snapshot and enumeration must not be deleted.
     func cleanupOrphans(keeping validIDs: Set<UUID>) {
         guard let contents = try? FileManager.default.contentsOfDirectory(
             at: directory,
-            includingPropertiesForKeys: nil
+            includingPropertiesForKeys: [.contentModificationDateKey]
         ) else { return }
 
         for fileURL in contents {
+            if let modified = (try? fileURL.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate,
+               Date().timeIntervalSince(modified) < 300 {
+                continue
+            }
             let name = fileURL.deletingPathExtension().lastPathComponent
             guard let fileID = UUID(uuidString: name) else {
                 // Not a UUID-named file — remove it
@@ -101,6 +108,16 @@ class RTFStore {
 
     private let directory: URL
 
+    /// Parsed-attributed-string cache. Card/preview bodies read
+    /// `item.attributedString` on every SwiftUI evaluation; without this,
+    /// each evaluation is a disk read plus a full RTF parse on the main
+    /// thread. Invalidated on save/delete since edits reuse the item ID.
+    private let attributedCache: NSCache<NSUUID, NSAttributedString> = {
+        let c = NSCache<NSUUID, NSAttributedString>()
+        c.countLimit = 40
+        return c
+    }()
+
     private init() {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         directory = appSupport.appendingPathComponent("Superclip/rtf", isDirectory: true)
@@ -108,6 +125,7 @@ class RTFStore {
     }
 
     func save(data: Data, for id: UUID) {
+        attributedCache.removeObject(forKey: id as NSUUID)
         try? data.write(to: fileURL(for: id), options: .atomic)
     }
 
@@ -115,17 +133,33 @@ class RTFStore {
         try? Data(contentsOf: fileURL(for: id))
     }
 
+    /// Load and parse the RTF for an item, memoized.
+    func attributedString(for id: UUID) -> NSAttributedString? {
+        let key = id as NSUUID
+        if let cached = attributedCache.object(forKey: key) { return cached }
+        guard let data = loadData(for: id),
+              let parsed = NSAttributedString(rtf: data, documentAttributes: nil) else { return nil }
+        attributedCache.setObject(parsed, forKey: key)
+        return parsed
+    }
+
     func exists(for id: UUID) -> Bool {
         FileManager.default.fileExists(atPath: fileURL(for: id).path)
     }
 
     func delete(for id: UUID) {
+        attributedCache.removeObject(forKey: id as NSUUID)
         try? FileManager.default.removeItem(at: fileURL(for: id))
     }
 
     func cleanupOrphans(keeping validIDs: Set<UUID>) {
-        guard let contents = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) else { return }
+        guard let contents = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.contentModificationDateKey]) else { return }
         for file in contents {
+            // Skip recently written files — see ImageStore.cleanupOrphans.
+            if let modified = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate,
+               Date().timeIntervalSince(modified) < 300 {
+                continue
+            }
             let name = file.deletingPathExtension().lastPathComponent
             guard let fileID = UUID(uuidString: name) else {
                 try? FileManager.default.removeItem(at: file)
@@ -138,6 +172,7 @@ class RTFStore {
     }
 
     func deleteAll() {
+        attributedCache.removeAllObjects()
         try? FileManager.default.removeItem(at: directory)
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     }

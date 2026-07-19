@@ -38,6 +38,13 @@ class NavigationState: ObservableObject {
 
     var itemCount: Int = 0
 
+    /// ID of the currently selected item in ContentView's *visible* (filtered/
+    /// pinboard) list. AppDelegate flows must resolve items through this, not
+    /// by indexing clipboardManager.history with selectedIndex — the two lists
+    /// diverge whenever search or a pinboard is active. Not @Published: it's a
+    /// data channel, not UI state.
+    var selectedItemId: UUID?
+
     /// Select item by quick-access digit (1-9 for first 9 items, 0 for 10th item)
     func selectByDigit(_ digit: Int) {
         let targetIndex = digit == 0 ? 9 : digit - 1

@@ -60,6 +60,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // Pre-warm ClipboardManager so its init (disk I/O, observers) doesn't delay the first drawer open
     _ = clipboardManager
 
+    // History trimming must never delete items the user pinned to a pinboard
+    clipboardManager.isItemProtected = { [weak self] itemId in
+      self?.pinboardManager.pinboards.contains { $0.itemIds.contains(itemId) } ?? false
+    }
+
     if !UserDefaults.standard.bool(forKey: WelcomeWindowController.hasSeenWelcomeKey) {
       // Seed tutorial cards and pinboard immediately so they're ready before the drawer ever opens
       let pinCardId = clipboardManager.seedTutorialItems()
@@ -240,16 +245,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     pasteStackKeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) {
       [weak self] event in
       guard let self = self,
-        self.pasteStackWindow?.isVisible == true
+        self.pasteStackWindow?.isVisible == true,
+        !self.isSimulatingPaste
       else { return }
 
       // Check for Cmd+V (key code 9 is 'V', Command modifier)
       if event.keyCode == 9 && event.modifierFlags.contains(.command) {
-        DispatchQueue.main.async {
-          // Small delay to let the paste complete before advancing
-          DispatchQueue.main.asyncAfter(deadline: .now()) {
-            self.pasteStackManager.advanceAfterPaste()
-          }
+        // Small delay to let the paste complete before advancing
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+          self.pasteStackManager.advanceAfterPaste()
         }
       }
     }
@@ -418,12 +422,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
           // Ignore key repeat; we use a timer for hold-to-edit
           if event.isARepeat { return nil }
 
-          // Only hold-to-edit for editable (text/url) items
-          let history = self.clipboardManager.history
-          let idx = panelWindow.navigationState.selectedIndex
-          let isEditable =
-            idx >= 0 && idx < history.count
-            && (history[idx].type == .text || history[idx].type == .url)
+          // Only hold-to-edit for editable (text/url) items.
+          // Resolve by ID — selectedIndex indexes ContentView's filtered/
+          // pinboard list, not history.
+          let selectedItem = panelWindow.navigationState.selectedItemId.flatMap { id in
+            self.clipboardManager.history.first(where: { $0.id == id })
+          }
+          let isEditable = selectedItem.map { $0.type == .text || $0.type == .url } ?? false
 
           if isEditable {
             // Start hold: progress animation + completion timer
@@ -660,7 +665,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     if let panel = contentWindow as? ContentPanel {
       panel.animateClose { [weak self] in
         panel.close()
-        self?.contentWindow = nil
+        // Only nil the reference if it still points at this panel — a stale
+        // completion from a rapid close/open cycle must not orphan a newly
+        // opened drawer (which would become unclosable).
+        if self?.contentWindow === panel {
+          self?.contentWindow = nil
+        }
 
         if shouldPaste {
           self?.simulatePaste()
@@ -675,7 +685,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
   }
 
+  /// True while we're posting our own synthetic Cmd+V. The paste-stack
+  /// global monitor must ignore it — advancing on our own event double-
+  /// advances the stack and clobbers the clipboard.
+  private var isSimulatingPaste = false
+
   private func simulatePaste() {
+    isSimulatingPaste = true
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+      self?.isSimulatingPaste = false
+    }
+
     // Create and post Cmd+V key event
     let source = CGEventSource(stateID: .hidSystemState)
 
@@ -843,9 +863,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   func openRichTextEditorForSelectedItem() {
     guard let contentPanel = contentWindow as? ContentPanel else { return }
     let index = contentPanel.navigationState.selectedIndex
-    let filteredHistory = clipboardManager.history  // In real use, this should match ContentView's filtered list
-    guard index >= 0, index < filteredHistory.count else { return }
-    let item = filteredHistory[index]
+    // Resolve by ID — selectedIndex indexes ContentView's filtered/pinboard
+    // list; indexing history with it opens (and then overwrites) an
+    // unrelated item whenever search or a pinboard is active.
+    guard let selectedId = contentPanel.navigationState.selectedItemId,
+      let item = clipboardManager.history.first(where: { $0.id == selectedId })
+    else { return }
 
     // Only open editor for text items
     guard item.type == .text || item.type == .url else { return }
@@ -857,7 +880,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
       let panelWidth: CGFloat = 500
       let panelHeight: CGFloat = 400
 
-      let cardWidth: CGFloat = 220
+      let cardWidth = drawerFrame.height - 64
       let cardSpacing: CGFloat = 14
       let horizontalPadding: CGFloat = 20
 
@@ -1249,9 +1272,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
       }
       item.imageData = nil  // Release in-memory bytes; load from disk on demand
 
-      DispatchQueue.main.async {
-        self.clipboardManager.history.insert(item, at: 0)
-      }
+      // Route through addToHistory so dedup, identifier bookkeeping,
+      // and history-size trimming all apply to screenshots too.
+      clipboardManager.addToHistory(item: item)
     }
 
     // Show floating overlay — when auto-copy is off, this is the only

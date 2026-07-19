@@ -59,16 +59,13 @@ struct OnboardingView: View {
                     }
                 }
                 .frame(maxWidth: .infinity)
-                .frame(height: 440)
-                .clipped()
+                .fixedSize(horizontal: false, vertical: true)
                 .transition(.asymmetric(
                     insertion: .move(edge: .trailing).combined(with: .opacity),
                     removal: .move(edge: .leading).combined(with: .opacity)
                 ))
 
-                Spacer(minLength: 0)
-
-                // Bottom button — pinned
+                // Bottom button
                 GradientButton(
                     title: currentPage == 2 ? "Get Started" : continueLabel,
                     action: currentPage == 2 ? onComplete : advance
@@ -77,7 +74,7 @@ struct OnboardingView: View {
                 .padding(.bottom, 32)
             }
         }
-        .frame(width: 520, height: 600)
+        .frame(width: 520)
     }
 
     private var continueLabel: String {
@@ -120,7 +117,7 @@ private struct GradientButton: View {
         Button(action: action) {
             Text(title)
                 .font(.system(size: 15, weight: .semibold))
-                .foregroundColor(.white)
+                .foregroundColor(Brand.white)
                 .frame(maxWidth: .infinity)
                 .frame(height: 48)
                 .background(
@@ -158,8 +155,6 @@ private struct GlassCard<Content: View>: View {
 private struct WelcomePage: View {
     var body: some View {
         VStack(spacing: 28) {
-            Spacer()
-
             // App icon
             Image(nsImage: NSApp.applicationIconImage)
                 .resizable()
@@ -203,9 +198,8 @@ private struct WelcomePage: View {
                 )
             }
             .padding(.horizontal, 36)
-
-            Spacer()
         }
+        .padding(.vertical, 32)
     }
 }
 
@@ -225,7 +219,7 @@ private struct FeatureRow: View {
 
                     Image(systemName: icon)
                         .font(.system(size: 15, weight: .semibold))
-                        .foregroundColor(.white)
+                        .foregroundColor(Brand.white)
                 }
 
                 VStack(alignment: .leading, spacing: 3) {
@@ -253,8 +247,6 @@ private struct PermissionsPage: View {
 
     var body: some View {
         VStack(spacing: 28) {
-            Spacer()
-
             // Icon
             Image(systemName: "lock.shield.fill")
                 .font(.system(size: 40, weight: .medium))
@@ -289,9 +281,8 @@ private struct PermissionsPage: View {
                 )
             }
             .padding(.horizontal, 36)
-
-            Spacer()
         }
+        .padding(.vertical, 32)
         .onAppear { startPolling() }
         .onDisappear { stopPolling() }
     }
@@ -311,12 +302,26 @@ private struct PermissionsPage: View {
     }
 
     private func requestAccessibility() {
+        // Register the app in the accessibility list
         let opts = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
         AXIsProcessTrustedWithOptions(opts)
+        // Open Settings after a brief delay so the app appears in the list
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            if !AXIsProcessTrusted(),
+               let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+                NSWorkspace.shared.open(url)
+            }
+        }
     }
 
     private func requestScreenRecording() {
         CGRequestScreenCaptureAccess()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            if !CGPreflightScreenCaptureAccess(),
+               let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
+                NSWorkspace.shared.open(url)
+            }
+        }
     }
 }
 
@@ -340,7 +345,7 @@ private struct PermissionRow: View {
 
                     Image(systemName: isGranted ? "checkmark" : "lock")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(isGranted ? .white : Brand.gray500)
+                        .foregroundColor(isGranted ? Brand.white : Brand.gray500)
                 }
                 .animation(.spring(response: 0.4, dampingFraction: 0.7), value: isGranted)
 
@@ -412,8 +417,6 @@ private struct PermissionRow: View {
 private struct ReadyPage: View {
     var body: some View {
         VStack(spacing: 28) {
-            Spacer()
-
             // Success icon
             Image(systemName: "checkmark.seal.fill")
                 .font(.system(size: 44, weight: .medium))
@@ -435,9 +438,8 @@ private struct ReadyPage: View {
                 ShortcutRow(keys: "\u{2318}\u{21E7}`", label: "Text Sniper (screen OCR)")
             }
             .padding(.horizontal, 36)
-
-            Spacer()
         }
+        .padding(.vertical, 32)
     }
 }
 

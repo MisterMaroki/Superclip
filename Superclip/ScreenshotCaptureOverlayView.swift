@@ -131,7 +131,7 @@ struct ScreenshotCaptureOverlayView: View {
             Text(captureMode.rawValue)
               .font(.system(size: 13, weight: .medium))
           }
-          .foregroundStyle(mode == captureMode ? .white : .primary)
+          .foregroundStyle(mode == captureMode ? .black : .primary)
           .padding(.horizontal, 14)
           .padding(.vertical, 8)
           .background(
@@ -407,15 +407,13 @@ struct ScreenshotCaptureOverlayView: View {
   }
 
   private func windowAt(screenPoint: CGPoint) -> SCWindow? {
-    // SCWindow frames use top-left origin (Core Graphics coordinates)
-    // Find the topmost (smallest area first for best match) window containing the point
-    for window in availableWindows {
-      let frame = window.frame
-      if frame.contains(screenPoint) {
-        return window
-      }
-    }
-    return nil
+    // SCWindow frames use top-left origin (Core Graphics coordinates).
+    // Z-order within the list isn't guaranteed, so prefer the smallest
+    // containing window — picking the first hit selects whatever the API
+    // happened to list first, often a window behind the intended one.
+    return availableWindows
+      .filter { $0.frame.contains(screenPoint) }
+      .min(by: { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height })
   }
 
   /// Convert view coordinates (SwiftUI, top-left origin) to screen coordinates (Core Graphics, top-left origin)

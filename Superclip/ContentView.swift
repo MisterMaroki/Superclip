@@ -75,6 +75,7 @@ struct ContentView: View {
   var onTextSnipe: (() -> Void)?  // Called when text sniper button is tapped
   var onSearchingChanged: ((Bool) -> Void)?  // Called when search field visibility changes
   var onSearchFocusChanged: ((Bool) -> Void)?  // Called when search field gains/loses actual focus
+  var onResize: ((CGFloat) -> Void)?  // Called to resize the drawer panel
   var onEditItem: ((ClipboardItem) -> Void)?  // Called to open rich text editor for an item
   var onOpenSettings: (() -> Void)?  // Called to open settings window
 
@@ -92,8 +93,6 @@ struct ContentView: View {
   @State private var dragMouseUpMonitor: Any? = nil
   @State private var cardCenterXPositions: [Int: CGFloat] = [:]  // index -> center X in screen coords
   @State private var previewUpdateWorkItem: DispatchWorkItem? = nil
-  @State private var renderWindowCenter: Int = 0
-  @State private var measuredCardSize: CGFloat = 200
 
   var currentItems: [ClipboardItem] {
     switch viewMode {
@@ -126,20 +125,6 @@ struct ContentView: View {
     return currentItems[navigationState.selectedIndex]
   }
 
-  /// Windowed rendering: only ForEach items within this range.
-  private var renderWindowStart: Int {
-    let total = currentItems.count
-    guard total > 0 else { return 0 }
-    let clamped = min(max(0, renderWindowCenter), total - 1)
-    return max(0, clamped - 25)
-  }
-
-  private var renderWindowEnd: Int {
-    let total = currentItems.count
-    guard total > 0 else { return 0 }
-    let clamped = min(max(0, renderWindowCenter), total - 1)
-    return min(total, clamped + 26)
-  }
 
   var body: some View {
     VStack(spacing: 0) {
@@ -153,6 +138,30 @@ struct ContentView: View {
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .background(Brand.white)
     .clipShape(Rectangle())
+    .overlay(alignment: .top) {
+      // Invisible resize edge at the top — cursor changes on hover, drag to resize
+      Rectangle()
+        .fill(Color.clear)
+        .frame(height: 6)
+        .contentShape(Rectangle())
+        .onHover { hovering in
+          if hovering {
+            NSCursor.resizeUpDown.push()
+          } else {
+            NSCursor.pop()
+          }
+        }
+        .gesture(
+          DragGesture()
+            .onChanged { _ in
+              // Use absolute mouse position to avoid jank from view resizing during drag
+              if let screen = NSScreen.main {
+                let newHeight = NSEvent.mouseLocation.y - screen.visibleFrame.minY
+                onResize?(newHeight)
+              }
+            }
+        )
+    }
     .background(
       // Invisible overlay to detect drag outside
       GeometryReader { geometry in
@@ -246,6 +255,12 @@ struct ContentView: View {
       if navigationState.isPreviewVisible, newIndex < currentItems.count {
         updatePreviewForIndex(newIndex, attempt: 1)
       }
+    }
+    // Publish the selected item's identity for AppDelegate flows (hold-Space
+    // editing). selectedIndex alone is ambiguous: it indexes the filtered/
+    // pinboard list, not clipboardManager.history.
+    .onChange(of: selectedItem?.id) { newId in
+      navigationState.selectedItemId = newId
     }
     .onChange(of: navigationState.shouldDeleteCurrent) { shouldDelete in
       if shouldDelete, let item = selectedItem {
@@ -371,20 +386,6 @@ struct ContentView: View {
     DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
   }
 
-  private func updateRenderWindow(for selectedIndex: Int) {
-    let threshold = 10
-    let total = currentItems.count
-    guard total > 0 else {
-      renderWindowCenter = 0
-      return
-    }
-    let clamped = min(selectedIndex, total - 1)
-    let wStart = renderWindowStart
-    let wEnd = renderWindowEnd
-    if clamped < wStart + threshold || clamped >= wEnd - threshold {
-      renderWindowCenter = clamped
-    }
-  }
 
   private func stopDragMonitoring() {
     dragMonitorTimer?.invalidate()
@@ -664,14 +665,7 @@ struct ContentView: View {
         ScrollViewReader { proxy in
           ScrollView(.horizontal, showsIndicators: false) {
             LazyHStack(spacing: 14) {
-              // Leading spacer for virtualized items before the render window
-              if renderWindowStart > 0 {
-                Color.clear
-                  .frame(width: CGFloat(renderWindowStart) * (measuredCardSize + 14) - 14, height: 1)
-                  .allowsHitTesting(false)
-              }
-              ForEach(Array(currentItems[renderWindowStart..<renderWindowEnd].enumerated()), id: \.element.id) { relativeIndex, item in
-                let index = renderWindowStart + relativeIndex
+              ForEach(Array(currentItems.enumerated()), id: \.element.id) { index, item in
                 ClipboardItemCard(
                   item: item,
                   index: index + 1,
@@ -730,7 +724,6 @@ struct ContentView: View {
                 .equatable()
                 .id(item.id)
                 .onAppear {
-                  // Lazy-fetch link metadata when a URL card becomes visible
                   if item.type == .url {
                     clipboardManager.ensureLinkMetadata(item)
                   }
@@ -739,11 +732,7 @@ struct ContentView: View {
                   GeometryReader { geo in
                     Color.clear
                       .onAppear {
-                        let frame = geo.frame(in: .global)
-                        cardCenterXPositions[index] = frame.midX
-                        if frame.size.width > 0 && measuredCardSize != frame.size.width {
-                          measuredCardSize = frame.size.width
-                        }
+                        cardCenterXPositions[index] = geo.frame(in: .global).midX
                       }
                       .onChange(of: geo.frame(in: .global)) { newFrame in
                         cardCenterXPositions[index] = newFrame.midX
@@ -751,34 +740,25 @@ struct ContentView: View {
                   }
                 )
               }
-              // Trailing spacer for virtualized items after the render window
-              if renderWindowEnd < currentItems.count {
-                Color.clear
-                  .frame(width: CGFloat(currentItems.count - renderWindowEnd) * (measuredCardSize + 14) - 14, height: 1)
-                  .allowsHitTesting(false)
-              }
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 16)
             .onAppear {
-              renderWindowCenter = navigationState.selectedIndex
               navigationState.itemCount = currentItems.count
               if navigationState.selectedIndex >= currentItems.count {
                 navigationState.selectedIndex = 0
               }
+              navigationState.selectedItemId = selectedItem?.id
             }
             .onChange(of: currentItems.count) { newCount in
               navigationState.itemCount = newCount
-              updateRenderWindow(for: min(navigationState.selectedIndex, max(0, newCount - 1)))
             }
             .onChange(of: viewMode) { _ in
-              // Ensure itemCount is synced when switching between clipboard and pinboard
               navigationState.itemCount = currentItems.count
             }
             .onChange(of: navigationState.selectedIndex) { newIndex in
-              updateRenderWindow(for: newIndex)
               if newIndex < currentItems.count {
-                proxy.scrollTo(currentItems[newIndex].id, anchor: .center)
+                proxy.scrollTo(currentItems[newIndex].id)
               }
             }
           }
@@ -898,14 +878,14 @@ struct ClipboardItemCard: View, Equatable {
       if let number = quickAccessNumber {
         Text(number == 0 ? "0" : "\(number)")
           .font(.system(size: 11, weight: .bold, design: .rounded))
-          .foregroundStyle(.white)
+          .foregroundStyle(Brand.white)
           .frame(width: 20, height: 20)
           .background(Brand.black)
           .padding(6)
           .transition(.scale.combined(with: .opacity))
       }
     }
-    .overlay(alignment: .bottomTrailing) {
+    .overlay(alignment: .topTrailing) {
       let memberPinboards = pinboards.filter { $0.itemIds.contains(item.id) }
       if !memberPinboards.isEmpty {
         HStack(spacing: 3) {
@@ -1199,10 +1179,8 @@ struct ClipboardItemCard: View, Equatable {
       if let urls = item.fileURLs {
         // Check if it's a single media file - show preview
         if urls.count == 1, let url = urls.first {
-          if isImageFile(url), let image = NSImage(contentsOf: url) {
-            Image(nsImage: image)
-              .resizable()
-              .aspectRatio(contentMode: .fit)
+          if isImageFile(url) {
+            FileImageThumbnailView(url: url)
               .frame(maxWidth: .infinity, maxHeight: .infinity)
           } else if isVideoFile(url) {
             VideoThumbnailView(url: url)
@@ -1260,8 +1238,10 @@ struct ClipboardItemCard: View, Equatable {
 
   @ViewBuilder
   private func fileThumbnail(for url: URL) -> some View {
-    if isImageFile(url), let image = NSImage(contentsOf: url) {
-      Image(nsImage: image)
+    if isImageFile(url) {
+      // System file icon — decoding the actual image at full resolution for
+      // a 20×20 badge re-ran on every body evaluation of the card.
+      Image(nsImage: NSWorkspace.shared.icon(forFile: url.path))
         .resizable()
         .aspectRatio(contentMode: .fill)
         .frame(width: 20, height: 20)
@@ -1470,6 +1450,77 @@ struct ItemContextMenu: View {
   }
 }
 
+// MARK: - Media Thumbnail Cache
+
+/// Shared cache for generated video thumbnails, keyed by file URL.
+/// Without it, every scroll-back re-runs an AVAssetImageGenerator job.
+enum MediaThumbnailCache {
+  static let shared: NSCache<NSURL, NSImage> = {
+    let c = NSCache<NSURL, NSImage>()
+    c.countLimit = 40
+    return c
+  }()
+}
+
+// MARK: - File Image Thumbnail View
+
+/// Downsampled, cached thumbnail for image files referenced by file-type cards.
+/// Avoids decoding full-resolution images inside the SwiftUI view body.
+struct FileImageThumbnailView: View {
+  let url: URL
+  @State private var thumbnail: NSImage?
+
+  private static let cache: NSCache<NSURL, NSImage> = {
+    let c = NSCache<NSURL, NSImage>()
+    c.countLimit = 30
+    c.totalCostLimit = 20 * 1024 * 1024  // 20 MB
+    return c
+  }()
+
+  var body: some View {
+    Group {
+      if let thumbnail = thumbnail {
+        Image(nsImage: thumbnail)
+          .resizable()
+          .aspectRatio(contentMode: .fit)
+      } else {
+        Rectangle()
+          .fill(Color.gray.opacity(0.15))
+          .overlay(
+            Image(systemName: "photo")
+              .font(.system(size: 24))
+              .foregroundStyle(.tertiary)
+          )
+      }
+    }
+    .onAppear { loadThumbnail() }
+  }
+
+  private func loadThumbnail() {
+    let key = url as NSURL
+    if let cached = Self.cache.object(forKey: key) {
+      thumbnail = cached
+      return
+    }
+    DispatchQueue.global(qos: .userInitiated).async {
+      let options: [CFString: Any] = [
+        kCGImageSourceThumbnailMaxPixelSize: 440,
+        kCGImageSourceCreateThumbnailFromImageAlways: true,
+        kCGImageSourceCreateThumbnailWithTransform: true,
+      ]
+      guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+        let cgThumb = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+      else { return }
+      let image = NSImage(
+        cgImage: cgThumb, size: NSSize(width: cgThumb.width, height: cgThumb.height))
+      DispatchQueue.main.async {
+        Self.cache.setObject(image, forKey: key, cost: cgThumb.width * cgThumb.height * 4)
+        self.thumbnail = image
+      }
+    }
+  }
+}
+
 // MARK: - Video Thumbnail View
 
 struct VideoThumbnailView: View {
@@ -1507,6 +1558,10 @@ struct VideoThumbnailView: View {
   }
 
   private func generateThumbnail() {
+    if let cached = MediaThumbnailCache.shared.object(forKey: url as NSURL) {
+      thumbnail = cached
+      return
+    }
     DispatchQueue.global(qos: .userInitiated).async {
       let asset = AVAsset(url: url)
       let imageGenerator = AVAssetImageGenerator(asset: asset)
@@ -1520,6 +1575,7 @@ struct VideoThumbnailView: View {
         let image = NSImage(
           cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
         DispatchQueue.main.async {
+          MediaThumbnailCache.shared.setObject(image, forKey: url as NSURL)
           self.thumbnail = image
         }
       } catch {

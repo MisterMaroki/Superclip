@@ -22,19 +22,15 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 
     var icon: String {
         switch self {
-        case .general: return "gearshape.fill"
-        case .appearance: return "paintbrush.fill"
-        case .shortcuts: return "keyboard.fill"
-        case .screenCapture: return "camera.viewfinder"
-        case .snippets: return "text.insert"
-        case .privacy: return "hand.raised.fill"
-        case .storage: return "internaldrive.fill"
-        case .about: return "info.circle.fill"
+        case .general: return "gearshape"
+        case .appearance: return "circle.lefthalf.filled"
+        case .shortcuts: return "command"
+        case .screenCapture: return "viewfinder"
+        case .snippets: return "text.cursor"
+        case .privacy: return "lock"
+        case .storage: return "archivebox"
+        case .about: return "info"
         }
-    }
-
-    var iconColor: Color {
-        return Brand.gray500
     }
 }
 
@@ -51,27 +47,21 @@ struct SettingsView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            // Sidebar
             sidebar
-                .frame(width: 200)
+                .frame(width: 180)
 
-            // Divider
             Rectangle()
-                .fill(Color.primary.opacity(0.1))
+                .fill(Brand.gray300)
                 .frame(width: 1)
 
-            // Detail pane
             detailPane
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(width: 680, height: 480)
-        .background(
-            Brand.white
-        )
-        .clipShape(Rectangle())
+        .background(Brand.white)
         .overlay(
             Rectangle()
-                .stroke(Color.primary.opacity(0.15), lineWidth: 1)
+                .stroke(Brand.gray300, lineWidth: 1)
         )
     }
 
@@ -79,48 +69,51 @@ struct SettingsView: View {
 
     var sidebar: some View {
         VStack(spacing: 0) {
-            // Sidebar header with close button and title
-            HStack(spacing: 8) {
+            // Header
+            HStack(spacing: 0) {
                 Button {
                     onClose()
                 } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 14))
-                        .foregroundStyle(.primary.opacity(0.6))
+                    Image(systemName: "xmark")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(Brand.gray500)
+                        .frame(width: 20, height: 20)
+                        .background(Brand.gray200)
                 }
                 .buttonStyle(.plain)
                 .help("Close settings")
 
-                Text("Settings")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.primary.opacity(0.9))
-
                 Spacer()
+
+                Text("SETTINGS")
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .tracking(2)
+                    .foregroundStyle(Brand.gray500)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-            .background(Brand.gray100)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 14)
+
+            Rectangle()
+                .fill(Brand.gray200)
+                .frame(height: 1)
 
             // Section list
             ScrollView(.vertical, showsIndicators: false) {
-                VStack(spacing: 2) {
+                VStack(spacing: 0) {
                     ForEach(SettingsSection.allCases) { section in
                         SettingsSidebarItem(
                             section: section,
                             isSelected: selectedSection == section,
                             onSelect: {
-                                withAnimation(.easeInOut(duration: 0.15)) {
-                                    selectedSection = section
-                                }
+                                selectedSection = section
                             }
                         )
                     }
                 }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
+                .padding(.vertical, 6)
             }
         }
-        .background(Color.primary.opacity(0.05))
+        .background(Brand.gray100)
     }
 
     // MARK: - Detail Pane
@@ -165,29 +158,28 @@ struct SettingsSidebarItem: View {
         Button {
             onSelect()
         } label: {
-            HStack(spacing: 10) {
-                // Icon with colored background
-                Image(systemName: section.icon)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(.white)
-                    .frame(width: 28, height: 28)
-                    .background(
-                        Rectangle()
-                            .fill(Brand.gray500)
-                    )
-
-                Text(section.rawValue)
-                    .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
-                    .foregroundStyle(.primary.opacity(isSelected ? 1.0 : 0.8))
-
-                Spacer()
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
-            .background(
+            HStack(spacing: 0) {
+                // Left accent bar
                 Rectangle()
-                    .fill(isSelected ? Color.primary.opacity(0.15) : (isHovered ? Color.primary.opacity(0.08) : Color.clear))
-            )
+                    .fill(isSelected ? Brand.black : Color.clear)
+                    .frame(width: 2)
+
+                HStack(spacing: 8) {
+                    Image(systemName: section.icon)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(isSelected ? Brand.black : Brand.gray500)
+                        .frame(width: 16)
+
+                    Text(section.rawValue)
+                        .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
+                        .foregroundStyle(isSelected ? Brand.black : Brand.gray600)
+
+                    Spacer()
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+            }
+            .background(isSelected ? Brand.white : (isHovered ? Brand.gray200 : Color.clear))
         }
         .buttonStyle(.plain)
         .onHover { hovering in
@@ -203,21 +195,21 @@ struct SettingsGroupBox<Content: View>: View {
     @ViewBuilder let content: () -> Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(title)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Brand.gray600)
-                .textCase(.uppercase)
-                .tracking(0.5)
+        VStack(alignment: .leading, spacing: 0) {
+            if !title.isEmpty {
+                Text(title.uppercased())
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .foregroundStyle(Brand.gray500)
+                    .tracking(1.5)
+                    .padding(.bottom, 8)
+            }
 
-            VStack(spacing: 1) {
+            VStack(spacing: 0) {
                 content()
             }
-            .background(Color.primary.opacity(0.08))
-            .clipShape(Rectangle())
             .overlay(
                 Rectangle()
-                    .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+                    .stroke(Brand.gray200, lineWidth: 1)
             )
         }
     }
@@ -236,15 +228,15 @@ struct SettingsToggleRow: View {
 
     var body: some View {
         HStack {
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.system(size: 13))
-                    .foregroundStyle(.primary.opacity(0.95))
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Brand.black)
 
                 if let subtitle = subtitle {
                     Text(subtitle)
                         .font(.system(size: 11))
-                        .foregroundStyle(Brand.gray600)
+                        .foregroundStyle(Brand.gray500)
                 }
             }
 
@@ -252,10 +244,11 @@ struct SettingsToggleRow: View {
 
             Toggle("", isOn: $isOn)
                 .toggleStyle(.switch)
-                .scaleEffect(0.8)
+                .scaleEffect(0.75)
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, 14)
         .padding(.vertical, 10)
+        .background(Brand.white)
     }
 }
 
@@ -273,8 +266,8 @@ struct SettingsPickerRow<T: Hashable & CustomStringConvertible>: View {
     var body: some View {
         HStack {
             Text(title)
-                .font(.system(size: 13))
-                .foregroundStyle(.primary.opacity(0.95))
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Brand.black)
 
             Spacer()
 
@@ -286,8 +279,9 @@ struct SettingsPickerRow<T: Hashable & CustomStringConvertible>: View {
             .pickerStyle(.menu)
             .frame(width: 140)
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, 14)
         .padding(.vertical, 10)
+        .background(Brand.white)
     }
 }
 
@@ -298,17 +292,18 @@ struct SettingsInfoRow: View {
     var body: some View {
         HStack {
             Text(title)
-                .font(.system(size: 13))
-                .foregroundStyle(.primary.opacity(0.95))
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Brand.black)
 
             Spacer()
 
             Text(value)
-                .font(.system(size: 13))
-                .foregroundStyle(Brand.gray600)
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundStyle(Brand.gray500)
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, 14)
         .padding(.vertical, 10)
+        .background(Brand.white)
     }
 }
 
@@ -325,17 +320,19 @@ struct SettingsButtonRow: View {
         self.action = action
     }
 
+    @State private var isButtonHovered = false
+
     var body: some View {
         HStack {
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.system(size: 13))
-                    .foregroundStyle(.primary.opacity(0.95))
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Brand.black)
 
                 if let subtitle = subtitle {
                     Text(subtitle)
                         .font(.system(size: 11))
-                        .foregroundStyle(Brand.gray600)
+                        .foregroundStyle(Brand.gray500)
                 }
             }
 
@@ -344,21 +341,24 @@ struct SettingsButtonRow: View {
             Button {
                 action()
             } label: {
-                Text(buttonTitle)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.primary.opacity(0.95))
+                Text(buttonTitle.uppercased())
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .tracking(0.5)
+                    .foregroundStyle(isButtonHovered ? Brand.white : Brand.black)
                     .padding(.horizontal, 14)
-                    .padding(.vertical, 6)
-                    .background(Color.primary.opacity(0.1))
+                    .padding(.vertical, 5)
+                    .background(isButtonHovered ? Brand.black : Color.clear)
                     .overlay(
                         Rectangle()
-                            .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+                            .stroke(Brand.black, lineWidth: 1)
                     )
             }
             .buttonStyle(.plain)
+            .onHover { hovering in isButtonHovered = hovering }
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, 14)
         .padding(.vertical, 10)
+        .background(Brand.white)
     }
 }
 
@@ -369,8 +369,8 @@ struct SettingsShortcutRow: View {
     var body: some View {
         HStack {
             Text(title)
-                .font(.system(size: 13))
-                .foregroundStyle(.primary.opacity(0.95))
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Brand.black)
 
             Spacer()
 
@@ -378,24 +378,24 @@ struct SettingsShortcutRow: View {
                 .font(.system(size: 12, weight: .medium, design: .monospaced))
                 .foregroundStyle(Brand.gray700)
                 .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(Color.primary.opacity(0.08))
+                .padding(.vertical, 3)
+                .background(Brand.gray100)
                 .overlay(
                     Rectangle()
-                        .stroke(Color.primary.opacity(0.12), lineWidth: 1)
+                        .stroke(Brand.gray300, lineWidth: 1)
                 )
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, 14)
         .padding(.vertical, 10)
+        .background(Brand.white)
     }
 }
 
 struct SettingsDivider: View {
     var body: some View {
         Rectangle()
-            .fill(Color.primary.opacity(0.08))
+            .fill(Brand.gray200)
             .frame(height: 1)
-            .padding(.leading, 12)
     }
 }
 
@@ -406,12 +406,10 @@ struct GeneralSettingsPane: View {
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 20) {
-                // Pane title
+            VStack(alignment: .leading, spacing: 24) {
                 Text("General")
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(.primary)
-                    .padding(.bottom, 4)
+                    .font(.system(size: 22, weight: .bold))
+                    .foregroundStyle(Brand.black)
 
                 SettingsGroupBox(title: "Startup") {
                     SettingsToggleRow(
@@ -454,7 +452,7 @@ struct GeneralSettingsPane: View {
                     )
                 }
             }
-            .padding(24)
+            .padding(28)
         }
     }
 }
@@ -466,17 +464,16 @@ struct AppearanceSettingsPane: View {
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 24) {
                 Text("Appearance")
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(.primary)
-                    .padding(.bottom, 4)
+                    .font(.system(size: 22, weight: .bold))
+                    .foregroundStyle(Brand.black)
 
                 SettingsGroupBox(title: "Theme") {
                     HStack {
                         Text("Appearance")
-                            .font(.system(size: 13))
-                            .foregroundStyle(.primary.opacity(0.95))
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Brand.black)
 
                         Spacer()
 
@@ -488,8 +485,9 @@ struct AppearanceSettingsPane: View {
                         .pickerStyle(.segmented)
                         .frame(width: 200)
                     }
-                    .padding(.horizontal, 12)
+                    .padding(.horizontal, 14)
                     .padding(.vertical, 10)
+                    .background(Brand.white)
                 }
 
                 SettingsGroupBox(title: "Window") {
@@ -526,7 +524,7 @@ struct AppearanceSettingsPane: View {
                     )
                 }
             }
-            .padding(24)
+            .padding(28)
         }
     }
 }
@@ -547,11 +545,10 @@ struct ShortcutsSettingsPane: View {
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 24) {
                 Text("Shortcuts")
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(.primary)
-                    .padding(.bottom, 4)
+                    .font(.system(size: 22, weight: .bold))
+                    .foregroundStyle(Brand.black)
 
                 SettingsGroupBox(title: "Global Hotkeys") {
                     HotkeyRecorderView(
@@ -591,21 +588,22 @@ struct ShortcutsSettingsPane: View {
                             ocrConfig = .defaultOCR
                             screenshotConfig = .defaultScreenshot
                         } label: {
-                            Text("Reset to Defaults")
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundStyle(Brand.gray700)
+                            Text("RESET")
+                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                .tracking(0.5)
+                                .foregroundStyle(Brand.gray600)
                                 .padding(.horizontal, 14)
-                                .padding(.vertical, 6)
-                                .background(Color.primary.opacity(0.08))
+                                .padding(.vertical, 5)
                                 .overlay(
                                     Rectangle()
-                                        .stroke(Color.primary.opacity(0.1), lineWidth: 1)
+                                        .stroke(Brand.gray300, lineWidth: 1)
                                 )
                         }
                         .buttonStyle(.plain)
                     }
-                    .padding(.horizontal, 12)
+                    .padding(.horizontal, 14)
                     .padding(.vertical, 8)
+                    .background(Brand.white)
                 }
 
                 SettingsGroupBox(title: "Navigation") {
@@ -626,7 +624,7 @@ struct ShortcutsSettingsPane: View {
                     SettingsShortcutRow(title: "Quick select", shortcut: "\u{2318}1-9")
                 }
             }
-            .padding(24)
+            .padding(28)
         }
         .onAppear {
             historyConfig = settings.hotkeyConfigForHistory()
@@ -644,11 +642,10 @@ struct ScreenCaptureSettingsPane: View {
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 24) {
                 Text("Screen Capture")
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(.primary)
-                    .padding(.bottom, 4)
+                    .font(.system(size: 22, weight: .bold))
+                    .foregroundStyle(Brand.black)
 
                 SettingsGroupBox(title: "After Capture") {
                     SettingsToggleRow(
@@ -658,7 +655,7 @@ struct ScreenCaptureSettingsPane: View {
                     )
                 }
             }
-            .padding(24)
+            .padding(28)
         }
     }
 }
@@ -670,11 +667,10 @@ struct PrivacySettingsPane: View {
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 24) {
                 Text("Privacy")
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(.primary)
-                    .padding(.bottom, 4)
+                    .font(.system(size: 22, weight: .bold))
+                    .foregroundStyle(Brand.black)
 
                 SettingsGroupBox(title: "Content Filtering") {
                     SettingsToggleRow(
@@ -692,7 +688,7 @@ struct PrivacySettingsPane: View {
 
                 IgnoredAppsSection(settings: settings)
             }
-            .padding(24)
+            .padding(28)
         }
     }
 }
@@ -711,28 +707,30 @@ struct IgnoredAppsSection: View {
     @State private var showingAppPicker = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 0) {
             Text("IGNORED APPLICATIONS")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Brand.gray600)
-                .tracking(0.5)
+                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                .foregroundStyle(Brand.gray500)
+                .tracking(1.5)
+                .padding(.bottom, 4)
 
-            Text("Do not save content copied from the applications below.")
-                .font(.system(size: 12))
-                .foregroundStyle(Brand.gray600)
+            Text("Content from these apps will not be saved.")
+                .font(.system(size: 11))
+                .foregroundStyle(Brand.gray500)
+                .padding(.bottom, 8)
 
             VStack(spacing: 0) {
                 appListContent
 
-                SettingsDivider()
+                Rectangle()
+                    .fill(Brand.gray200)
+                    .frame(height: 1)
 
                 appListToolbar
             }
-            .background(Color.primary.opacity(0.08))
-            .clipShape(Rectangle())
             .overlay(
                 Rectangle()
-                    .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+                    .stroke(Brand.gray200, lineWidth: 1)
             )
         }
         .popover(isPresented: $showingAppPicker, arrowEdge: .bottom) {
@@ -751,7 +749,9 @@ struct IgnoredAppsSection: View {
                     ForEach(apps) { app in
                         appRow(app)
                         if app.id != apps.last?.id {
-                            SettingsDivider()
+                            Rectangle()
+                                .fill(Brand.gray200)
+                                .frame(height: 1)
                         }
                     }
                 }
@@ -778,37 +778,38 @@ struct IgnoredAppsSection: View {
     private var emptyState: some View {
         HStack {
             Spacer()
-            VStack(spacing: 8) {
-                Image(systemName: "app.dashed")
-                    .font(.system(size: 24))
-                    .foregroundStyle(.primary.opacity(0.25))
+            VStack(spacing: 6) {
+                Text("—")
+                    .font(.system(size: 20, weight: .light, design: .monospaced))
+                    .foregroundStyle(Brand.gray400)
                 Text("No ignored applications")
-                    .font(.system(size: 12))
+                    .font(.system(size: 11))
                     .foregroundStyle(Brand.gray500)
             }
-            .padding(.vertical, 24)
+            .padding(.vertical, 28)
             Spacer()
         }
+        .background(Brand.white)
     }
 
     private func appRow(_ app: IgnoredAppInfo) -> some View {
         HStack(spacing: 10) {
             appIcon(app)
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 1) {
                 Text(app.name)
-                    .font(.system(size: 13))
-                    .foregroundStyle(.primary.opacity(0.95))
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Brand.black)
                 Text(app.id)
-                    .font(.system(size: 10))
+                    .font(.system(size: 9, design: .monospaced))
                     .foregroundStyle(Brand.gray500)
             }
 
             Spacer()
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, 14)
         .padding(.vertical, 8)
-        .background(selectedAppID == app.id ? Color.accentColor.opacity(0.3) : Color.clear)
+        .background(selectedAppID == app.id ? Brand.gray200 : Brand.white)
         .contentShape(Rectangle())
         .onTapGesture {
             selectedAppID = selectedAppID == app.id ? nil : app.id
@@ -820,12 +821,12 @@ struct IgnoredAppsSection: View {
         if let icon = app.icon {
             Image(nsImage: icon)
                 .resizable()
-                .frame(width: 24, height: 24)
+                .frame(width: 22, height: 22)
         } else {
-            Image(systemName: "app.fill")
-                .font(.system(size: 18))
-                .foregroundStyle(.primary.opacity(0.4))
-                .frame(width: 24, height: 24)
+            Image(systemName: "app")
+                .font(.system(size: 16, weight: .light))
+                .foregroundStyle(Brand.gray400)
+                .frame(width: 22, height: 22)
         }
     }
 
@@ -835,16 +836,16 @@ struct IgnoredAppsSection: View {
                 showingAppPicker = true
             } label: {
                 Image(systemName: "plus")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.primary.opacity(0.7))
-                    .frame(width: 36, height: 28)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Brand.gray600)
+                    .frame(width: 32, height: 26)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
 
-            Divider()
-                .frame(height: 18)
-                .background(Color.primary.opacity(0.1))
+            Rectangle()
+                .fill(Brand.gray200)
+                .frame(width: 1, height: 16)
 
             Button {
                 if let id = selectedAppID {
@@ -852,11 +853,10 @@ struct IgnoredAppsSection: View {
                     selectedAppID = nil
                 }
             } label: {
-                let opacity: Double = selectedAppID != nil ? 0.7 : 0.25
                 Image(systemName: "minus")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.primary.opacity(opacity))
-                    .frame(width: 36, height: 28)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(selectedAppID != nil ? Brand.gray600 : Brand.gray300)
+                    .frame(width: 32, height: 26)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -865,7 +865,8 @@ struct IgnoredAppsSection: View {
             Spacer()
         }
         .padding(.horizontal, 2)
-        .padding(.vertical, 1)
+        .padding(.vertical, 2)
+        .background(Brand.gray100)
     }
 }
 
@@ -880,7 +881,9 @@ private struct InstalledAppPickerView: View {
     var body: some View {
         VStack(spacing: 0) {
             searchField
-            Divider()
+            Rectangle()
+                .fill(Brand.gray200)
+                .frame(height: 1)
             appList
         }
         .frame(width: 280, height: 320)
@@ -890,13 +893,13 @@ private struct InstalledAppPickerView: View {
     private var searchField: some View {
         HStack(spacing: 6) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Brand.gray500)
             TextField("Search applications", text: $searchText)
                 .textFieldStyle(.plain)
-                .font(.system(size: 13))
+                .font(.system(size: 12))
         }
-        .padding(8)
+        .padding(10)
     }
 
     private var filteredApps: [IgnoredAppInfo] {
@@ -928,16 +931,17 @@ private struct InstalledAppPickerView: View {
                 if let icon = app.icon {
                     Image(nsImage: icon)
                         .resizable()
-                        .frame(width: 20, height: 20)
+                        .frame(width: 18, height: 18)
                 } else {
-                    Image(systemName: "app.fill")
-                        .font(.system(size: 14))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 20, height: 20)
+                    Image(systemName: "app")
+                        .font(.system(size: 13, weight: .light))
+                        .foregroundStyle(Brand.gray400)
+                        .frame(width: 18, height: 18)
                 }
 
                 Text(app.name)
                     .font(.system(size: 12))
+                    .foregroundStyle(Brand.black)
                     .lineLimit(1)
 
                 Spacer()
@@ -994,17 +998,16 @@ struct StorageSettingsPane: View {
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 24) {
                 Text("Storage")
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(.primary)
-                    .padding(.bottom, 4)
+                    .font(.system(size: 22, weight: .bold))
+                    .foregroundStyle(Brand.black)
 
                 SettingsGroupBox(title: "History") {
                     HStack {
                         Text("Max history size")
-                            .font(.system(size: 13))
-                            .foregroundStyle(.primary.opacity(0.95))
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Brand.black)
 
                         Spacer()
 
@@ -1016,12 +1019,13 @@ struct StorageSettingsPane: View {
                         .pickerStyle(.menu)
                         .frame(width: 140)
                     }
-                    .padding(.horizontal, 12)
+                    .padding(.horizontal, 14)
                     .padding(.vertical, 10)
+                    .background(Brand.white)
                     SettingsDivider()
-                    SettingsInfoRow(title: "Items stored", value: "\(clipboardManager.history.count) items")
+                    SettingsInfoRow(title: "Items stored", value: "\(clipboardManager.history.count)")
                     SettingsDivider()
-                    SettingsInfoRow(title: "Pinned items", value: "\(pinboardManager.totalPinnedItemCount) items")
+                    SettingsInfoRow(title: "Pinned items", value: "\(pinboardManager.totalPinnedItemCount)")
                 }
 
                 SettingsGroupBox(title: "Data") {
@@ -1060,7 +1064,7 @@ struct StorageSettingsPane: View {
                     )
                 }
             }
-            .padding(24)
+            .padding(28)
         }
         .alert("Clear History", isPresented: $showClearHistoryAlert) {
             Button("Cancel", role: .cancel) {}
@@ -1101,40 +1105,43 @@ struct AboutSettingsPane: View {
         VStack(spacing: 0) {
             Spacer()
 
-            VStack(spacing: 16) {
+            VStack(spacing: 20) {
                 // App icon
                 if let appIcon = NSApp.applicationIconImage {
                     Image(nsImage: appIcon)
                         .resizable()
-                        .frame(width: 80, height: 80)
+                        .frame(width: 72, height: 72)
                 } else {
-                    Image(systemName: "doc.on.clipboard.fill")
-                        .font(.system(size: 48))
-                        .foregroundStyle(.primary.opacity(0.7))
-                        .frame(width: 80, height: 80)
+                    Rectangle()
+                        .fill(Brand.gray200)
+                        .frame(width: 72, height: 72)
+                        .overlay(
+                            Image(systemName: "doc.on.clipboard")
+                                .font(.system(size: 28, weight: .light))
+                                .foregroundStyle(Brand.gray500)
+                        )
                 }
 
-                // App name
-                Text("Superclip")
-                    .font(.system(size: 22, weight: .bold))
-                    .foregroundStyle(.primary)
+                VStack(spacing: 6) {
+                    Text("SUPERCLIP")
+                        .font(.system(size: 18, weight: .bold, design: .monospaced))
+                        .tracking(4)
+                        .foregroundStyle(Brand.black)
 
-                // Version
-                Text("Version \(appVersion)")
-                    .font(.system(size: 13))
-                    .foregroundStyle(Brand.gray600)
+                    Text(appVersion)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(Brand.gray500)
+                }
 
-                // Description
-                Text("A modern clipboard manager for macOS")
-                    .font(.system(size: 13))
-                    .foregroundStyle(Brand.gray600)
-                    .padding(.top, 4)
+                Text("Clipboard manager for macOS")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Brand.gray500)
             }
 
             Spacer()
 
-            // Footer links
-            VStack(spacing: 12) {
+            // Actions
+            VStack(spacing: 0) {
                 SettingsGroupBox(title: "") {
                     SettingsButtonRow(
                         title: "Check for updates",
@@ -1146,7 +1153,6 @@ struct AboutSettingsPane: View {
                         title: "Rate on App Store",
                         buttonTitle: "Rate",
                         action: {
-                            // Replace with actual App Store ID when available
                             if let url = URL(string: "macappstore://apps.apple.com/app/id0000000000?action=write-review") {
                                 NSWorkspace.shared.open(url)
                             }
@@ -1164,27 +1170,27 @@ struct AboutSettingsPane: View {
                     )
                 }
             }
-            .padding(.horizontal, 24)
-            .padding(.bottom, 12)
+            .padding(.horizontal, 28)
+            .padding(.bottom, 16)
 
             // Quit buttons
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 Button {
                     NSApp.terminate(nil)
                 } label: {
-                    HStack(spacing: 6) {
+                    HStack(spacing: 5) {
                         Image(systemName: "power")
-                            .font(.system(size: 12, weight: .medium))
-                        Text("Quit Superclip")
-                            .font(.system(size: 12, weight: .medium))
+                            .font(.system(size: 10, weight: .bold))
+                        Text("QUIT")
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .tracking(0.5)
                     }
-                    .foregroundStyle(.red.opacity(0.9))
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 8)
-                    .background(Brand.gray100)
+                    .foregroundStyle(Brand.black)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 7)
                     .overlay(
                         Rectangle()
-                            .stroke(Color.red.opacity(0.2), lineWidth: 1)
+                            .stroke(Brand.gray300, lineWidth: 1)
                     )
                 }
                 .buttonStyle(.plain)
@@ -1192,24 +1198,24 @@ struct AboutSettingsPane: View {
                 Button {
                     showResetAlert = true
                 } label: {
-                    HStack(spacing: 6) {
+                    HStack(spacing: 5) {
                         Image(systemName: "arrow.counterclockwise")
-                            .font(.system(size: 12, weight: .medium))
-                        Text("Quit & Reset")
-                            .font(.system(size: 12, weight: .medium))
+                            .font(.system(size: 10, weight: .bold))
+                        Text("QUIT & RESET")
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .tracking(0.5)
                     }
-                    .foregroundStyle(.red.opacity(0.9))
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 8)
-                    .background(Brand.gray100)
+                    .foregroundStyle(.red)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 7)
                     .overlay(
                         Rectangle()
-                            .stroke(Color.red.opacity(0.2), lineWidth: 1)
+                            .stroke(Color.red.opacity(0.3), lineWidth: 1)
                     )
                 }
                 .buttonStyle(.plain)
             }
-            .padding(.bottom, 24)
+            .padding(.bottom, 28)
         }
         .alert("Up to Date", isPresented: $showUpToDateAlert) {
             Button("OK", role: .cancel) {}
@@ -1253,15 +1259,13 @@ struct SnippetsSettingsPane: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            // Snippet list (left)
             snippetList
                 .frame(width: 220)
 
             Rectangle()
-                .fill(Color.primary.opacity(0.08))
+                .fill(Brand.gray200)
                 .frame(width: 1)
 
-            // Detail editor (right)
             if isCreating || selectedSnippet != nil {
                 snippetEditor
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1279,29 +1283,40 @@ struct SnippetsSettingsPane: View {
             // Header
             HStack {
                 Text("Snippets")
-                    .font(.system(size: 20, weight: .semibold))
+                    .font(.system(size: 22, weight: .bold))
+                    .foregroundStyle(Brand.black)
 
                 Spacer()
 
                 Text("\(snippetManager.enabledSnippetCount)")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
                     .foregroundStyle(Brand.gray500)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
-                    .background(Color.primary.opacity(0.08))
+                    .overlay(
+                        Rectangle()
+                            .stroke(Brand.gray300, lineWidth: 1)
+                    )
             }
             .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            .padding(.vertical, 14)
+
+            Rectangle()
+                .fill(Brand.gray200)
+                .frame(height: 1)
 
             // List
             ScrollView(.vertical, showsIndicators: false) {
-                VStack(spacing: 2) {
+                VStack(spacing: 0) {
                     ForEach(snippetManager.snippets) { snippet in
                         snippetRow(snippet)
                     }
                 }
-                .padding(.horizontal, 8)
             }
+
+            Rectangle()
+                .fill(Brand.gray200)
+                .frame(height: 1)
 
             // Toolbar
             HStack(spacing: 0) {
@@ -1314,13 +1329,15 @@ struct SnippetsSettingsPane: View {
                     editError = nil
                 } label: {
                     Image(systemName: "plus")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.primary.opacity(0.7))
-                        .frame(width: 32, height: 28)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Brand.gray600)
+                        .frame(width: 32, height: 26)
                 }
                 .buttonStyle(.plain)
 
-                Divider().frame(height: 16)
+                Rectangle()
+                    .fill(Brand.gray200)
+                    .frame(width: 1, height: 16)
 
                 Button {
                     if let id = selectedSnippetId, let snippet = snippetManager.snippets.first(where: { $0.id == id }) {
@@ -1329,9 +1346,9 @@ struct SnippetsSettingsPane: View {
                     }
                 } label: {
                     Image(systemName: "minus")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.primary.opacity(selectedSnippetId != nil ? 0.7 : 0.25))
-                        .frame(width: 32, height: 28)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(selectedSnippetId != nil ? Brand.gray600 : Brand.gray300)
+                        .frame(width: 32, height: 26)
                 }
                 .buttonStyle(.plain)
                 .disabled(selectedSnippetId == nil)
@@ -1340,7 +1357,7 @@ struct SnippetsSettingsPane: View {
             }
             .padding(.horizontal, 4)
             .padding(.vertical, 4)
-            .background(Color.primary.opacity(0.04))
+            .background(Brand.gray100)
         }
     }
 
@@ -1354,14 +1371,14 @@ struct SnippetsSettingsPane: View {
             editError = nil
         } label: {
             HStack(spacing: 8) {
-                Circle()
-                    .fill(snippet.isEnabled ? Brand.black : Color.primary.opacity(0.2))
-                    .frame(width: 6, height: 6)
+                Rectangle()
+                    .fill(snippet.isEnabled ? Brand.black : Brand.gray300)
+                    .frame(width: 3, height: 28)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(snippet.name.isEmpty ? "Untitled" : snippet.name)
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.primary.opacity(0.9))
+                        .foregroundStyle(Brand.black)
                         .lineLimit(1)
 
                     Text(snippet.trigger)
@@ -1371,12 +1388,9 @@ struct SnippetsSettingsPane: View {
 
                 Spacer()
             }
-            .padding(.horizontal, 10)
+            .padding(.horizontal, 8)
             .padding(.vertical, 7)
-            .background(
-                Rectangle()
-                    .fill(selectedSnippetId == snippet.id ? Color.primary.opacity(0.12) : Color.clear)
-            )
+            .background(selectedSnippetId == snippet.id ? Brand.gray200 : Color.clear)
         }
         .buttonStyle(.plain)
     }
@@ -1385,32 +1399,45 @@ struct SnippetsSettingsPane: View {
 
     var snippetEditor: some View {
         ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 18) {
                 Text(isCreating ? "New Snippet" : "Edit Snippet")
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(Brand.black)
 
                 // Name
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Name")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Brand.gray600)
-                        .textCase(.uppercase)
+                    Text("NAME")
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .foregroundStyle(Brand.gray500)
+                        .tracking(1)
 
                     TextField("e.g., Email address", text: $editName)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(size: 13))
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 12))
+                        .padding(8)
+                        .background(Brand.white)
+                        .overlay(
+                            Rectangle()
+                                .stroke(Brand.gray300, lineWidth: 1)
+                        )
                 }
 
                 // Trigger
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Trigger")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Brand.gray600)
-                        .textCase(.uppercase)
+                    Text("TRIGGER")
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .foregroundStyle(Brand.gray500)
+                        .tracking(1)
 
                     TextField("e.g., ;;email", text: $editTrigger)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(size: 13, design: .monospaced))
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 12, design: .monospaced))
+                        .padding(8)
+                        .background(Brand.white)
+                        .overlay(
+                            Rectangle()
+                                .stroke(Brand.gray300, lineWidth: 1)
+                        )
 
                     Text("Type this anywhere to expand the snippet")
                         .font(.system(size: 10))
@@ -1419,26 +1446,26 @@ struct SnippetsSettingsPane: View {
 
                 // Content
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Content")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Brand.gray600)
-                        .textCase(.uppercase)
+                    Text("CONTENT")
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .foregroundStyle(Brand.gray500)
+                        .tracking(1)
 
                     TextEditor(text: $editContent)
-                        .font(.system(size: 13))
+                        .font(.system(size: 12))
                         .frame(minHeight: 100, maxHeight: 200)
                         .padding(4)
-                        .background(Color.primary.opacity(0.06))
+                        .background(Brand.white)
                         .overlay(
                             Rectangle()
-                                .stroke(Color.primary.opacity(0.1), lineWidth: 1)
+                                .stroke(Brand.gray300, lineWidth: 1)
                         )
                 }
 
                 if let error = editError {
                     Text(error)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.red.opacity(0.8))
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.red)
                 }
 
                 // Actions
@@ -1447,12 +1474,16 @@ struct SnippetsSettingsPane: View {
                         Button {
                             snippetManager.toggleSnippet(snippet)
                         } label: {
-                            Text(snippet.isEnabled ? "Disable" : "Enable")
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundStyle(Brand.gray700)
+                            Text(snippet.isEnabled ? "DISABLE" : "ENABLE")
+                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                .tracking(0.5)
+                                .foregroundStyle(Brand.gray600)
                                 .padding(.horizontal, 12)
-                                .padding(.vertical, 6)
-                                .background(Color.primary.opacity(0.08))
+                                .padding(.vertical, 5)
+                                .overlay(
+                                    Rectangle()
+                                        .stroke(Brand.gray300, lineWidth: 1)
+                                )
                         }
                         .buttonStyle(.plain)
                     }
@@ -1462,34 +1493,34 @@ struct SnippetsSettingsPane: View {
                     Button {
                         saveSnippet()
                     } label: {
-                        Text(isCreating ? "Create" : "Save")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 16)
+                        Text(isCreating ? "CREATE" : "SAVE")
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .tracking(1)
+                            .foregroundStyle(Brand.white)
+                            .padding(.horizontal, 18)
                             .padding(.vertical, 6)
                             .background(Brand.black)
-                            .cornerRadius(6)
                     }
                     .buttonStyle(.plain)
                 }
             }
-            .padding(20)
+            .padding(22)
         }
     }
 
     var emptyState: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "text.insert")
-                .font(.system(size: 32))
-                .foregroundStyle(.primary.opacity(0.2))
+        VStack(spacing: 10) {
+            Text("—")
+                .font(.system(size: 28, weight: .ultraLight, design: .monospaced))
+                .foregroundStyle(Brand.gray300)
 
-            Text("Select a snippet or create a new one")
-                .font(.system(size: 13))
+            Text("Select or create a snippet")
+                .font(.system(size: 12))
                 .foregroundStyle(Brand.gray500)
 
-            Text("Type a trigger shortcut anywhere to auto-expand text")
+            Text("Type a trigger anywhere to auto-expand")
                 .font(.system(size: 11))
-                .foregroundStyle(Brand.gray500)
+                .foregroundStyle(Brand.gray400)
         }
     }
 

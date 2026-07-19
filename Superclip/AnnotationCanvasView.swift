@@ -459,7 +459,7 @@ struct AnnotationCanvasView: View {
           height: handleRadius * 2
         )
         let handlePath = Path(ellipseIn: handleRect)
-        context.fill(handlePath, with: .color(.white))
+        context.fill(handlePath, with: .color(Brand.white))
         context.stroke(handlePath, with: .color(.blue), style: StrokeStyle(lineWidth: 1.5))
       }
     }
@@ -661,7 +661,7 @@ struct AnnotationCanvasView: View {
     // Dashed border to indicate the blur region
     context.stroke(
       Path(rect),
-      with: .color(.white.opacity(0.5)),
+      with: .color(Brand.white.opacity(0.5)),
       style: StrokeStyle(lineWidth: 1, dash: [4, 3])
     )
   }

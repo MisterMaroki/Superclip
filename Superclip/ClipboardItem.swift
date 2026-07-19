@@ -248,6 +248,10 @@ struct ClipboardItem: Identifiable, Equatable {
     let type: ClipboardType
     var imageData: Data?
     let hasImage: Bool
+    /// Stable content hash of the image bytes, computed once at capture time.
+    /// Survives `imageData` being released to disk and app relaunches, so image
+    /// deduplication keeps working (Data.hashValue is per-process randomized).
+    let imageHash: String?
     let fileURLs: [URL]?
     let sourceApp: SourceApp?
     var linkMetadata: LinkMetadata?
@@ -261,13 +265,14 @@ struct ClipboardItem: Identifiable, Equatable {
         case url
     }
 
-    init(id: UUID = UUID(), content: String, timestamp: Date = Date(), type: ClipboardType = .text, imageData: Data? = nil, hasImage: Bool? = nil, fileURLs: [URL]? = nil, sourceApp: SourceApp? = nil, linkMetadata: LinkMetadata? = nil, rtfData: Data? = nil, hasRTF: Bool? = nil, detectedTags: Set<ContentTag> = []) {
+    init(id: UUID = UUID(), content: String, timestamp: Date = Date(), type: ClipboardType = .text, imageData: Data? = nil, hasImage: Bool? = nil, imageHash: String? = nil, fileURLs: [URL]? = nil, sourceApp: SourceApp? = nil, linkMetadata: LinkMetadata? = nil, rtfData: Data? = nil, hasRTF: Bool? = nil, detectedTags: Set<ContentTag> = []) {
         self.id = id
         self.content = content
         self.timestamp = timestamp
         self.type = type
         self.imageData = imageData
         self.hasImage = hasImage ?? (imageData != nil)
+        self.imageHash = imageHash ?? imageData.map(Self.stableHash(of:))
         self.fileURLs = fileURLs
         self.sourceApp = sourceApp
         self.linkMetadata = linkMetadata
@@ -285,10 +290,11 @@ struct ClipboardItem: Identifiable, Equatable {
         return RTFStore.shared.loadData(for: id)
     }
 
-    // Get attributed string from RTF data
+    // Get attributed string from RTF data (memoized in RTFStore — this is
+    // read from SwiftUI view bodies on every evaluation)
     var attributedString: NSAttributedString? {
-        guard let data = rtfData else { return nil }
-        return NSAttributedString(rtf: data, documentAttributes: nil)
+        guard hasRTF else { return nil }
+        return RTFStore.shared.attributedString(for: id)
     }
 
     // Check if item has rich text formatting
@@ -417,6 +423,17 @@ struct ClipboardItem: Identifiable, Equatable {
         fullImageCache.removeObject(forKey: id as NSUUID)
     }
 
+    /// Process-stable FNV-1a hash of raw bytes. Used for image dedup identity.
+    static func stableHash(of data: Data) -> String {
+        var hash: UInt64 = 0xcbf2_9ce4_8422_2325
+        data.withUnsafeBytes { (buf: UnsafeRawBufferPointer) in
+            for byte in buf {
+                hash = (hash ^ UInt64(byte)) &* 0x1000_0000_01b3
+            }
+        }
+        return String(hash, radix: 16)
+    }
+
     /// Create a thumbnail directly from compressed image data using CGImageSource.
     /// This avoids fully decoding the image into an uncompressed bitmap.
     private static func createThumbnailFromData(_ data: Data, maxDimension: CGFloat) -> NSImage? {
@@ -460,9 +477,10 @@ struct ClipboardItem: Identifiable, Equatable {
     var uniqueIdentifier: String {
         switch type {
         case .image:
-            // Use hash of image data for deduplication
-            if let data = imageData {
-                return "image-\(data.hashValue)"
+            // Use stable content hash for deduplication (survives relaunches
+            // and imageData being released to disk)
+            if let hash = imageHash {
+                return "image-\(hash)"
             }
             return "image-\(id.uuidString)"
         case .file:
@@ -511,6 +529,7 @@ struct CodableClipboardItem: Codable {
     let timestamp: Date
     let type: ClipboardItem.ClipboardType
     let hasImage: Bool
+    let imageHash: String?
     let hasRTF: Bool
     let fileURLPaths: [String]?
     let sourceApp: CodableSourceApp?
@@ -518,7 +537,7 @@ struct CodableClipboardItem: Codable {
     let detectedTags: Set<ContentTag>?
 
     enum CodingKeys: String, CodingKey {
-        case id, content, timestamp, type, hasImage, hasRTF, fileURLPaths, sourceApp, rtfBase64, detectedTags
+        case id, content, timestamp, type, hasImage, imageHash, hasRTF, fileURLPaths, sourceApp, rtfBase64, detectedTags
     }
 
     init(from item: ClipboardItem) {
@@ -527,6 +546,7 @@ struct CodableClipboardItem: Codable {
         self.timestamp = item.timestamp
         self.type = item.type
         self.hasImage = item.hasImage
+        self.imageHash = item.imageHash
         self.hasRTF = item.hasRTF
         self.fileURLPaths = item.fileURLs?.map { $0.path }
         self.sourceApp = item.sourceApp.map { CodableSourceApp(from: $0) }
@@ -543,6 +563,7 @@ struct CodableClipboardItem: Codable {
         timestamp = try container.decode(Date.self, forKey: .timestamp)
         type = try container.decode(ClipboardItem.ClipboardType.self, forKey: .type)
         hasImage = try container.decodeIfPresent(Bool.self, forKey: .hasImage) ?? false
+        imageHash = try container.decodeIfPresent(String.self, forKey: .imageHash)
         fileURLPaths = try container.decodeIfPresent([String].self, forKey: .fileURLPaths)
         sourceApp = try container.decodeIfPresent(CodableSourceApp.self, forKey: .sourceApp)
         rtfBase64 = try container.decodeIfPresent(String.self, forKey: .rtfBase64)
@@ -569,6 +590,7 @@ struct CodableClipboardItem: Codable {
             type: type,
             imageData: nil,
             hasImage: hasImage,
+            imageHash: imageHash,
             fileURLs: fileURLs,
             sourceApp: source,
             linkMetadata: nil,  // Re-fetched on demand

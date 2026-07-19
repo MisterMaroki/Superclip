@@ -83,7 +83,7 @@ private struct OverlayCornerButton: View {
     Button(action: action) {
       Image(systemName: icon)
         .font(.system(size: 11, weight: .semibold))
-        .foregroundStyle(.white)
+        .foregroundStyle(Brand.white)
         .frame(width: 24, height: 24)
         .background(
           Rectangle()
@@ -111,7 +111,7 @@ private struct OverlayTextButton: View {
     Button(action: action) {
       Text(label)
         .font(.system(size: 13, weight: .medium))
-        .foregroundStyle(.white)
+        .foregroundStyle(Brand.white)
         .frame(width: 120, height: 32)
         .background(
           Rectangle()

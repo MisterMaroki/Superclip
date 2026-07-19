@@ -10,13 +10,26 @@ import ScreenCaptureKit
 /// Used by both the OCR flow and the screenshot capture flow.
 class ScreenCaptureManager {
 
-  /// Capture a rectangular region of the main display.
+  /// Display ID of the screen with keyboard focus — the screen the capture
+  /// overlay panel is shown on. Falling back to CGMainDisplayID (the primary
+  /// display) captures the wrong monitor on multi-display setups.
+  @MainActor
+  private static func focusedDisplayID() -> CGDirectDisplayID {
+    let key = NSDeviceDescriptionKey("NSScreenNumber")
+    if let id = (NSScreen.main?.deviceDescription[key] as? NSNumber)?.uint32Value {
+      return CGDirectDisplayID(id)
+    }
+    return CGMainDisplayID()
+  }
+
+  /// Capture a rectangular region of the focused display.
   func captureArea(rect: NSRect) async throws -> NSImage {
     let scaleFactor = await MainActor.run { NSScreen.main?.backingScaleFactor ?? 2.0 }
+    let targetDisplayID = await Self.focusedDisplayID()
 
     let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
 
-    guard let display = content.displays.first(where: { $0.displayID == CGMainDisplayID() })
+    guard let display = content.displays.first(where: { $0.displayID == targetDisplayID })
       ?? content.displays.first
     else {
       throw ScreenCaptureError.noDisplay
@@ -45,11 +58,12 @@ class ScreenCaptureManager {
     return NSImage(cgImage: cgImage, size: NSSize(width: rect.width, height: rect.height))
   }
 
-  /// Capture the entire main display.
+  /// Capture the entire focused display.
   func captureFullscreen() async throws -> NSImage {
+    let targetDisplayID = await Self.focusedDisplayID()
     let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
 
-    guard let display = content.displays.first(where: { $0.displayID == CGMainDisplayID() })
+    guard let display = content.displays.first(where: { $0.displayID == targetDisplayID })
       ?? content.displays.first
     else {
       throw ScreenCaptureError.noDisplay

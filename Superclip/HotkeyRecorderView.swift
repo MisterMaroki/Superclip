@@ -98,7 +98,7 @@ struct HotkeyRecorderView: View {
             } label: {
                 Text(isRecording ? "Press shortcut..." : config.displayString)
                     .font(.system(size: 12, weight: .medium, design: .monospaced))
-                    .foregroundStyle(isRecording ? .white : Brand.gray700)
+                    .foregroundStyle(isRecording ? Brand.white : Brand.gray700)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 5)
                     .frame(minWidth: 100)
@@ -163,12 +163,14 @@ struct HotkeyCapture: NSViewRepresentable {
     func makeNSView(context: Context) -> HotkeyCaptureNSView {
         let view = HotkeyCaptureNSView()
         view.onCapture = onCapture
+        view.onCancel = { isRecording = false }
         return view
     }
 
     func updateNSView(_ nsView: HotkeyCaptureNSView, context: Context) {
         nsView.isRecordingActive = isRecording
         nsView.onCapture = onCapture
+        nsView.onCancel = { isRecording = false }
         if isRecording {
             // Use a local event monitor to capture key events when recording
             nsView.startMonitoring()
@@ -181,6 +183,10 @@ struct HotkeyCapture: NSViewRepresentable {
 class HotkeyCaptureNSView: NSView {
     var isRecordingActive = false
     var onCapture: ((UInt16, NSEvent.ModifierFlags) -> Void)?
+    /// Must flip the SwiftUI `isRecording` binding — cancelling only the
+    /// local flag leaves the binding true, so the next view update silently
+    /// re-arms the monitor and swallows/reassigns later keystrokes.
+    var onCancel: (() -> Void)?
     private var monitor: Any?
 
     func startMonitoring() {
@@ -192,6 +198,7 @@ class HotkeyCaptureNSView: NSView {
             if event.keyCode == 53 {
                 DispatchQueue.main.async {
                     self.isRecordingActive = false
+                    self.onCancel?()
                 }
                 return nil
             }

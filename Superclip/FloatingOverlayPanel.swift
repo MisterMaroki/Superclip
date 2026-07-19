@@ -111,6 +111,9 @@ class FloatingOverlayPanel: NSPanel {
   // MARK: - Actions
 
   private func copyImage() {
+    // Always write the capture — the clipboard may have changed since the
+    // auto-copy, and an explicit "Copy" click that does nothing loses the
+    // screenshot for the user. History dedup (imageHash) absorbs the re-copy.
     let pasteboard = NSPasteboard.general
     pasteboard.clearContents()
     pasteboard.setData(pngData, forType: .png)

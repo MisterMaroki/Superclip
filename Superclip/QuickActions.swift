@@ -51,9 +51,26 @@ enum QuickActionAnalyzer {
   private static let emailPattern = #"^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$"#
   private static let phonePattern =
     #"^[\+]?[(]?[0-9]{1,4}[)]?[-\s./0-9()]{6,18}$"#
-  private static let filePathPattern = #"^[~/](?:[^\x00]+/)*[^\x00]+$"#
+  // Inner segments must exclude "/" — an all-inclusive class nested under two
+  // quantifiers backtracks exponentially on non-matching input (main-thread hang).
+  private static let filePathPattern = #"^[~/](?:[^/\x00]*/)*[^/\x00]+/?$"#
 
   // MARK: Detection
+
+  /// Cache wrapper (NSCache requires a class type).
+  private final class DetectionBox {
+    let types: [DetectedContentType]
+    init(_ types: [DetectedContentType]) { self.types = types }
+  }
+
+  /// Detection runs regexes + a full JSON parse; SwiftUI evaluates the
+  /// computed properties that call it several times per body pass, so
+  /// memoize per content string.
+  private static let detectCache: NSCache<NSString, DetectionBox> = {
+    let c = NSCache<NSString, DetectionBox>()
+    c.countLimit = 100
+    return c
+  }()
 
   /// Detect all matching content types for a clipboard item.
   /// Returns multiple matches when applicable (e.g. text that is both a email and contains a color).
@@ -64,7 +81,11 @@ enum QuickActionAnalyzer {
     let text = item.content.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.isEmpty else { return [] }
 
+    let cacheKey = text as NSString
+    if let box = detectCache.object(forKey: cacheKey) { return box.types }
+
     var results: [DetectedContentType] = []
+    defer { detectCache.setObject(DetectionBox(results), forKey: cacheKey) }
 
     // Color hex — look for pattern anywhere in text
     if let match = firstMatch(pattern: hexColorPattern, in: text) {
@@ -89,7 +110,7 @@ enum QuickActionAnalyzer {
       let nums = match.components(separatedBy: CharacterSet.decimalDigits.inverted).compactMap {
         Int($0)
       }
-      if nums.count >= 3 {
+      if nums.count >= 3, nums[0] <= 360, nums[1] <= 100, nums[2] <= 100 {
         let (r, g, b) = hslToRGB(
           h: Double(nums[0]), s: Double(nums[1]) / 100.0, l: Double(nums[2]) / 100.0)
         results.append(.colorHSL(raw: match, r: r, g: g, b: b))
@@ -121,7 +142,7 @@ enum QuickActionAnalyzer {
     }
 
     // Code detection (reuse SyntaxHighlighter's heuristic — multi-line + structure)
-    if results.isEmpty, SyntaxHighlighter.highlight(text) != nil {
+    if results.isEmpty, SyntaxHighlighter.isCode(text) {
       results.append(.code(raw: text))
     }
 
@@ -169,7 +190,7 @@ enum QuickActionAnalyzer {
       let nums = match.components(separatedBy: CharacterSet.decimalDigits.inverted).compactMap {
         Int($0)
       }
-      if nums.count >= 3 {
+      if nums.count >= 3, nums[0] <= 360, nums[1] <= 100, nums[2] <= 100 {
         let (r, g, b) = hslToRGB(
           h: Double(nums[0]), s: Double(nums[1]) / 100.0, l: Double(nums[2]) / 100.0)
         let key = "\(r),\(g),\(b)"
@@ -453,40 +474,48 @@ enum QuickActionsProvider {
 
       // MARK: JSON
 
+      // Conversions run at click time — computing them eagerly here means a
+      // full parse + re-serialize of (potentially huge) JSON on every render.
       case .json(let raw):
-        if let pretty = QuickActionAnalyzer.prettyPrintJSON(raw) {
-          actions.append(
-            QuickAction(
-              title: "Pretty Print",
-              icon: "text.alignleft",
-              action: { _ in
+        actions.append(
+          QuickAction(
+            title: "Pretty Print",
+            icon: "text.alignleft",
+            action: { _ in
+              if let pretty = QuickActionAnalyzer.prettyPrintJSON(raw) {
                 copyToPasteboard(pretty)
                 QuickActionFeedback.shared.show("Copied!")
+              } else {
+                QuickActionFeedback.shared.show("Invalid JSON")
               }
-            ))
-        }
-        if let mini = QuickActionAnalyzer.minifyJSON(raw) {
-          actions.append(
-            QuickAction(
-              title: "Minify",
-              icon: "arrow.right.arrow.left",
-              action: { _ in
+            }
+          ))
+        actions.append(
+          QuickAction(
+            title: "Minify",
+            icon: "arrow.right.arrow.left",
+            action: { _ in
+              if let mini = QuickActionAnalyzer.minifyJSON(raw) {
                 copyToPasteboard(mini)
                 QuickActionFeedback.shared.show("Copied!")
+              } else {
+                QuickActionFeedback.shared.show("Invalid JSON")
               }
-            ))
-        }
-        if let escaped = QuickActionAnalyzer.jsonAsEscapedString(raw) {
-          actions.append(
-            QuickAction(
-              title: "Copy as String",
-              icon: "doc.text",
-              action: { _ in
+            }
+          ))
+        actions.append(
+          QuickAction(
+            title: "Copy as String",
+            icon: "doc.text",
+            action: { _ in
+              if let escaped = QuickActionAnalyzer.jsonAsEscapedString(raw) {
                 copyToPasteboard(escaped)
                 QuickActionFeedback.shared.show("Copied!")
+              } else {
+                QuickActionFeedback.shared.show("Invalid JSON")
               }
-            ))
-        }
+            }
+          ))
 
       // MARK: Email
 
@@ -854,10 +883,24 @@ class ColorEditorState: ObservableObject, Identifiable {
     var b: CGFloat = 0
     var a: CGFloat = 0
     nsColor.getHue(&h, saturation: &s, brightness: &b, alpha: &a)
-    adjustedHue = Double(h) * 360.0
-    adjustedSaturation = Double(s)
-    adjustedBrightness = Double(b) * 100.0
+    // Only publish materially-changed values. The isUpdating flag can't stop
+    // the RGB↔HSB onChange cascade (those handlers fire on the *next* view
+    // update, after the flag is cleared) — skipping no-op assignments is what
+    // makes the round-trip converge instead of oscillating.
+    setIfChanged(\.adjustedHue, to: Double(h) * 360.0, tolerance: 0.5)
+    setIfChanged(\.adjustedSaturation, to: Double(s), tolerance: 0.005)
+    setIfChanged(\.adjustedBrightness, to: Double(b) * 100.0, tolerance: 0.5)
     isUpdating = false
+  }
+
+  private func setIfChanged(
+    _ keyPath: ReferenceWritableKeyPath<ColorEditorState, Double>,
+    to newValue: Double,
+    tolerance: Double
+  ) {
+    if abs(self[keyPath: keyPath] - newValue) > tolerance {
+      self[keyPath: keyPath] = newValue
+    }
   }
 
   func syncRGBFromHSB() {
@@ -874,9 +917,10 @@ class ColorEditorState: ObservableObject, Identifiable {
     var b: CGFloat = 0
     var a: CGFloat = 0
     nsColor.getRed(&r, green: &g, blue: &b, alpha: &a)
-    adjustedR = Double(r) * 255.0
-    adjustedG = Double(g) * 255.0
-    adjustedB = Double(b) * 255.0
+    // See syncHSBFromRGB — skip no-op assignments to break the sync cycle.
+    setIfChanged(\.adjustedR, to: Double(r) * 255.0, tolerance: 0.5)
+    setIfChanged(\.adjustedG, to: Double(g) * 255.0, tolerance: 0.5)
+    setIfChanged(\.adjustedB, to: Double(b) * 255.0, tolerance: 0.5)
     isUpdating = false
   }
 }

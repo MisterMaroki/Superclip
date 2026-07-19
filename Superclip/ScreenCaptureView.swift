@@ -174,7 +174,7 @@ struct SelectionOverlay: View {
             // Draw selection border
             context.stroke(
                 cutout,
-                with: .color(.white),
+                with: .color(Brand.white),
                 lineWidth: 2
             )
 
@@ -194,7 +194,7 @@ struct SelectionOverlay: View {
                     width: handleSize,
                     height: handleSize
                 )
-                context.fill(Path(handleRect), with: .color(.white))
+                context.fill(Path(handleRect), with: .color(Brand.white))
             }
         }
         .allowsHitTesting(false)
@@ -211,13 +211,13 @@ struct CrosshairView: View {
             var vLine = Path()
             vLine.move(to: CGPoint(x: position.x, y: 0))
             vLine.addLine(to: CGPoint(x: position.x, y: size.height))
-            context.stroke(vLine, with: .color(.white.opacity(0.5)), lineWidth: 1)
+            context.stroke(vLine, with: .color(Brand.white.opacity(0.5)), lineWidth: 1)
 
             // Horizontal line
             var hLine = Path()
             hLine.move(to: CGPoint(x: 0, y: position.y))
             hLine.addLine(to: CGPoint(x: size.width, y: position.y))
-            context.stroke(hLine, with: .color(.white.opacity(0.5)), lineWidth: 1)
+            context.stroke(hLine, with: .color(Brand.white.opacity(0.5)), lineWidth: 1)
 
             // Center crosshair indicator
             let centerSize: CGFloat = 20
@@ -231,7 +231,7 @@ struct CrosshairView: View {
             centerCross.move(to: CGPoint(x: position.x, y: position.y - centerSize / 2))
             centerCross.addLine(to: CGPoint(x: position.x, y: position.y + centerSize / 2))
 
-            context.stroke(centerCross, with: .color(.white), lineWidth: 2)
+            context.stroke(centerCross, with: .color(Brand.white), lineWidth: 2)
         }
         .allowsHitTesting(false)
     }

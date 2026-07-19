@@ -269,7 +269,7 @@ struct PreviewView: View {
                 Text("Copy to Clipboard")
                   .font(.system(size: 11, weight: .medium))
               }
-              .foregroundStyle(.white)
+              .foregroundStyle(Brand.white)
               .padding(.horizontal, 12)
               .padding(.vertical, 6)
               .background(Brand.black)
@@ -301,7 +301,7 @@ struct PreviewView: View {
                 Text("Open in \(defaultBrowserName)")
                   .font(.system(size: 11, weight: .medium))
               }
-              .foregroundStyle(.white)
+              .foregroundStyle(Brand.white)
               .padding(.horizontal, 12)
               .padding(.vertical, 6)
               .background(Brand.black)
@@ -345,7 +345,7 @@ struct PreviewView: View {
                   Text("Show in Finder")
                     .font(.system(size: 11, weight: .medium))
                 }
-                .foregroundStyle(.white)
+                .foregroundStyle(Brand.white)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
                 .background(Brand.black)
@@ -519,11 +519,6 @@ struct FilePreviewRow: View {
     url.pathExtension.lowercased() == "gif"
   }
 
-  private var imageFromFile: NSImage? {
-    guard isImageFile else { return nil }
-    return NSImage(contentsOf: url)
-  }
-
   private var mediaTypeLabel: String {
     let ext = url.pathExtension.uppercased()
     if isVideoFile {
@@ -546,10 +541,10 @@ struct FilePreviewRow: View {
       } else if isAudioFile {
         AudioPlayerView(url: url)
           .frame(maxWidth: .infinity)
-      } else if isImageFile, let image = imageFromFile {
-        Image(nsImage: image)
-          .resizable()
-          .aspectRatio(contentMode: .fit)
+      } else if isImageFile {
+        // Cached, downsampled load — full NSImage(contentsOf:) decode in
+        // body re-runs on every render of the preview.
+        FileImageThumbnailView(url: url)
           .frame(maxWidth: .infinity, maxHeight: 250)
           .background(Color.black.opacity(0.1))
       }
@@ -635,6 +630,13 @@ struct AudioPlayerView: View {
   @State private var currentTime: Double = 0
   @State private var duration: Double = 0
   @State private var timeObserver: Any?
+  @State private var endObserver: NSObjectProtocol?
+
+  /// Stable pseudo-random bar heights — `CGFloat.random` in body makes the
+  /// waveform re-randomize on every render (10×/sec during playback).
+  private static let barHeights: [CGFloat] = (0..<40).map { i in
+    10 + CGFloat((i * 37 + 13) % 31)
+  }
 
   var body: some View {
     VStack(spacing: 12) {
@@ -646,7 +648,7 @@ struct AudioPlayerView: View {
               i < Int((currentTime / max(duration, 1)) * 40)
                 ? Brand.gray500 : Brand.gray500.opacity(0.3)
             )
-            .frame(width: 4, height: CGFloat.random(in: 10...40))
+            .frame(width: 4, height: Self.barHeights[i])
         }
       }
       .frame(height: 50)
@@ -717,8 +719,10 @@ struct AudioPlayerView: View {
       self.currentTime = time.seconds
     }
 
-    // Observe playback end
-    NotificationCenter.default.addObserver(
+    // Observe playback end — keep the token so cleanup can remove it.
+    // An unremoved block observer leaks (and keeps firing) for the app's
+    // lifetime every time an audio preview is opened.
+    endObserver = NotificationCenter.default.addObserver(
       forName: .AVPlayerItemDidPlayToEndTime,
       object: avPlayer.currentItem,
       queue: .main
@@ -744,6 +748,11 @@ struct AudioPlayerView: View {
     player?.pause()
     if let observer = timeObserver {
       player?.removeTimeObserver(observer)
+      timeObserver = nil
+    }
+    if let observer = endObserver {
+      NotificationCenter.default.removeObserver(observer)
+      endObserver = nil
     }
     player = nil
   }

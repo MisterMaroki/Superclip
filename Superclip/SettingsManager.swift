@@ -109,6 +109,12 @@ class SettingsManager: ObservableObject {
         didSet { defaults.set(screenshotAutoCopy, forKey: Keys.screenshotAutoCopy) }
     }
 
+    // MARK: - Drawer
+
+    @Published var drawerHeight: CGFloat {
+        didSet { defaults.set(Double(drawerHeight), forKey: Keys.drawerHeight) }
+    }
+
     // MARK: - Storage
 
     @Published var maxHistorySize: Int {
@@ -144,6 +150,7 @@ class SettingsManager: ObservableObject {
         static let ocrHotkey = "Superclip.ocrHotkey"
         static let screenshotHotkey = "Superclip.screenshotHotkey"
         static let screenshotAutoCopy = "Superclip.screenshotAutoCopy"
+        static let drawerHeight = "Superclip.drawerHeight"
         static let maxHistorySize = "Superclip.maxHistorySize"
         static let clearOnQuit = "Superclip.clearOnQuit"
     }
@@ -170,6 +177,7 @@ class SettingsManager: ObservableObject {
             Keys.ignoreConfidentialContent: true,
             Keys.ignoreTransientContent: true,
             Keys.ignoredAppBundleIDs: ["com.apple.keychainaccess", "com.apple.Passwords"],
+            Keys.drawerHeight: Double(280),
             Keys.maxHistorySize: 0,
             Keys.clearOnQuit: false,
             Keys.historyHotkey: HotkeyConfig.defaultHistory.dictionary,
@@ -198,6 +206,7 @@ class SettingsManager: ObservableObject {
         self.ocrHotkey = (d.dictionary(forKey: Keys.ocrHotkey) as? [String: Int]) ?? HotkeyConfig.defaultOCR.dictionary
         self.screenshotHotkey = (d.dictionary(forKey: Keys.screenshotHotkey) as? [String: Int]) ?? HotkeyConfig.defaultScreenshot.dictionary
         self.screenshotAutoCopy = d.bool(forKey: Keys.screenshotAutoCopy)
+        self.drawerHeight = CGFloat(d.double(forKey: Keys.drawerHeight))
         self.ignoredAppBundleIDs = d.stringArray(forKey: Keys.ignoredAppBundleIDs) ?? []
         self.maxHistorySize = d.integer(forKey: Keys.maxHistorySize)
         self.clearOnQuit = d.bool(forKey: Keys.clearOnQuit)

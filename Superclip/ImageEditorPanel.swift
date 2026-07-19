@@ -75,6 +75,13 @@ class ImageEditorPanel: NSPanel {
         return nil
       }
 
+      // While a text field is being edited (e.g. typing a text annotation),
+      // pass everything else through — otherwise Backspace deletes annotations
+      // instead of characters and digits switch tools mid-word.
+      if self.firstResponder is NSTextView {
+        return event
+      }
+
       // Cmd+Z - undo (handled by AnnotationState via SwiftUI, but post notification for safety)
       if event.modifierFlags.contains(.command) && event.keyCode == 6 {
         if event.modifierFlags.contains(.shift) {

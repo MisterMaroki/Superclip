@@ -12,34 +12,47 @@ class PasteStackManager: ObservableObject {
     private var clipboardManager: ClipboardManager
     private var cancellable: AnyCancellable?
     private var isActive: Bool = false
-    private var lastKnownChangeCount: Int = 0
-    
+    /// Identity + timestamp of the last history front item we processed.
+    /// Count-based detection missed re-copies (dedup moves an item to the
+    /// front without changing the count), silently dropping stack entries.
+    private var lastSeenFront: (id: UUID, timestamp: Date)?
+
     init(clipboardManager: ClipboardManager) {
         self.clipboardManager = clipboardManager
     }
-    
+
     /// Start a new paste stack session - clears previous items and begins tracking new copies
     func startSession() {
         stackItems.removeAll()
         isActive = true
-        lastKnownChangeCount = clipboardManager.history.count
-        
+        lastSeenFront = clipboardManager.history.first.map { ($0.id, $0.timestamp) }
+
         // Listen for new clipboard items
         cancellable = clipboardManager.$history
             .dropFirst() // Skip the initial value
             .sink { [weak self] history in
                 guard let self = self, self.isActive else { return }
-                
-                // If there's a new item at the front, add it to our stack
-                if history.count > self.lastKnownChangeCount, let newItem = history.first {
-                    // Check if we already have this item (by unique identifier)
-                    if !self.stackItems.contains(where: { $0.uniqueIdentifier == newItem.uniqueIdentifier }) {
-                        DispatchQueue.main.async {
-                            self.stackItems.append(newItem)
+                guard let front = history.first else { return }
+
+                // Only react when the front item is new or freshly re-copied
+                let isNewFront = self.lastSeenFront?.id != front.id
+                    || self.lastSeenFront?.timestamp != front.timestamp
+                self.lastSeenFront = (front.id, front.timestamp)
+                guard isNewFront else { return }
+
+                // Check if we already have this item (by unique identifier)
+                if !self.stackItems.contains(where: { $0.uniqueIdentifier == front.uniqueIdentifier }) {
+                    DispatchQueue.main.async {
+                        self.stackItems.append(front)
+                        // Keep the stack head loaded on the clipboard so Cmd+V
+                        // pastes in queue order. Without this, the clipboard
+                        // holds the most recent copy and the first pastes come
+                        // out of order (last, then first, ...).
+                        if self.stackItems.count >= 2, let head = self.stackItems.first {
+                            self.clipboardManager.copyToClipboard(head)
                         }
                     }
                 }
-                self.lastKnownChangeCount = history.count
             }
     }
     

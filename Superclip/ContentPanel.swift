@@ -60,8 +60,8 @@ class ContentPanel: NSPanel {
       navigationState: navigationState,
       pinboardManager: pinboardManager,
       settings: settings,
-      dismiss: { shouldPaste in
-        self.appDelegate?.closeReviewWindow(andPaste: shouldPaste)
+      dismiss: { [weak self] shouldPaste in
+        self?.appDelegate?.closeReviewWindow(andPaste: shouldPaste)
       },
       onPreview: { [weak self] item, index, cardCenterX in
         self?.appDelegate?.showPreviewWindow(for: item, atIndex: index, cardCenterX: cardCenterX)
@@ -82,13 +82,16 @@ class ContentPanel: NSPanel {
         self?.isSearchFieldFocused = isFocused
       },
     
+      onResize: { [weak self] newHeight in
+        self?.resizePanel(to: newHeight)
+      },
       onEditItem: { [weak self] item in
         guard let self = self, let appDelegate = self.appDelegate else { return }
         let drawerFrame = self.frame
         let panelWidth: CGFloat = 500
         let panelHeight: CGFloat = 400
         let idx = self.navigationState.selectedIndex
-        let cardWidth: CGFloat = 220
+        let cardWidth = drawerFrame.height - 64
         let cardSpacing: CGFloat = 14
         let horizontalPadding: CGFloat = 20
         let cardStartX = drawerFrame.minX + horizontalPadding
@@ -113,7 +116,7 @@ class ContentPanel: NSPanel {
       let screenFrame = screen.visibleFrame
       let padding: CGFloat = 0
       let bottomPadding: CGFloat = 0
-      let panelHeight: CGFloat = 280  // Height for Paste-style horizontal cards
+      let panelHeight: CGFloat = settings.drawerHeight
 
       // Set panel to span across the bottom of the screen
       let panelWidth = screenFrame.width - (padding * 2)
@@ -135,12 +138,32 @@ class ContentPanel: NSPanel {
 
       // Animate up to final position with fade-in
       NSAnimationContext.runAnimationGroup { context in
-        context.duration = 0.15
+        context.duration = 0.12
         context.timingFunction = CAMediaTimingFunction(name: .easeOut)
         self.animator().alphaValue = 1.0
         self.animator().setFrame(finalFrame, display: true)
       }
     }
+  }
+
+  func resizePanel(to newHeight: CGFloat) {
+    guard let screen = NSScreen.main else { return }
+    let screenFrame = screen.visibleFrame
+    let maxHeight = min(450, screenFrame.height * 0.4)
+    let clampedHeight = min(max(220, newHeight), maxHeight)
+
+    let panelWidth = frame.width
+    let xPosition = frame.origin.x
+    let yPosition = screenFrame.minY
+
+    let newFrame = NSRect(x: xPosition, y: yPosition, width: panelWidth, height: clampedHeight)
+    setFrame(newFrame, display: true)
+
+    if let hostingView = contentView {
+      hostingView.setFrameSize(NSSize(width: panelWidth, height: clampedHeight))
+    }
+
+    settings.drawerHeight = clampedHeight
   }
 
   func animateClose(completion: @escaping () -> Void) {
@@ -153,7 +176,7 @@ class ContentPanel: NSPanel {
     let offscreenFrame = NSRect(x: frame.origin.x, y: offscreenY, width: frame.width, height: frame.height)
 
     NSAnimationContext.runAnimationGroup({ context in
-      context.duration = 0.15
+      context.duration = 0.12
       context.timingFunction = CAMediaTimingFunction(name: .easeIn)
       self.animator().alphaValue = 0
       self.animator().setFrame(offscreenFrame, display: true)

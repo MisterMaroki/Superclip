@@ -13,7 +13,7 @@ final class WelcomeWindowController: NSWindowController, NSWindowDelegate {
 
     override init(window: NSWindow?) {
         let win = window ?? NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 560, height: 640),
+            contentRect: NSRect(x: 0, y: 0, width: 560, height: 740),
             styleMask: [.titled, .closable, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -35,7 +35,10 @@ final class WelcomeWindowController: NSWindowController, NSWindowDelegate {
             UserDefaults.standard.set(true, forKey: Self.hasSeenWelcomeKey)
             self?.window?.close()
         })
-        window?.contentViewController = NSHostingController(rootView: view)
+        let hostingController = NSHostingController(rootView: view)
+        window?.contentViewController = hostingController
+        let fittingSize = hostingController.view.fittingSize
+        window?.setContentSize(fittingSize)
     }
 
     func show() {

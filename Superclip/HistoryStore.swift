@@ -70,7 +70,9 @@ class HistoryStore {
         // Capture the items immediately (snapshot) on the calling thread,
         // then hand off to the debounce pipeline.
         let codableItems = items.map { CodableClipboardItem(from: $0) }
+        lock.lock()
         pendingItems = codableItems
+        lock.unlock()
         saveSubject.send()
     }
 

@@ -64,11 +64,11 @@ class PasteStackPanel: NSPanel {
         let contentView = PasteStackView(
             pasteStackManager: pasteStackManager,
             navigationState: navigationState,
-            onClose: {
-                self.appDelegate?.closePasteStackWindow(andPaste: false)
+            onClose: { [weak self] in
+                self?.appDelegate?.closePasteStackWindow(andPaste: false)
             }
-        ) { shouldPaste in
-            self.appDelegate?.handlePasteStackPaste(shouldPaste: shouldPaste)
+        ) { [weak self] shouldPaste in
+            self?.appDelegate?.handlePasteStackPaste(shouldPaste: shouldPaste)
         }
         
         let hostingView = NSHostingView(rootView: contentView)

@@ -13,19 +13,26 @@ struct RichTextEditorView: View {
     let onCancel: () -> Void
 
     @State private var textView: NSTextView?
+    /// Live text mirror updated from NSText.didChangeNotification — the
+    /// computed counts otherwise freeze at the initial content because
+    /// nothing re-renders the view while the user types.
+    @State private var liveText: String?
+
+    private var statsText: String {
+        liveText ?? textView?.string ?? item.content
+    }
 
     var characterCount: Int {
-        textView?.string.count ?? item.content.count
+        statsText.count
     }
 
     var wordCount: Int {
-        let text = textView?.string ?? item.content
-        let words = text.split { $0.isWhitespace || $0.isNewline }
+        let words = statsText.split { $0.isWhitespace || $0.isNewline }
         return words.count
     }
 
     var lineCount: Int {
-        let text = textView?.string ?? item.content
+        let text = statsText
         if text.isEmpty { return 0 }
         return text.components(separatedBy: .newlines).count
     }
@@ -82,10 +89,10 @@ struct RichTextEditorView: View {
                         Text("Save")
                         Text("\u{2318}\u{21A9}")
                             .font(.system(size: 10))
-                            .foregroundColor(.white.opacity(0.7))
+                            .foregroundColor(Brand.white.opacity(0.7))
                     }
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(.white)
+                    .foregroundColor(Brand.white)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
                     .background(Brand.black)
@@ -103,6 +110,11 @@ struct RichTextEditorView: View {
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color(nsColor: .controlBackgroundColor).opacity(0.95))
+            .onReceive(NotificationCenter.default.publisher(for: NSText.didChangeNotification)) { note in
+                if let tv = note.object as? NSTextView, tv === textView {
+                    liveText = tv.string
+                }
+            }
 
             // Footer with stats
             HStack {

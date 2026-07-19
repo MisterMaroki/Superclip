@@ -9,10 +9,31 @@ enum SyntaxHighlighter {
 
     // MARK: - Public
 
+    /// Cheap code-detection check without paying for colorization.
+    static func isCode(_ text: String) -> Bool {
+        looksLikeCode(text)
+    }
+
+    /// Memoized colorized output — card/preview bodies call highlight() on every
+    /// SwiftUI evaluation, so recomputing 70+ regex passes each time stalls the
+    /// main thread on large clips.
+    private static let cache: NSCache<NSString, NSAttributedString> = {
+        let c = NSCache<NSString, NSAttributedString>()
+        c.countLimit = 40
+        return c
+    }()
+
+    /// Colorization is O(regexes × length); above this size fall back to plain text.
+    private static let maxHighlightLength = 50_000
+
     /// Returns a highlighted attributed string if the text looks like code, otherwise nil.
     static func highlight(_ text: String) -> NSAttributedString? {
-        guard looksLikeCode(text) else { return nil }
-        return colorize(text)
+        guard text.count <= maxHighlightLength, looksLikeCode(text) else { return nil }
+        let key = text as NSString
+        if let cached = cache.object(forKey: key) { return cached }
+        let result = colorize(text)
+        cache.setObject(result, forKey: key)
+        return result
     }
 
     // MARK: - Code Detection

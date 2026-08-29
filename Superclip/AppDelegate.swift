@@ -13,6 +13,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   static var isShareSheetActive = false
 
   var welcomeController: WelcomeWindowController?
+  private var statusItemController: StatusItemController?
   var contentWindow: NSWindow?
   var pasteStackWindow: NSWindow?
   var previewWindow: NSWindow?
@@ -50,12 +51,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     settingsManager.applyTheme()
 
+    statusItemController = StatusItemController(appDelegate: self)
+
     setupHotkey()
     setupPasteStackHotkey()
     setupOCRHotkey()
     setupScreenshotHotkey()
     observeHotkeySettings()
-    snippetManager.startMonitoring()
 
     // Pre-warm ClipboardManager so its init (disk I/O, observers) doesn't delay the first drawer open
     _ = clipboardManager

@@ -26,7 +26,11 @@ struct Snippet: Identifiable, Codable, Equatable {
 
 /// Manages text snippets and monitors keyboard for trigger expansion.
 class SnippetManager: ObservableObject {
-    @Published var snippets: [Snippet] = []
+    /// The global key monitor is only installed while at least one enabled
+    /// snippet exists, so users without snippets never have keystrokes observed.
+    @Published var snippets: [Snippet] = [] {
+        didSet { updateMonitoringState() }
+    }
 
     private let storageKey = "SuperclipSnippets"
     private let storage = UserDefaults.standard
@@ -38,6 +42,7 @@ class SnippetManager: ObservableObject {
 
     init() {
         loadSnippets()
+        updateMonitoringState()
     }
 
     deinit {
@@ -88,6 +93,15 @@ class SnippetManager: ObservableObject {
     }
 
     // MARK: - Text Expansion Monitoring
+
+    private func updateMonitoringState() {
+        if enabledSnippetCount > 0 {
+            startMonitoring()
+        } else {
+            stopMonitoring()
+            typeBuffer = ""
+        }
+    }
 
     func startMonitoring() {
         guard keyMonitor == nil else { return }

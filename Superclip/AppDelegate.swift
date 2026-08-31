@@ -155,6 +155,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   func toggleContentWindow() {
+    // During onboarding the "Try it" page is waiting for this press: tell it,
+    // then open the drawer as normal so the user sees the shortcut really work.
+    if welcomeController?.window?.isVisible == true {
+      NotificationCenter.default.post(name: .onboardingHotkeyPressed, object: nil)
+    }
     // If panel is open, close it; otherwise open it
     if contentWindow != nil && contentWindow?.isVisible == true {
       closeReviewWindow(andPaste: false)

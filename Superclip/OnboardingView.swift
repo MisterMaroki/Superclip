@@ -2,20 +2,43 @@
 //  OnboardingView.swift
 //  Superclip
 //
+//  First-run setup assistant. Three short steps, laid out like a macOS setup
+//  sheet: a step rail on the left tracks progress, the right pane does the work.
+//
+//    1. Permissions – grant Accessibility (required) and Screen Recording.
+//    2. Shortcut    – the user presses ⌘⇧A for real; the drawer opens.
+//    3. Done        – the remaining shortcuts and where to find the app.
+//
 
 import AppKit
 import ApplicationServices
 import SwiftUI
 
-// MARK: - Design Tokens (matching website)
+// MARK: - Layout constants
 
-private enum OB {
-    static let bg = Brand.white
-    static let fg = Brand.black
-    static let fgMuted = Brand.gray500
-    static let fgSubtle = Brand.gray500
-    static let glassBg = Brand.white
-    static let glassBorder = Brand.gray200
+enum OnboardingLayout {
+    static let windowSize = CGSize(width: 760, height: 480)
+    static let railWidth: CGFloat = 236
+}
+
+private enum Step: Int, CaseIterable {
+    case permissions, shortcut, done
+
+    var title: String {
+        switch self {
+        case .permissions: return "Permissions"
+        case .shortcut: return "Your shortcut"
+        case .done: return "All set"
+        }
+    }
+
+    var railSubtitle: String {
+        switch self {
+        case .permissions: return "Let Superclip see your keys"
+        case .shortcut: return "Learn the one that matters"
+        case .done: return "Everything else"
+        }
+    }
 }
 
 // MARK: - Main View
@@ -23,272 +46,344 @@ private enum OB {
 struct OnboardingView: View {
     var onComplete: () -> Void
 
-    @State private var currentPage = 0
+    @State private var step: Step = .permissions
+    @State private var hotkeyConfirmed = false
 
     var body: some View {
-        ZStack {
-            // Background
-            OB.bg.ignoresSafeArea()
+        HStack(spacing: 0) {
+            StepRail(current: step, hotkeyConfirmed: hotkeyConfirmed)
+                .frame(width: OnboardingLayout.railWidth)
 
-            // Gradient blobs
-            GradientBlobs(page: currentPage)
+            Rectangle()
+                .fill(Brand.gray200)
+                .frame(width: 1)
 
-            VStack(spacing: 0) {
-                // Page indicator dots
-                HStack(spacing: 8) {
-                    ForEach(0..<3) { index in
-                        Rectangle()
-                            .fill(index == currentPage
-                                  ? AnyShapeStyle(Brand.black)
-                                  : AnyShapeStyle(Brand.gray200))
-                            .frame(width: 8, height: 8)
+            VStack(alignment: .leading, spacing: 0) {
+                ZStack(alignment: .topLeading) {
+                    switch step {
+                    case .permissions:
+                        PermissionsStep()
+                    case .shortcut:
+                        ShortcutStep(confirmed: $hotkeyConfirmed)
+                    case .done:
+                        DoneStep()
                     }
                 }
-                .padding(.top, 36)
-                .padding(.bottom, 20)
-
-                // Page content — fixed height so the button never moves
-                ZStack {
-                    switch currentPage {
-                    case 0:
-                        WelcomePage()
-                    case 1:
-                        PermissionsPage()
-                    default:
-                        ReadyPage()
-                    }
-                }
-                .frame(maxWidth: .infinity)
-                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .padding(.top, 44)
+                .padding(.horizontal, 44)
+                .id(step)
                 .transition(.asymmetric(
                     insertion: .move(edge: .trailing).combined(with: .opacity),
-                    removal: .move(edge: .leading).combined(with: .opacity)
+                    removal: .opacity
                 ))
 
-                // Bottom button
-                GradientButton(
-                    title: currentPage == 2 ? "Get Started" : continueLabel,
-                    action: currentPage == 2 ? onComplete : advance
-                )
-                .padding(.horizontal, 48)
-                .padding(.bottom, 32)
+                footer
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Brand.white)
         }
-        .frame(width: 520)
+        .frame(width: OnboardingLayout.windowSize.width, height: OnboardingLayout.windowSize.height)
+        .background(Brand.white)
+        .animation(.spring(response: 0.4, dampingFraction: 0.85), value: step)
     }
 
-    private var continueLabel: String {
-        if currentPage == 1 {
-            let accessOK = AXIsProcessTrusted()
-            let screenOK = CGPreflightScreenCaptureAccess()
-            if !accessOK && !screenOK {
-                return "Continue Without Permissions"
+    // MARK: Footer
+
+    private var footer: some View {
+        HStack(spacing: 12) {
+            if step != .permissions {
+                GhostButton(title: "Back") { move(-1) }
             }
+
+            Spacer()
+
+            if step == .shortcut && !hotkeyConfirmed {
+                GhostButton(title: "Skip for now") { move(1) }
+            }
+
+            PrimaryButton(title: primaryTitle, action: primaryAction)
         }
-        return "Continue"
+        .padding(.horizontal, 44)
+        .padding(.bottom, 32)
+        .padding(.top, 16)
     }
 
-    private func advance() {
-        withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
-            currentPage += 1
+    private var primaryTitle: String {
+        switch step {
+        case .permissions:
+            return AXIsProcessTrusted() ? "Continue" : "Continue anyway"
+        case .shortcut:
+            return hotkeyConfirmed ? "Continue" : "Waiting for \u{2318}\u{21E7}A\u{2026}"
+        case .done:
+            return "Finish"
         }
     }
-}
 
-// MARK: - Gradient Background Blobs
-
-private struct GradientBlobs: View {
-    let page: Int
-
-    var body: some View {
-        EmptyView()
+    private func primaryAction() {
+        switch step {
+        case .permissions:
+            move(1)
+        case .shortcut:
+            if hotkeyConfirmed { move(1) }
+        case .done:
+            onComplete()
+        }
     }
-}
 
-// MARK: - Gradient Button
-
-private struct GradientButton: View {
-    let title: String
-    let action: () -> Void
-
-    @State private var isHovered = false
-
-    var body: some View {
-        Button(action: action) {
-            Text(title)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundColor(Brand.white)
-                .frame(maxWidth: .infinity)
-                .frame(height: 48)
-                .background(
-                    Rectangle()
-                        .fill(Brand.black)
-                )
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering in
-            isHovered = hovering
-        }
+    private func move(_ delta: Int) {
+        guard let next = Step(rawValue: step.rawValue + delta) else { return }
+        step = next
     }
 }
 
-// MARK: - Glass Card
+// MARK: - Step rail
 
-private struct GlassCard<Content: View>: View {
-    @ViewBuilder let content: () -> Content
+private struct StepRail: View {
+    let current: Step
+    let hotkeyConfirmed: Bool
 
     var body: some View {
-        content()
-            .background(
-                Rectangle()
-                    .fill(Brand.white)
-                    .overlay(
-                        Rectangle()
-                            .stroke(Brand.gray200, lineWidth: 1)
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 12) {
+                Image(nsImage: NSApp.applicationIconImage)
+                    .resizable()
+                    .frame(width: 40, height: 40)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Superclip")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundColor(Brand.black)
+                    Text("Setup")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Brand.gray500)
+                }
+            }
+            .padding(.top, 40)
+            .padding(.bottom, 44)
+
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(Step.allCases.enumerated()), id: \.element) { index, step in
+                    RailRow(
+                        index: index + 1,
+                        step: step,
+                        state: state(for: step),
+                        isLast: index == Step.allCases.count - 1
                     )
-            )
-    }
-}
-
-// MARK: - Page 1: Welcome
-
-private struct WelcomePage: View {
-    var body: some View {
-        VStack(spacing: 28) {
-            // App icon
-            Image(nsImage: NSApp.applicationIconImage)
-                .resizable()
-                .frame(width: 80, height: 80)
-                .clipShape(Rectangle())
-
-            VStack(spacing: 10) {
-                Text("Your clipboard, \(Text("supercharged.").fontWeight(.black))")
-                    .font(.system(size: 28, weight: .bold))
-
-                Text("Everything you copy, organized and ready to use.")
-                    .font(.system(size: 14))
-                    .foregroundStyle(OB.fgMuted)
+                }
             }
 
-            VStack(spacing: 8) {
-                FeatureRow(
-                    icon: "clock.arrow.circlepath",
-                    title: "Clipboard History",
-                    subtitle: "Every copy saved and searchable"
-                )
-                FeatureRow(
-                    icon: "pin.fill",
-                    title: "Pinboards",
-                    subtitle: "Color-coded boards for your favorites"
-                )
-                FeatureRow(
-                    icon: "text.cursor",
-                    title: "Snippets",
-                    subtitle: "Type a trigger, expand into full text"
-                )
-                FeatureRow(
-                    icon: "bolt.fill",
-                    title: "Quick Actions",
-                    subtitle: "Convert colors, format JSON, and more"
-                )
-                FeatureRow(
-                    icon: "text.viewfinder",
-                    title: "Text Sniper",
-                    subtitle: "Extract text from anywhere on screen"
-                )
-            }
-            .padding(.horizontal, 36)
+            Spacer()
+
+            Text("You can change any of this later in Settings.")
+                .font(.system(size: 11))
+                .foregroundStyle(Brand.gray500)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.bottom, 32)
         }
-        .padding(.vertical, 32)
+        .padding(.horizontal, 28)
+        .frame(maxHeight: .infinity, alignment: .top)
+        .background(Brand.gray100)
+    }
+
+    private func state(for step: Step) -> RailRow.State {
+        if step.rawValue < current.rawValue { return .done }
+        if step == current { return .current }
+        return .upcoming
     }
 }
 
-private struct FeatureRow: View {
-    let icon: String
+private struct RailRow: View {
+    enum State { case done, current, upcoming }
+
+    let index: Int
+    let step: Step
+    let state: State
+    let isLast: Bool
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 14) {
+            VStack(spacing: 0) {
+                ZStack {
+                    Rectangle()
+                        .fill(state == .upcoming ? Brand.white : Brand.black)
+                        .overlay(Rectangle().stroke(state == .upcoming ? Brand.gray300 : Brand.black, lineWidth: 1))
+                        .frame(width: 26, height: 26)
+
+                    if state == .done {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(Brand.white)
+                    } else {
+                        Text("\(index)")
+                            .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                            .foregroundColor(state == .current ? Brand.white : Brand.gray500)
+                    }
+                }
+
+                if !isLast {
+                    Rectangle()
+                        .fill(state == .done ? Brand.black : Brand.gray300)
+                        .frame(width: 1, height: 34)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(step.title)
+                    .font(.system(size: 13, weight: state == .current ? .semibold : .medium))
+                    .foregroundColor(state == .upcoming ? Brand.gray500 : Brand.black)
+                Text(step.railSubtitle)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Brand.gray500)
+                    .opacity(state == .current ? 1 : 0.7)
+            }
+            .padding(.top, 4)
+
+            Spacer(minLength: 0)
+        }
+        .animation(.easeInOut(duration: 0.25), value: state == .done)
+    }
+}
+
+// MARK: - Shared pieces
+
+private struct StepHeader: View {
     let title: String
     let subtitle: String
 
     var body: some View {
-        GlassCard {
-            HStack(spacing: 14) {
-                // Icon box
-                ZStack {
-                    Rectangle()
-                        .fill(Brand.black)
-                        .frame(width: 36, height: 36)
-
-                    Image(systemName: icon)
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundColor(Brand.white)
-                }
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(title)
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(OB.fg)
-                    Text(subtitle)
-                        .font(.system(size: 12))
-                        .foregroundStyle(OB.fgMuted)
-                }
-
-                Spacer()
-            }
-            .padding(14)
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.system(size: 26, weight: .bold))
+                .foregroundColor(Brand.black)
+            Text(subtitle)
+                .font(.system(size: 14))
+                .foregroundStyle(Brand.gray500)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 }
 
-// MARK: - Page 2: Permissions
+private struct PrimaryButton: View {
+    let title: String
+    let action: () -> Void
 
-private struct PermissionsPage: View {
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(Brand.white)
+                .padding(.horizontal, 22)
+                .frame(height: 38)
+                .background(Rectangle().fill(Brand.black))
+        }
+        .buttonStyle(.plain)
+        .keyboardShortcut(.defaultAction)
+    }
+}
+
+private struct GhostButton: View {
+    let title: String
+    let action: () -> Void
+    @State private var hovered = false
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(hovered ? Brand.black : Brand.gray500)
+                .padding(.horizontal, 14)
+                .frame(height: 38)
+        }
+        .buttonStyle(.plain)
+        .onHover { hovered = $0 }
+    }
+}
+
+private struct KeyCap: View {
+    let symbol: String
+    let size: CGFloat
+
+    init(_ symbol: String, size: CGFloat = 56) {
+        self.symbol = symbol
+        self.size = size
+    }
+
+    var body: some View {
+        Text(symbol)
+            .font(.system(size: size * 0.42, weight: .semibold, design: .rounded))
+            .foregroundColor(Brand.black)
+            .frame(width: size, height: size)
+            .background(
+                Rectangle()
+                    .fill(Brand.white)
+                    .overlay(Rectangle().stroke(Brand.gray300, lineWidth: 1))
+                    .overlay(alignment: .bottom) {
+                        Rectangle().fill(Brand.gray300).frame(height: 3)
+                    }
+            )
+    }
+}
+
+private struct KeyCombo: View {
+    let keys: [String]
+    let size: CGFloat
+
+    init(_ keys: [String], size: CGFloat = 56) {
+        self.keys = keys
+        self.size = size
+    }
+
+    var body: some View {
+        HStack(spacing: size * 0.14) {
+            ForEach(keys, id: \.self) { KeyCap($0, size: size) }
+        }
+    }
+}
+
+// MARK: - Step 1: Permissions
+
+private struct PermissionsStep: View {
     @State private var accessibilityGranted = AXIsProcessTrusted()
     @State private var screenRecordingGranted = CGPreflightScreenCaptureAccess()
     @State private var pollTimer: Timer?
 
     var body: some View {
-        VStack(spacing: 28) {
-            // Icon
-            Image(systemName: "lock.shield.fill")
-                .font(.system(size: 40, weight: .medium))
-                .foregroundStyle(Brand.black)
+        VStack(alignment: .leading, spacing: 28) {
+            StepHeader(
+                title: "Two quick permissions",
+                subtitle: "Superclip runs in the background and works inside every app. macOS needs you to allow that explicitly."
+            )
 
-            VStack(spacing: 10) {
-                Text("Quick permissions")
-                    .font(.system(size: 28, weight: .bold))
-                    .foregroundColor(OB.fg)
-
-                Text("Superclip needs a couple of things\nto work its magic.")
-                    .font(.system(size: 14))
-                    .foregroundStyle(OB.fgMuted)
-                    .multilineTextAlignment(.center)
-            }
-
-            VStack(spacing: 12) {
+            VStack(spacing: 0) {
                 PermissionRow(
                     title: "Accessibility",
-                    subtitle: "Global hotkeys and paste simulation",
+                    detail: "Paste into other apps and expand snippets as you type.",
+                    badge: "Required",
                     isGranted: accessibilityGranted,
-                    isRequired: true,
                     action: requestAccessibility
                 )
-
+                Rectangle().fill(Brand.gray200).frame(height: 1)
                 PermissionRow(
                     title: "Screen Recording",
-                    subtitle: "Enables Text Sniper (OCR)",
+                    detail: "Take screenshots and grab text from the screen.",
+                    badge: "Optional",
                     isGranted: screenRecordingGranted,
-                    isRequired: false,
                     action: requestScreenRecording
                 )
             }
-            .padding(.horizontal, 36)
+            .overlay(Rectangle().stroke(Brand.gray200, lineWidth: 1))
+
+            Text("Granting opens System Settings. Come back here when you're done \u{2014} this list updates by itself.")
+                .font(.system(size: 12))
+                .foregroundStyle(Brand.gray500)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(.vertical, 32)
         .onAppear { startPolling() }
         .onDisappear { stopPolling() }
     }
 
     private func startPolling() {
-        pollTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { _ in
+        pollTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
             DispatchQueue.main.async {
                 accessibilityGranted = AXIsProcessTrusted()
                 screenRecordingGranted = CGPreflightScreenCaptureAccess()
@@ -302,10 +397,8 @@ private struct PermissionsPage: View {
     }
 
     private func requestAccessibility() {
-        // Register the app in the accessibility list
         let opts = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
         AXIsProcessTrustedWithOptions(opts)
-        // Open Settings after a brief delay so the app appears in the list
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
             if !AXIsProcessTrusted(),
                let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
@@ -327,151 +420,180 @@ private struct PermissionsPage: View {
 
 private struct PermissionRow: View {
     let title: String
-    let subtitle: String
+    let detail: String
+    let badge: String
     let isGranted: Bool
-    let isRequired: Bool
     let action: () -> Void
 
-    @State private var isHovered = false
+    var body: some View {
+        HStack(alignment: .center, spacing: 16) {
+            ZStack {
+                Rectangle()
+                    .fill(isGranted ? Brand.black : Brand.gray100)
+                    .frame(width: 32, height: 32)
+                Image(systemName: isGranted ? "checkmark" : "lock.fill")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(isGranted ? Brand.white : Brand.gray500)
+            }
+            .animation(.spring(response: 0.35, dampingFraction: 0.7), value: isGranted)
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 8) {
+                    Text(title)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(Brand.black)
+                    Text(badge.uppercased())
+                        .font(.system(size: 9, weight: .bold))
+                        .tracking(0.6)
+                        .foregroundStyle(Brand.gray500)
+                }
+                Text(detail)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Brand.gray500)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 12)
+
+            if isGranted {
+                Text("Granted")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Brand.gray500)
+            } else {
+                Button(action: action) {
+                    Text("Grant\u{2026}")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(Brand.black)
+                        .padding(.horizontal, 14)
+                        .frame(height: 30)
+                        .background(
+                            Rectangle()
+                                .fill(Brand.white)
+                                .overlay(Rectangle().stroke(Brand.gray300, lineWidth: 1))
+                        )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(16)
+    }
+}
+
+// MARK: - Step 2: Shortcut
+
+/// Waits for the user to press the real global hotkey. While onboarding is on
+/// screen, AppDelegate posts `.onboardingHotkeyPressed` and opens the drawer.
+private struct ShortcutStep: View {
+    @Binding var confirmed: Bool
+    @State private var pulse = false
 
     var body: some View {
-        GlassCard {
-            HStack(spacing: 14) {
-                // Status icon
-                ZStack {
-                    Rectangle()
-                        .fill(isGranted ? Brand.black : Brand.gray200)
-                        .frame(width: 36, height: 36)
+        VStack(alignment: .leading, spacing: 28) {
+            StepHeader(
+                title: confirmed ? "That\u{2019}s your clipboard." : "Press this now",
+                subtitle: confirmed
+                    ? "The drawer just opened at the bottom of your screen. Press the shortcut again any time, in any app \u{2014} or click the paperclip in your menu bar."
+                    : "This is the only shortcut you need to remember. It opens your clipboard history from anywhere."
+            )
 
-                    Image(systemName: isGranted ? "checkmark" : "lock")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(isGranted ? Brand.white : Brand.gray500)
-                }
-                .animation(.spring(response: 0.4, dampingFraction: 0.7), value: isGranted)
+            HStack(spacing: 20) {
+                KeyCombo(["\u{2318}", "\u{21E7}", "A"], size: 64)
+                    .scaleEffect(pulse && !confirmed ? 1.03 : 1)
+                    .opacity(confirmed ? 0.55 : 1)
 
-                VStack(alignment: .leading, spacing: 3) {
+                if confirmed {
                     HStack(spacing: 8) {
-                        Text(title)
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 16, weight: .semibold))
+                        Text("Got it")
                             .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(OB.fg)
-
-                        if isRequired {
-                            Text("Required")
-                                .font(.system(size: 10, weight: .semibold))
-                                .foregroundColor(Brand.black)
-                                .padding(.horizontal, 7)
-                                .padding(.vertical, 3)
-                                .background(
-                                    Rectangle()
-                                        .fill(Brand.gray100)
-                                        .overlay(Rectangle().stroke(Brand.gray200, lineWidth: 1))
-                                )
-                        } else {
-                            Text("Optional")
-                                .font(.system(size: 10, weight: .semibold))
-                                .foregroundColor(OB.fgSubtle)
-                                .padding(.horizontal, 7)
-                                .padding(.vertical, 3)
-                                .background(
-                                    Rectangle()
-                                        .fill(Brand.gray100)
-                                        .overlay(Rectangle().stroke(Brand.gray200, lineWidth: 1))
-                                )
-                        }
                     }
-                    Text(subtitle)
-                        .font(.system(size: 12))
-                        .foregroundStyle(OB.fgMuted)
-                }
-
-                Spacer()
-
-                if !isGranted {
-                    Button(action: action) {
-                        Text("Grant")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundColor(Brand.black)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 7)
-                            .background(
-                                Rectangle()
-                                    .fill(Brand.gray100)
-                                    .overlay(Rectangle().stroke(Brand.gray200, lineWidth: 1))
-                            )
-                    }
-                    .buttonStyle(.plain)
-                    .onHover { h in isHovered = h }
-                } else {
-                    Text("Granted")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(Brand.black)
+                    .foregroundColor(Brand.black)
+                    .transition(.move(edge: .leading).combined(with: .opacity))
                 }
             }
-            .padding(14)
+            .padding(.vertical, 8)
+
+            if !confirmed {
+                HStack(spacing: 6) {
+                    Image(systemName: "info.circle")
+                        .font(.system(size: 11))
+                    Text("Nothing happening? Click the paperclip icon in your menu bar instead.")
+                        .font(.system(size: 12))
+                }
+                .foregroundStyle(Brand.gray500)
+            }
+        }
+        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: confirmed)
+        .onAppear {
+            withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) {
+                pulse = true
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .onboardingHotkeyPressed)) { _ in
+            confirmed = true
         }
     }
 }
 
-// MARK: - Page 3: Ready
+extension Notification.Name {
+    /// Posted when the history hotkey fires while onboarding is on screen.
+    static let onboardingHotkeyPressed = Notification.Name("Superclip.onboardingHotkeyPressed")
+}
 
-private struct ReadyPage: View {
+// MARK: - Step 3: Done
+
+private struct DoneStep: View {
     var body: some View {
-        VStack(spacing: 28) {
-            // Success icon
-            Image(systemName: "checkmark.seal.fill")
-                .font(.system(size: 44, weight: .medium))
-                .foregroundStyle(Brand.black)
+        VStack(alignment: .leading, spacing: 28) {
+            StepHeader(
+                title: "You\u{2019}re set",
+                subtitle: "Superclip is already saving everything you copy. Three more shortcuts when you want them:"
+            )
 
-            VStack(spacing: 10) {
-                Text("You\u{2019}re all set!")
-                    .font(.system(size: 28, weight: .bold))
-                    .foregroundColor(OB.fg)
-
-                Text("Here are the shortcuts you\u{2019}ll use most:")
-                    .font(.system(size: 14))
-                    .foregroundStyle(OB.fgMuted)
+            VStack(spacing: 0) {
+                ShortcutRow(keys: ["\u{2318}", "\u{21E7}", "C"], title: "Paste stack", detail: "Copy several things, then paste them one after another.")
+                Rectangle().fill(Brand.gray200).frame(height: 1)
+                ShortcutRow(keys: ["\u{2318}", "\u{21E7}", "4"], title: "Screenshot", detail: "Capture, annotate, and copy \u{2014} replaces the built-in shortcut.")
+                Rectangle().fill(Brand.gray200).frame(height: 1)
+                ShortcutRow(keys: ["\u{2318}", "\u{21E7}", "`"], title: "Text Sniper", detail: "Select any area of the screen and copy the text in it.")
             }
+            .overlay(Rectangle().stroke(Brand.gray200, lineWidth: 1))
 
-            VStack(spacing: 8) {
-                ShortcutRow(keys: "\u{2318}\u{21E7}A", label: "Open clipboard history")
-                ShortcutRow(keys: "\u{2318}\u{21E7}C", label: "Copy & open paste stack")
-                ShortcutRow(keys: "\u{2318}\u{21E7}`", label: "Text Sniper (screen OCR)")
+            HStack(spacing: 8) {
+                Image(systemName: "paperclip")
+                    .font(.system(size: 12, weight: .semibold))
+                Text("Superclip lives in your menu bar \u{2014} no Dock icon. Settings and Quit are there.")
+                    .font(.system(size: 12))
             }
-            .padding(.horizontal, 36)
+            .foregroundStyle(Brand.gray500)
         }
-        .padding(.vertical, 32)
     }
 }
 
 private struct ShortcutRow: View {
-    let keys: String
-    let label: String
+    let keys: [String]
+    let title: String
+    let detail: String
 
     var body: some View {
-        GlassCard {
-            HStack(spacing: 14) {
-                Text(keys)
-                    .font(.system(size: 13, weight: .semibold, design: .monospaced))
+        HStack(spacing: 16) {
+            KeyCombo(keys, size: 28)
+                .frame(width: 104, alignment: .leading)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundColor(Brand.black)
-                    .frame(width: 64, alignment: .center)
-                    .padding(.vertical, 6)
-                    .padding(.horizontal, 8)
-                    .background(
-                        Rectangle()
-                            .fill(Brand.gray100)
-                            .overlay(
-                                Rectangle()
-                                    .stroke(Brand.gray200, lineWidth: 1)
-                            )
-                    )
-
-                Text(label)
-                    .font(.system(size: 13))
-                    .foregroundStyle(OB.fgMuted)
-
-                Spacer()
+                Text(detail)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Brand.gray500)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(12)
+
+            Spacer(minLength: 0)
         }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
     }
 }

@@ -13,7 +13,7 @@ final class WelcomeWindowController: NSWindowController, NSWindowDelegate {
 
     override init(window: NSWindow?) {
         let win = window ?? NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 560, height: 740),
+            contentRect: NSRect(origin: .zero, size: OnboardingLayout.windowSize),
             styleMask: [.titled, .closable, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -36,9 +36,11 @@ final class WelcomeWindowController: NSWindowController, NSWindowDelegate {
             self?.window?.close()
         })
         let hostingController = NSHostingController(rootView: view)
+        // The view is a fixed size; don't let the hosting controller re-derive
+        // the window frame (it would add the hidden titlebar's height).
+        hostingController.sizingOptions = []
         window?.contentViewController = hostingController
-        let fittingSize = hostingController.view.fittingSize
-        window?.setContentSize(fittingSize)
+        window?.setContentSize(OnboardingLayout.windowSize)
     }
 
     func show() {

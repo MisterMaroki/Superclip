@@ -6,6 +6,7 @@
 import AppKit
 import Combine
 import HotKey
+import Sparkle
 import QuartzCore
 import ScreenCaptureKit
 
@@ -13,6 +14,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   static var isShareSheetActive = false
 
   var welcomeController: WelcomeWindowController?
+  /// Sparkle auto-updater: checks the appcast on a daily schedule and on demand.
+  let updaterController = SPUStandardUpdaterController(
+    startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
   private var statusItemController: StatusItemController?
   var contentWindow: NSWindow?
   var pasteStackWindow: NSWindow?

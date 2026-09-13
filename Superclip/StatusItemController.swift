@@ -9,6 +9,7 @@
 import AppKit
 import Combine
 import HotKey
+import Sparkle
 
 final class StatusItemController: NSObject, NSMenuDelegate {
   private let statusItem: NSStatusItem
@@ -63,6 +64,11 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     let settingsItem = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
     settingsItem.target = self
     menu.addItem(settingsItem)
+
+    let updateItem = NSMenuItem(
+      title: "Check for Updates…", action: #selector(checkForUpdates), keyEquivalent: "")
+    updateItem.target = self
+    menu.addItem(updateItem)
     menu.addItem(.separator())
 
     let quitItem = NSMenuItem(title: "Quit Superclip", action: #selector(quit), keyEquivalent: "q")
@@ -87,5 +93,6 @@ final class StatusItemController: NSObject, NSMenuDelegate {
   @objc private func takeScreenshot() { appDelegate.startScreenshotCapture() }
   @objc private func captureText() { appDelegate.startScreenCapture() }
   @objc private func openSettings() { appDelegate.openSettingsWindow() }
+  @objc private func checkForUpdates() { appDelegate.updaterController.checkForUpdates(nil) }
   @objc private func quit() { NSApp.terminate(nil) }
 }

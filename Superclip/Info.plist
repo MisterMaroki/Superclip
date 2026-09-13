@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Sparkle auto-updates. Merged with Xcode's generated Info.plist keys. -->
+	<key>SUFeedURL</key>
+	<string>https://superclip-tan.vercel.app/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>miOn4rMgHxFFT14BHWKbFcbnQCihNnCGp+PrwFna2PY=</string>
+	<key>SUEnableInstallerLauncherService</key>
+	<true/>
+</dict>
+</plist>

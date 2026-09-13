@@ -848,15 +848,19 @@ struct ClipboardItemCard: View, Equatable {
       .padding(.horizontal, 10)
       .padding(.vertical, 6)
       .background(headerBackground)
+      .overlay(alignment: .top) {
+        // Paste-style semantic accent: content type at a glance
+        Rectangle().fill(typeAccent).frame(height: 2)
+      }
 
       // Content area
       ZStack(alignment: .bottomTrailing) {
         contentView
           .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
 
-        // Floating char count for text only
-        if item.type == .text {
-          Text("\(item.content.count)")
+        // Floating metadata pill (Paste-style): chars / dimensions / file count
+        if let metadata = metadataLabel {
+          Text(metadata)
             .font(.system(size: 10, weight: .medium, design: .monospaced))
             .foregroundStyle(Brand.gray600)
             .padding(.horizontal, 6)
@@ -1029,9 +1033,37 @@ struct ClipboardItemCard: View, Equatable {
 
   // MARK: - Dynamic card colors
 
-  /// Header background
-  private var headerBackground: Color {
-    Brand.gray100
+  /// Bottom-trailing metadata pill text, varies by type
+  private var metadataLabel: String? {
+    switch item.type {
+    case .text:
+      return "\(item.content.count)"
+    case .image:
+      return item.imageDimensions
+    case .file:
+      if let urls = item.fileURLs, urls.count > 1 { return "\(urls.count) files" }
+      return nil
+    case .url:
+      return nil
+    }
+  }
+
+  /// Header background, faintly tinted by the content-type accent
+  private var headerBackground: some View {
+    ZStack {
+      Brand.gray100
+      typeAccent.opacity(0.07)
+    }
+  }
+
+  /// Semantic accent per content type (muted, adapts to light/dark).
+  private var typeAccent: Color {
+    switch item.type {
+    case .text: return Color(nsColor: .systemOrange)
+    case .url: return Color(nsColor: .systemBlue)
+    case .image: return Color(nsColor: .systemPink)
+    case .file: return Color(nsColor: .systemPurple)
+    }
   }
 
   /// Content area background

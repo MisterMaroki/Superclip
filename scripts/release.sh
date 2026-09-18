@@ -62,7 +62,8 @@ for i in $(seq 1 40); do
   echo "    still processing ($((i*30))s)"; sleep 30
 done
 [ -n "$APP" ] || { echo "Notarization did not complete"; tail -5 "$WORK/notarize.log"; exit 1; }
-spctl -a -vv "$APP" 2>&1 | grep -q "Notarized Developer ID" || { echo "Gatekeeper check failed"; exit 1; }
+spctl -a -vv "$APP" > "$WORK/gatekeeper.log" 2>&1 || { cat "$WORK/gatekeeper.log"; echo "Gatekeeper check failed"; exit 1; }
+grep -q "Notarized Developer ID" "$WORK/gatekeeper.log" || { cat "$WORK/gatekeeper.log"; echo "Gatekeeper did not confirm notarization"; exit 1; }
 echo "    notarized + stapled"
 
 echo "==> Building DMG"

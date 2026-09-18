@@ -1,0 +1,14 @@
+<?xml version="1.0" standalone="yes"?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+    <channel>
+        <title>Superclip</title>
+        <item>
+            <title>1.1</title>
+            <pubDate>Fri, 18 Sep 2026 16:34:15 +0100</pubDate>
+            <sparkle:version>2</sparkle:version>
+            <sparkle:shortVersionString>1.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://superclip-tan.vercel.app/releases/Superclip-1.1.dmg" length="3447814" type="application/octet-stream" sparkle:edSignature="16Mrwe9TSkrZiPUAhdVzHFy6GDGU18YB6zwaeizvLeZP5lSV9dbPIA2Lo2IUcy0nA30XAyxeVpV5+6Ep6p0wCw=="/>
+        </item>
+    </channel>
+</rss>

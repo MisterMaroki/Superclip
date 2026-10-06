@@ -7,93 +7,101 @@ import Foundation
 import Combine
 
 class PasteStackManager: ObservableObject {
+    /// Items in the order they were copied (oldest first).
     @Published var stackItems: [ClipboardItem] = []
-    
+
+    /// Paste order. Off: the first thing copied is pasted first. On: the most
+    /// recent copy is pasted first. The list is shown in the same order, so
+    /// the row numbered 1 is always what the next Cmd+V pastes.
+    @Published var newestFirst: Bool = false {
+        didSet {
+            if oldValue != newestFirst { loadHead() }
+        }
+    }
+
     private var clipboardManager: ClipboardManager
     private var cancellable: AnyCancellable?
     private var isActive: Bool = false
-    /// Identity + timestamp of the last history front item we processed.
-    /// Count-based detection missed re-copies (dedup moves an item to the
-    /// front without changing the count), silently dropping stack entries.
-    private var lastSeenFront: (id: UUID, timestamp: Date)?
 
     init(clipboardManager: ClipboardManager) {
         self.clipboardManager = clipboardManager
+    }
+
+    /// The item the next Cmd+V will paste.
+    var head: ClipboardItem? {
+        newestFirst ? stackItems.last : stackItems.first
     }
 
     /// Start a new paste stack session - clears previous items and begins tracking new copies
     func startSession() {
         stackItems.removeAll()
         isActive = true
-        lastSeenFront = clipboardManager.history.first.map { ($0.id, $0.timestamp) }
+        // Copy order matters here, so don't let two quick copies fall inside
+        // one slow poll interval.
+        clipboardManager.setFastPolling(true)
 
-        // Listen for new clipboard items
-        cancellable = clipboardManager.$history
-            .dropFirst() // Skip the initial value
-            .sink { [weak self] history in
+        // Listen for real copies only. Subscribing to `history` instead made
+        // the stack react to its own pasteboard writes: clicking a row moved
+        // that item to the front of history, which looked like a new copy, so
+        // the item was queued again and a different one was pasted.
+        cancellable = clipboardManager.captured
+            .sink { [weak self] item in
                 guard let self = self, self.isActive else { return }
-                guard let front = history.first else { return }
+                guard !self.stackItems.contains(where: { $0.uniqueIdentifier == item.uniqueIdentifier })
+                else { return }
 
-                // Only react when the front item is new or freshly re-copied
-                let isNewFront = self.lastSeenFront?.id != front.id
-                    || self.lastSeenFront?.timestamp != front.timestamp
-                self.lastSeenFront = (front.id, front.timestamp)
-                guard isNewFront else { return }
-
-                // Check if we already have this item (by unique identifier)
-                if !self.stackItems.contains(where: { $0.uniqueIdentifier == front.uniqueIdentifier }) {
-                    DispatchQueue.main.async {
-                        self.stackItems.append(front)
-                        // Keep the stack head loaded on the clipboard so Cmd+V
-                        // pastes in queue order. Without this, the clipboard
-                        // holds the most recent copy and the first pastes come
-                        // out of order (last, then first, ...).
-                        if self.stackItems.count >= 2, let head = self.stackItems.first {
-                            self.clipboardManager.copyToClipboard(head)
-                        }
-                    }
+                self.stackItems.append(item)
+                // The pasteboard now holds the newest copy. Put the queue head
+                // back so Cmd+V pastes in queue order.
+                if self.head?.id != item.id {
+                    self.loadHead()
                 }
             }
     }
-    
+
     /// End the paste stack session
     func endSession() {
         isActive = false
         cancellable?.cancel()
         cancellable = nil
+        clipboardManager.setFastPolling(false)
     }
-    
+
+    /// Put the queue head on the pasteboard without touching history order.
+    private func loadHead() {
+        guard isActive, let head = head else { return }
+        clipboardManager.copyToClipboard(head, moveToFront: false)
+    }
+
     /// Remove an item from the stack
     func removeItem(_ item: ClipboardItem) {
+        let wasHead = head?.id == item.id
         stackItems.removeAll { $0.id == item.id }
+        // The removed head is still on the pasteboard; replace it, or the next
+        // Cmd+V pastes the very item that was just removed.
+        if wasHead { loadHead() }
     }
-    
+
     /// Clear all items from the stack
     func clearStack() {
         stackItems.removeAll()
     }
-    
-    /// Get the next item to paste (first in queue) and remove it
-    func popNextItem() -> ClipboardItem? {
-        guard !stackItems.isEmpty else { return nil }
-        return stackItems.removeFirst()
-    }
-    
-    /// Copy an item to clipboard (for pasting)
-    func copyToClipboard(_ item: ClipboardItem) {
-        clipboardManager.copyToClipboard(item)
-    }
-    
-    /// Called after user pastes - removes the pasted item and copies next item to clipboard
-    func advanceAfterPaste() {
-        guard !stackItems.isEmpty else { return }
-        
-        // Remove the first item (the one that was just pasted)
-        stackItems.removeFirst()
-        
-        // Copy the next item to clipboard so it's ready for the next paste
-        if let nextItem = stackItems.first {
-            clipboardManager.copyToClipboard(nextItem)
+
+    /// Paste one specific item now (a click on its row): put it on the
+    /// pasteboard and take it off the stack. The caller triggers the paste;
+    /// once that has been consumed the queue head goes back on the pasteboard.
+    func prepareToPaste(_ item: ClipboardItem) {
+        clipboardManager.copyToClipboard(item, moveToFront: false)
+        stackItems.removeAll { $0.id == item.id }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self] in
+            self?.loadHead()
         }
+    }
+
+    /// Called after the user pastes with Cmd+V: drop the pasted item and load the next one.
+    func advanceAfterPaste() {
+        guard let pasted = head else { return }
+        stackItems.removeAll { $0.id == pasted.id }
+        loadHead()
     }
 }

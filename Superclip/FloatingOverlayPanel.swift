@@ -142,10 +142,10 @@ class FloatingOverlayPanel: NSPanel {
     savePanel.nameFieldStringValue = "Screenshot \(timestamp).png"
     savePanel.canCreateDirectories = true
 
-    // Default to the app's image store directory
-    let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-    let imagesDir = appSupport.appendingPathComponent("Superclip/images", isDirectory: true)
-    savePanel.directoryURL = imagesDir
+    // Leave the directory to the system (the user's last-used folder, or
+    // Desktop/Documents). It used to default to Superclip's internal image
+    // store, which is cleaned automatically: a screenshot saved there with
+    // Enter was deleted on the next launch.
 
     savePanel.beginSheetModal(for: hostWindow) { [weak self] response in
       defer { hostWindow.close() }
@@ -162,8 +162,10 @@ class FloatingOverlayPanel: NSPanel {
     let editorFrame: NSRect
     if let screen = NSScreen.main {
       let screenFrame = screen.visibleFrame
-      let panelWidth: CGFloat = 800
-      let panelHeight: CGFloat = 600
+      // The editor's toolbar needs ~1000pt; asking for less makes the window
+      // grow to fit after it was centered, leaving it off-center.
+      let panelWidth: CGFloat = min(1000, screenFrame.width * 0.9)
+      let panelHeight: CGFloat = min(750, screenFrame.height * 0.85)
       editorFrame = NSRect(
         x: screenFrame.midX - panelWidth / 2,
         y: screenFrame.midY - panelHeight / 2,

@@ -155,6 +155,7 @@ struct RichTextEditorView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Brand.white)
         .clipShape(Rectangle())
+        .overlay(Rectangle().stroke(Brand.gray300, lineWidth: 1))
         .onReceive(NotificationCenter.default.publisher(for: .richTextEditorSave)) { notification in
             // Check if this notification is for our window
             if let panel = notification.object as? RichTextEditorPanel,
@@ -293,6 +294,7 @@ struct RichTextViewRepresentable: NSViewRepresentable {
         textView.textContainerInset = NSSize(width: 16, height: 16)
         textView.font = NSFont.systemFont(ofSize: 13)
         textView.textColor = NSColor.labelColor
+        textView.usesAdaptiveColorMappingForDarkAppearance = true
         textView.autoresizingMask = [.width]
         textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = false

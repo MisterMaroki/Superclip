@@ -34,7 +34,7 @@ private enum Step: Int, CaseIterable {
 
     var railSubtitle: String {
         switch self {
-        case .permissions: return "Let Superclip see your keys"
+        case .permissions: return "Let Superclip paste for you"
         case .shortcut: return "Learn the one that matters"
         case .done: return "Everything else"
         }
@@ -44,10 +44,27 @@ private enum Step: Int, CaseIterable {
 // MARK: - Main View
 
 struct OnboardingView: View {
+    @ObservedObject var settings: SettingsManager
     var onComplete: () -> Void
 
     @State private var step: Step = .permissions
     @State private var hotkeyConfirmed = false
+    // Owned here (not by the step) so the footer button tracks the live status.
+    @State private var accessibilityGranted = AXIsProcessTrusted()
+    @State private var openAtLogin: Bool
+
+    /// - Parameter initialStep: 0-based step to open on (used to render each
+    ///   step for review; the app always starts at the first).
+    init(settings: SettingsManager, initialStep: Int = 0, onComplete: @escaping () -> Void) {
+        self.settings = settings
+        self.onComplete = onComplete
+        _step = State(initialValue: Step(rawValue: initialStep) ?? .permissions)
+        // First run: offer it pre-checked. Re-running the guide: show the real state.
+        let isFirstRun = !UserDefaults.standard.bool(forKey: WelcomeWindowController.hasSeenWelcomeKey)
+        _openAtLogin = State(initialValue: isFirstRun ? true : settings.launchAtLogin)
+    }
+
+    private var historyHotkey: HotkeyConfig { settings.hotkeyConfigForHistory() }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -62,11 +79,11 @@ struct OnboardingView: View {
                 ZStack(alignment: .topLeading) {
                     switch step {
                     case .permissions:
-                        PermissionsStep()
+                        PermissionsStep(accessibilityGranted: $accessibilityGranted)
                     case .shortcut:
-                        ShortcutStep(confirmed: $hotkeyConfirmed)
+                        ShortcutStep(confirmed: $hotkeyConfirmed, keys: historyHotkey.keyCaps)
                     case .done:
-                        DoneStep()
+                        DoneStep(settings: settings)
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -98,11 +115,18 @@ struct OnboardingView: View {
 
             Spacer()
 
+            if step == .done {
+                CheckboxRow(title: "Open Superclip at login", isOn: $openAtLogin)
+            }
+
             if step == .shortcut && !hotkeyConfirmed {
                 GhostButton(title: "Skip for now") { move(1) }
             }
 
-            PrimaryButton(title: primaryTitle, action: primaryAction)
+            PrimaryButton(
+                title: primaryTitle,
+                isEnabled: !(step == .shortcut && !hotkeyConfirmed),
+                action: primaryAction)
         }
         .padding(.horizontal, 44)
         .padding(.bottom, 32)
@@ -112,9 +136,9 @@ struct OnboardingView: View {
     private var primaryTitle: String {
         switch step {
         case .permissions:
-            return AXIsProcessTrusted() ? "Continue" : "Continue anyway"
+            return accessibilityGranted ? "Continue" : "Continue anyway"
         case .shortcut:
-            return hotkeyConfirmed ? "Continue" : "Waiting for \u{2318}\u{21E7}A\u{2026}"
+            return hotkeyConfirmed ? "Continue" : "Waiting for \(historyHotkey.keyCaps.joined())\u{2026}"
         case .done:
             return "Finish"
         }
@@ -127,6 +151,9 @@ struct OnboardingView: View {
         case .shortcut:
             if hotkeyConfirmed { move(1) }
         case .done:
+            if settings.launchAtLogin != openAtLogin {
+                settings.launchAtLogin = openAtLogin
+            }
             onComplete()
         }
     }
@@ -265,18 +292,20 @@ private struct StepHeader: View {
 
 private struct PrimaryButton: View {
     let title: String
+    var isEnabled: Bool = true
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             Text(title)
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(Brand.white)
+                .foregroundColor(isEnabled ? Brand.white : Brand.gray500)
                 .padding(.horizontal, 22)
                 .frame(height: 38)
-                .background(Rectangle().fill(Brand.black))
+                .background(Rectangle().fill(isEnabled ? Brand.black : Brand.gray200))
         }
         .buttonStyle(.plain)
+        .disabled(!isEnabled)
         .keyboardShortcut(.defaultAction)
     }
 }
@@ -296,6 +325,40 @@ private struct GhostButton: View {
         }
         .buttonStyle(.plain)
         .onHover { hovered = $0 }
+    }
+}
+
+private struct CheckboxRow: View {
+    let title: String
+    @Binding var isOn: Bool
+
+    var body: some View {
+        Button {
+            isOn.toggle()
+        } label: {
+            HStack(spacing: 8) {
+                ZStack {
+                    Rectangle()
+                        .fill(isOn ? Brand.black : Brand.white)
+                        .overlay(Rectangle().stroke(isOn ? Brand.black : Brand.gray300, lineWidth: 1))
+                        .frame(width: 16, height: 16)
+                    if isOn {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundColor(Brand.white)
+                    }
+                }
+                Text(title)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(Brand.gray600)
+            }
+            .frame(height: 38)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(isOn ? .isSelected : [])
+        .padding(.trailing, 8)
     }
 }
 
@@ -343,7 +406,7 @@ private struct KeyCombo: View {
 // MARK: - Step 1: Permissions
 
 private struct PermissionsStep: View {
-    @State private var accessibilityGranted = AXIsProcessTrusted()
+    @Binding var accessibilityGranted: Bool
     @State private var screenRecordingGranted = CGPreflightScreenCaptureAccess()
     @State private var pollTimer: Timer?
 
@@ -373,7 +436,7 @@ private struct PermissionsStep: View {
             }
             .overlay(Rectangle().stroke(Brand.gray200, lineWidth: 1))
 
-            Text("Granting opens System Settings. Come back here when you're done \u{2014} this list updates by itself.")
+            Text("Granting opens System Settings. Come back here when you\u{2019}re done \u{2014} this list updates by itself. Screen Recording may only show as granted after Superclip restarts.")
                 .font(.system(size: 12))
                 .foregroundStyle(Brand.gray500)
                 .fixedSize(horizontal: false, vertical: true)
@@ -485,6 +548,7 @@ private struct PermissionRow: View {
 /// screen, AppDelegate posts `.onboardingHotkeyPressed` and opens the drawer.
 private struct ShortcutStep: View {
     @Binding var confirmed: Bool
+    let keys: [String]
     @State private var pulse = false
 
     var body: some View {
@@ -497,7 +561,7 @@ private struct ShortcutStep: View {
             )
 
             HStack(spacing: 20) {
-                KeyCombo(["\u{2318}", "\u{21E7}", "A"], size: 64)
+                KeyCombo(keys, size: 64)
                     .scaleEffect(pulse && !confirmed ? 1.03 : 1)
                     .opacity(confirmed ? 0.55 : 1)
 
@@ -539,31 +603,37 @@ private struct ShortcutStep: View {
 extension Notification.Name {
     /// Posted when the history hotkey fires while onboarding is on screen.
     static let onboardingHotkeyPressed = Notification.Name("Superclip.onboardingHotkeyPressed")
+    /// Posted by Settings / the menu bar to re-open the setup guide.
+    static let superclipShowSetupGuide = Notification.Name("Superclip.showSetupGuide")
+    /// Posted by Settings to run the real (Sparkle) update check.
+    static let superclipCheckForUpdates = Notification.Name("Superclip.checkForUpdates")
 }
 
 // MARK: - Step 3: Done
 
 private struct DoneStep: View {
+    @ObservedObject var settings: SettingsManager
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 28) {
+        VStack(alignment: .leading, spacing: 24) {
             StepHeader(
                 title: "You\u{2019}re set",
                 subtitle: "Superclip is already saving everything you copy. Three more shortcuts when you want them:"
             )
 
             VStack(spacing: 0) {
-                ShortcutRow(keys: ["\u{2318}", "\u{21E7}", "C"], title: "Paste stack", detail: "Copy several things, then paste them one after another.")
+                ShortcutRow(keys: settings.hotkeyConfigForPasteStack().keyCaps, title: "Paste stack", detail: "Copy several things, then paste them one after another.")
                 Rectangle().fill(Brand.gray200).frame(height: 1)
-                ShortcutRow(keys: ["\u{2318}", "\u{21E7}", "4"], title: "Screenshot", detail: "Capture, annotate, and copy \u{2014} replaces the built-in shortcut.")
+                ShortcutRow(keys: settings.hotkeyConfigForScreenshot().keyCaps, title: "Screenshot", detail: "Capture an area, window or the full screen, then annotate and copy.")
                 Rectangle().fill(Brand.gray200).frame(height: 1)
-                ShortcutRow(keys: ["\u{2318}", "\u{21E7}", "`"], title: "Text Sniper", detail: "Select any area of the screen and copy the text in it.")
+                ShortcutRow(keys: settings.hotkeyConfigForOCR().keyCaps, title: "Text Sniper", detail: "Select any area of the screen and copy the text in it.")
             }
             .overlay(Rectangle().stroke(Brand.gray200, lineWidth: 1))
 
             HStack(spacing: 8) {
                 Image(systemName: "paperclip")
                     .font(.system(size: 12, weight: .semibold))
-                Text("Superclip lives in your menu bar \u{2014} no Dock icon. Settings and Quit are there.")
+                Text("Superclip lives in the menu bar. Settings and Quit are there.")
                     .font(.system(size: 12))
             }
             .foregroundStyle(Brand.gray500)
@@ -579,7 +649,7 @@ private struct ShortcutRow: View {
     var body: some View {
         HStack(spacing: 16) {
             KeyCombo(keys, size: 28)
-                .frame(width: 104, alignment: .leading)
+                .frame(minWidth: 104, alignment: .leading)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)

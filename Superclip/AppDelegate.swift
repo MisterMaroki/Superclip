@@ -28,6 +28,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   var pasteStackHotKey: HotKey?
   var ocrHotKey: HotKey?
   var screenshotHotKey: HotKey?
+  var fullscreenScreenshotHotKey: HotKey?
+  private var isQuickCapturing = false
   private var hotkeyCancellables = Set<AnyCancellable>()
   var screenCaptureWindow: NSWindow?
   var screenshotCaptureWindow: NSWindow?
@@ -41,6 +43,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   let snippetManager = SnippetManager()
   lazy var clipboardManager = ClipboardManager(settings: settingsManager)
   lazy var pasteStackManager = PasteStackManager(clipboardManager: clipboardManager)
+  /// iCloud sync. Created at launch; does nothing until the user enables it.
+  private var syncCoordinator: MacSyncCoordinator?
   private var shouldPasteAfterClose = false
 
   // Hold-to-edit: timer-based progress, rebound on early release
@@ -61,6 +65,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     setupPasteStackHotkey()
     setupOCRHotkey()
     setupScreenshotHotkey()
+    setupFullscreenScreenshotHotkey()
     observeHotkeySettings()
 
     // Pre-warm ClipboardManager so its init (disk I/O, observers) doesn't delay the first drawer open
@@ -70,28 +75,79 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     clipboardManager.isItemProtected = { [weak self] itemId in
       self?.pinboardManager.pinboards.contains { $0.itemIds.contains(itemId) } ?? false
     }
+    // Snippet expansion borrows the pasteboard for a moment. Keep those
+    // writes out of history, and its synthetic Cmd+V away from the paste stack.
+    snippetManager.didWritePasteboard = { [weak self] in
+      self?.clipboardManager.syncPasteboardChangeCount()
+    }
+    snippetManager.willSimulatePaste = { [weak self] in
+      self?.isSimulatingPaste = true
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+        self?.isSimulatingPaste = false
+      }
+    }
+
+    // Once an item is gone for good, pinboards must stop counting it
+    clipboardManager.onItemsPurged = { [weak self] ids in
+      self?.pinboardManager.removeItems(ids)
+    }
+    // Sync attaches after the handlers above, so it can chain onto them
+    syncCoordinator = MacSyncCoordinator(
+      clipboard: clipboardManager, pinboards: pinboardManager, snippets: snippetManager,
+      settings: settingsManager)
+
+    // Launch-time cleanup of pins whose items no longer exist. Skipped when
+    // history came back empty, so a failed history load can't wipe every pin.
+    if !clipboardManager.history.isEmpty {
+      pinboardManager.removeItems(notIn: Set(clipboardManager.history.map(\.id)))
+    }
 
     if !UserDefaults.standard.bool(forKey: WelcomeWindowController.hasSeenWelcomeKey) {
-      // Seed tutorial cards and pinboard immediately so they're ready before the drawer ever opens
-      let pinCardId = clipboardManager.seedTutorialItems()
-      if pinboardManager.pinboards.isEmpty {
-        let board = pinboardManager.createPinboard(name: "Favorites", color: .blue)
-        if let id = pinCardId {
-          pinboardManager.addItem(id, to: board)
+      // Seed tutorial cards and pinboard immediately so they're ready before the drawer ever opens.
+      // Only once: macOS relaunches the app after a Screen Recording grant, and
+      // seeding again would duplicate the whole tour.
+      if !UserDefaults.standard.bool(forKey: Self.hasSeededTutorialKey) {
+        UserDefaults.standard.set(true, forKey: Self.hasSeededTutorialKey)
+        let pinCardId = clipboardManager.seedTutorialItems()
+        if pinboardManager.pinboards.isEmpty {
+          let board = pinboardManager.createPinboard(name: "Favorites", color: .blue)
+          if let id = pinCardId {
+            pinboardManager.addItem(id, to: board)
+          }
         }
       }
 
       showOnboarding()
     }
+
+    NotificationCenter.default.addObserver(
+      forName: .superclipShowSetupGuide, object: nil, queue: .main
+    ) { [weak self] _ in
+      self?.closeSettingsWindow()
+      self?.showOnboarding()
+    }
+    NotificationCenter.default.addObserver(
+      forName: .superclipCheckForUpdates, object: nil, queue: .main
+    ) { [weak self] _ in
+      self?.updaterController.checkForUpdates(nil)
+    }
   }
+
+  private static let hasSeededTutorialKey = "Superclip.hasSeededTutorial"
 
   // MARK: - Onboarding
 
   func showOnboarding() {
+    // Already open (e.g. chosen again from the menu): just bring it forward.
+    if let existing = welcomeController, existing.window?.isVisible == true {
+      existing.show()
+      return
+    }
+
     NSApp.setActivationPolicy(.regular)
 
     let controller = WelcomeWindowController()
-    controller.configure { [weak self] in
+    controller.configure(settings: settingsManager) { [weak self] in
       guard let self = self else { return }
       self.welcomeController = nil
       NSApp.setActivationPolicy(.accessory)
@@ -106,14 +162,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   func applicationWillTerminate(_ notification: Notification) {
-    if settingsManager.clearOnQuit {
-      clipboardManager.historyStore.deleteHistoryFile()
-      ImageStore.shared.deleteAll()
-      LinkImageStore.shared.deleteAll()
-      RTFStore.shared.deleteAll()
-      clipboardManager.clearHistory()
+    // Queue anything sync hasn't picked up yet (it batches changes briefly)
+    syncCoordinator?.flush()
+
+    if SettingsManager.isResettingAllData {
+      // Full reset: everything goes, pinned items included
+      clipboardManager.clearHistoryNow(includingPinned: true)
+    } else if settingsManager.clearOnQuit {
+      // "Erase history when Superclip quits" keeps what the user pinned
+      clipboardManager.clearHistoryNow()
     } else {
       clipboardManager.saveHistoryImmediately()
+    }
+
+    if SettingsManager.isResettingAllData {
+      // Wipe again last: anything that persisted to UserDefaults between the
+      // reset and now (pinboards, snippets) must not survive it.
+      SettingsManager.resetAllUserDefaults()
     }
   }
 
@@ -173,7 +238,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   func showContentWindow() {
+    // Opening the drawer from the menu bar counts for the onboarding
+    // "try it" step too, which otherwise waits forever for the hotkey.
+    if welcomeController?.window?.isVisible == true {
+      NotificationCenter.default.post(name: .onboardingHotkeyPressed, object: nil)
+    }
+
     self.closeReviewWindow(andPaste: false)
+
+    // Opening the drawer is the moment stale data would be noticed
+    syncCoordinator?.fetchNow()
 
     let contentPanel = ContentPanel(
       clipboardManager: clipboardManager,
@@ -260,11 +334,26 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         !self.isSimulatingPaste
       else { return }
 
+      guard event.modifierFlags.contains(.command) else { return }
+
       // Check for Cmd+V (key code 9 is 'V', Command modifier)
-      if event.keyCode == 9 && event.modifierFlags.contains(.command) {
-        // Small delay to let the paste complete before advancing
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+      if event.keyCode == 9 {
+        // Let the target app read the pasteboard before the next item
+        // replaces it. 0.1s was short enough that slower apps (Electron,
+        // remote desktops) pasted the following item instead.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
           self.pasteStackManager.advanceAfterPaste()
+        }
+      }
+
+      // Cmd+C / Cmd+X (key codes 8, 7): pick the new copy up straight away
+      // instead of waiting for the next poll, so two quick copies keep their
+      // order and a copy followed immediately by a paste is already queued.
+      if event.keyCode == 8 || event.keyCode == 7 {
+        for delay in [0.06, 0.2] {
+          DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            self.clipboardManager.checkClipboardNow()
+          }
         }
       }
     }
@@ -295,14 +384,26 @@ class AppDelegate: NSObject, NSApplicationDelegate {
       // Track Command key state for quick digit selection
       if event.type == .flagsChanged {
         let isCommandPressed = event.modifierFlags.contains(.command)
-        panelWindow.navigationState.isCommandHeld = isCommandPressed
+        // Only publish real changes: this fires for Shift, Option and Control
+        // too, and every publish re-renders the drawer.
+        if panelWindow.navigationState.isCommandHeld != isCommandPressed {
+          panelWindow.navigationState.isCommandHeld = isCommandPressed
+        }
         return event
       }
 
       if event.type == .keyDown {
-        // If the settings window is key, let all events through to its text fields
-        // (ESC and Cmd+W are handled by SettingsPanel.keyDown directly)
-        if let settings = self.settingsWindow, event.window === settings {
+        // Keys typed into any other Superclip window (settings, rich text or
+        // image editor, paste stack) belong to that window. Without this the
+        // drawer steals them whenever it is open alongside: letters go to
+        // search and Backspace deletes the selected clip.
+        if let window = event.window, window !== panelWindow, window !== self.previewWindow {
+          return event
+        }
+
+        // Renaming a pinboard: every key belongs to the name field, which
+        // handles Return and Esc itself.
+        if panelWindow.isEditingPinboard {
           return event
         }
 
@@ -317,6 +418,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             panelWindow.navigationState.selectByDigit(digit)
             return nil
           }
+        }
+
+        // Cmd+C copies the selected card and keeps the drawer open. Left alone
+        // while text is being edited, so it copies the text selection instead.
+        if event.keyCode == 8, event.modifierFlags.contains(.command),
+          !panelWindow.isSearchFieldFocused,
+          (self.previewWindow as? PreviewPanel)?.editingState.isEditing != true
+        {
+          panelWindow.navigationState.shouldCopyCurrent = true
+          return nil
         }
 
         switch event.keyCode {
@@ -345,8 +456,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
           return nil
         case 123:  // Left arrow
           if event.modifierFlags.contains(.command) {
-            // Cmd+Left: navigate to previous pinboard
-            panelWindow.navigationState.movePinboardLeft()
+            // Cmd+Left: navigate to previous pinboard. One switch per press:
+            // key repeat would queue a full rebuild of the card row each time.
+            if !event.isARepeat { panelWindow.navigationState.movePinboardLeft() }
             return nil
           }
           if panelWindow.isSearching {
@@ -358,7 +470,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         case 124:  // Right arrow
           if event.modifierFlags.contains(.command) {
             // Cmd+Right: navigate to next pinboard
-            panelWindow.navigationState.movePinboardRight()
+            if !event.isARepeat { panelWindow.navigationState.movePinboardRight() }
             return nil
           }
           if panelWindow.isSearching {
@@ -386,9 +498,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
           if panelWindow.isEditingPinboard {
             return event
           }
-          panelWindow.navigationState.selectCurrent()
+          if event.modifierFlags.contains(.shift) {
+            // Shift+Return: paste without formatting
+            panelWindow.navigationState.shouldPastePlainAndDismiss = true
+          } else {
+            panelWindow.navigationState.selectCurrent()
+          }
           return nil
         case 44:  // '/' key - focus search
+          // While typing in the search field "/" is just a character (try
+          // searching for "github.com/foo"). Match the character, not the key
+          // position: on other layouts this key types something else.
+          if panelWindow.isSearchFieldFocused || event.charactersIgnoringModifiers != "/" {
+            return event
+          }
           panelWindow.navigationState.focusSearch()
           return nil
         case 51:  // Backspace key - delete selected item
@@ -514,7 +637,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
       }
 
       if event.type == .keyUp {
-        if let settings = self.settingsWindow, event.window === settings {
+        if let window = event.window, window !== panelWindow, window !== self.previewWindow {
           return event
         }
         guard event.keyCode == 49 else { return event }
@@ -701,7 +824,37 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   /// advances the stack and clobbers the clipboard.
   private var isSimulatingPaste = false
 
+  private var hasWarnedAboutPastePermission = false
+
+  /// Without Accessibility the synthetic Cmd+V is dropped silently: the drawer
+  /// closes and nothing happens. Say so once per launch. The item is already
+  /// on the clipboard, so the user can still paste it by hand.
+  private func warnPasteNeedsAccessibility() {
+    guard !hasWarnedAboutPastePermission else { return }
+    hasWarnedAboutPastePermission = true
+
+    let alert = NSAlert()
+    alert.messageText = "Copied, but Superclip can\u{2019}t paste for you yet"
+    alert.informativeText =
+      "The item is on your clipboard, so you can press \u{2318}V yourself.\n\nTo have Superclip paste automatically, allow it in System Settings > Privacy & Security > Accessibility."
+    alert.alertStyle = .informational
+    alert.addButton(withTitle: "Open System Settings")
+    alert.addButton(withTitle: "Not Now")
+    NSApp.activate(ignoringOtherApps: true)
+    if alert.runModal() == .alertFirstButtonReturn,
+      let url = URL(
+        string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
+    {
+      NSWorkspace.shared.open(url)
+    }
+  }
+
   private func simulatePaste() {
+    guard AXIsProcessTrusted() || CGPreflightPostEventAccess() else {
+      warnPasteNeedsAccessibility()
+      return
+    }
+
     isSimulatingPaste = true
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
       self?.isSimulatingPaste = false
@@ -928,10 +1081,30 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     editorPanel.onSave = { [weak self] attributedString in
       guard let self = self else { return }
+
+      guard self.clipboardManager.history.contains(where: { $0.id == item.id }) else {
+        // The edited item is no longer in history (deleted meanwhile, or
+        // merged into an older identical clip). Keep the edit as a new clip
+        // rather than dropping it.
+        let styled = ClipboardManager.hasMeaningfulFormatting(attributedString)
+        let newItem = ClipboardItem(
+          content: attributedString.string,
+          type: .text,
+          sourceApp: item.sourceApp,
+          rtfData: styled ? ClipboardManager.rtfData(from: attributedString) : nil
+        )
+        self.clipboardManager.addToHistory(item: newItem)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+          let saved = self.clipboardManager.history.first(where: { $0.id == newItem.id }) ?? newItem
+          self.clipboardManager.copyToClipboard(saved)
+        }
+        return
+      }
+
       // Update the item with rich content
       self.clipboardManager.updateItemRichContent(item, attributedString: attributedString)
       // Copy the updated item to clipboard so it's ready to paste
-      DispatchQueue.main.asyncAfter(deadline: .now()) {
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
         if let updatedItem = self.clipboardManager.history.first(where: { $0.id == item.id }) {
           self.clipboardManager.copyToClipboard(updatedItem)
         }
@@ -1063,6 +1236,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         self?.setupScreenshotHotkey()
       }
       .store(in: &hotkeyCancellables)
+
+    settingsManager.$fullscreenScreenshotHotkey
+      .dropFirst()
+      .receive(on: DispatchQueue.main)
+      .sink { [weak self] _ in
+        self?.setupFullscreenScreenshotHotkey()
+      }
+      .store(in: &hotkeyCancellables)
   }
 
   func startScreenCapture() {
@@ -1107,8 +1288,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
       do {
         let image = try await self.screenCaptureManager.captureArea(rect: rect)
 
-        // Run OCR synchronously to avoid retaining the image in closures
-        let ocrResult = OCRManager.shared.recognizeText(in: image)
+        // Recognise off the main thread: this Task runs on the main actor, so
+        // the synchronous call froze the whole UI for the duration of the OCR.
+        let ocrResult = await withCheckedContinuation { continuation in
+          OCRManager.shared.recognizeTextAsync(in: image) { result in
+            continuation.resume(returning: result)
+          }
+        }
 
         await MainActor.run { [weak self] in
           switch ocrResult {
@@ -1132,7 +1318,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     pasteboard.clearContents()
     pasteboard.setString(text, forType: .string)
 
-    // Create a temporary ClipboardItem for the rich text editor
+    // Add the result to history ourselves, under the same ID the editor gets.
+    // Leaving it to the pasteboard poll created the history entry under a
+    // different ID, so saving from the editor updated nothing.
     let item = ClipboardItem(
       content: text,
       type: .text,
@@ -1142,6 +1330,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         icon: NSApp.applicationIconImage
       )
     )
+    clipboardManager.syncPasteboardChangeCount()
+    clipboardManager.addToHistory(item: item)
 
     // Open rich text editor with the OCR result
     let editorFrame: NSRect
@@ -1180,7 +1370,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     let alert = NSAlert()
     alert.messageText = "Screen Recording Permission Required"
     alert.informativeText =
-      "Superclip needs screen recording permission to capture screen regions for OCR.\n\nPlease grant permission in System Settings > Privacy & Security > Screen Recording."
+      "Superclip needs screen recording permission to take screenshots and capture text from the screen.\n\nPlease grant permission in System Settings > Privacy & Security > Screen Recording."
     alert.alertStyle = .informational
     alert.addButton(withTitle: "Open System Settings")
     alert.addButton(withTitle: "Cancel")
@@ -1204,6 +1394,41 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     screenshotHotKey?.keyDownHandler = { [weak self] in
       DispatchQueue.main.async {
         self?.startScreenshotCapture()
+      }
+    }
+  }
+
+  private func setupFullscreenScreenshotHotkey() {
+    let config = settingsManager.hotkeyConfigForFullscreenScreenshot()
+    fullscreenScreenshotHotKey = HotKey(keyCombo: config.keyCombo)
+    fullscreenScreenshotHotKey?.keyDownHandler = { [weak self] in
+      DispatchQueue.main.async {
+        self?.captureFullscreenNow()
+      }
+    }
+  }
+
+  /// Capture the whole focused display immediately: no overlay, no mode picker.
+  /// Superclip's own windows are excluded by the capture filter, so an open
+  /// drawer doesn't need closing first.
+  func captureFullscreenNow() {
+    guard !isQuickCapturing, screenshotCaptureWindow?.isVisible != true else { return }
+
+    if !hasScreenRecordingPermission() {
+      requestScreenRecordingPermission()
+      return
+    }
+
+    isQuickCapturing = true
+    let manager = screenCaptureManager
+    Task { [weak self] in
+      let image = try? await manager.captureFullscreen()
+      await MainActor.run { [weak self] in
+        guard let self = self else { return }
+        self.isQuickCapturing = false
+        if let image = image {
+          self.handleScreenshotCapture(image)
+        }
       }
     }
   }
@@ -1250,20 +1475,29 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         return nil
       }
       let rep = NSBitmapImageRep(cgImage: cgImage)
+      // Record the capture's point size, so the PNG carries its Retina
+      // resolution and pastes at the size it had on screen
+      rep.size = image.size
       return rep.representation(using: .png, properties: [:])
     }()
 
     if settingsManager.screenshotAutoCopy {
-      // Copy to clipboard
+      // Copy to clipboard as PNG. Writing the NSImage itself put an
+      // uncompressed TIFF on the clipboard (megabytes for a small capture).
       let pasteboard = NSPasteboard.general
       pasteboard.clearContents()
-      pasteboard.writeObjects([image])
+      if let pngData {
+        ClipboardManager.writeImage(pngData, to: pasteboard)
+      } else {
+        pasteboard.writeObjects([image])
+      }
       clipboardManager.syncPasteboardChangeCount()
 
-      // Add to clipboard history
+      // Add to clipboard history (labelled with its pixel dimensions)
       var description = "Screenshot"
-      let width = Int(image.size.width)
-      let height = Int(image.size.height)
+      let pixels = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
+      let width = pixels?.width ?? Int(image.size.width)
+      let height = pixels?.height ?? Int(image.size.height)
       if width > 0 && height > 0 {
         description = "\(width)\u{00D7}\(height)"
       }

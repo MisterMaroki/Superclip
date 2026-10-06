@@ -39,6 +39,17 @@ class SnippetManager: ObservableObject {
     private var typeBuffer: String = ""
     private let maxBufferLength = 50
     private var keyMonitor: Any?
+    private var mouseMonitor: Any?
+    private var appSwitchObserver: NSObjectProtocol?
+
+    /// Called right after an expansion writes to the pasteboard (and again
+    /// when it restores the previous contents), so the clipboard history can
+    /// skip those writes instead of recording the snippet as a new clip.
+    var didWritePasteboard: (() -> Void)?
+
+    /// Called just before an expansion posts its synthetic Cmd+V, so other
+    /// Cmd+V observers (the paste stack) can ignore it.
+    var willSimulatePaste: (() -> Void)?
 
     init() {
         loadSnippets()
@@ -84,12 +95,50 @@ class SnippetManager: ObservableObject {
     func deleteSnippet(_ snippet: Snippet) {
         snippets.removeAll { $0.id == snippet.id }
         saveSnippets()
+        onSnippetsDeleted?([snippet.id])
+    }
+
+    /// Called when the user deletes snippets (not when a deletion arrives from sync).
+    var onSnippetsDeleted: (([UUID]) -> Void)?
+
+    // MARK: - Sync
+
+    /// Insert or replace a snippet that arrived from iCloud.
+    func applyRemote(_ snippet: Snippet) {
+        if let index = snippets.firstIndex(where: { $0.id == snippet.id }) {
+            snippets[index] = snippet
+        } else {
+            snippets.append(snippet)
+        }
+        saveSnippets()
+    }
+
+    func applyRemoteDelete(_ id: UUID) {
+        guard snippets.contains(where: { $0.id == id }) else { return }
+        snippets.removeAll { $0.id == id }
+        saveSnippets()
     }
 
     func toggleSnippet(_ snippet: Snippet) {
         guard let index = snippets.firstIndex(where: { $0.id == snippet.id }) else { return }
         snippets[index].isEnabled.toggle()
         saveSnippets()
+    }
+
+    /// Merge imported snippets, skipping any whose ID or trigger is already in use.
+    /// - Returns: how many were added.
+    @discardableResult
+    func mergeImported(_ imported: [Snippet]) -> Int {
+        var added = 0
+        for snippet in imported {
+            if snippets.contains(where: { $0.id == snippet.id }) { continue }
+            if isTriggerTaken(snippet.trigger) { continue }
+            if conflictingTrigger(for: snippet.trigger) != nil { continue }
+            snippets.append(snippet)
+            added += 1
+        }
+        if added > 0 { saveSnippets() }
+        return added
     }
 
     // MARK: - Text Expansion Monitoring
@@ -110,6 +159,20 @@ class SnippetManager: ObservableObject {
         keyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
             self?.handleKeyEvent(event)
         }
+
+        // A click or an app switch moves the insertion point somewhere else.
+        // Whatever was typed before no longer sits in front of the cursor, so
+        // a half-typed trigger must not complete there (the backspaces that
+        // "remove the trigger" would delete unrelated text).
+        mouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) {
+            [weak self] _ in
+            self?.typeBuffer = ""
+        }
+        appSwitchObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.typeBuffer = ""
+        }
     }
 
     func stopMonitoring() {
@@ -117,13 +180,42 @@ class SnippetManager: ObservableObject {
             NSEvent.removeMonitor(monitor)
             keyMonitor = nil
         }
+        if let monitor = mouseMonitor {
+            NSEvent.removeMonitor(monitor)
+            mouseMonitor = nil
+        }
+        if let observer = appSwitchObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(observer)
+            appSwitchObserver = nil
+        }
     }
+
+    /// Keys that move the cursor or leave the field: the buffer no longer
+    /// describes the text before the insertion point.
+    private static let bufferResetKeyCodes: Set<UInt16> = [
+        123, 124, 125, 126,  // arrows
+        53,  // escape
+        115, 119, 116, 121,  // home, end, page up, page down
+        117,  // forward delete
+    ]
 
     private func handleKeyEvent(_ event: NSEvent) {
         guard let chars = event.characters, !chars.isEmpty else { return }
 
         // Reset buffer on modifier keys (except Shift which is normal typing)
         if event.modifierFlags.contains(.command) || event.modifierFlags.contains(.control) || event.modifierFlags.contains(.option) {
+            typeBuffer = ""
+            return
+        }
+
+        // Backspace removes one character, so a typo inside a trigger can be
+        // corrected without starting over.
+        if event.keyCode == 51 {
+            if !typeBuffer.isEmpty { typeBuffer.removeLast() }
+            return
+        }
+
+        if Self.bufferResetKeyCodes.contains(event.keyCode) {
             typeBuffer = ""
             return
         }
@@ -136,19 +228,14 @@ class SnippetManager: ObservableObject {
             typeBuffer = String(typeBuffer.suffix(maxBufferLength))
         }
 
-        // Check for backspace (key code 51) — remove last char from buffer
-        if event.keyCode == 51 {
-            typeBuffer = ""  // Reset on backspace for simplicity
-            return
-        }
-
-        // Check if buffer ends with any enabled trigger
-        for snippet in snippets where snippet.isEnabled {
-            if typeBuffer.hasSuffix(snippet.trigger) {
-                expandSnippet(snippet)
-                typeBuffer = ""
-                break
-            }
+        // Expand the longest enabled trigger the buffer ends with, so "abc"
+        // wins over "c" regardless of the order snippets were created in.
+        let match = snippets
+            .filter { $0.isEnabled && !$0.trigger.isEmpty && typeBuffer.hasSuffix($0.trigger) }
+            .max { $0.trigger.count < $1.trigger.count }
+        if let snippet = match {
+            expandSnippet(snippet)
+            typeBuffer = ""
         }
     }
 
@@ -182,11 +269,15 @@ class SnippetManager: ObservableObject {
                     return dict.isEmpty ? nil : dict
                 }
 
-                // Set snippet content
+                // Set snippet content. Marked transient (nspasteboard.org) so
+                // clipboard managers know it is not something the user copied.
                 pasteboard.clearContents()
                 pasteboard.setString(snippet.content, forType: .string)
+                pasteboard.setString("", forType: NSPasteboard.PasteboardType("org.nspasteboard.TransientType"))
+                self.didWritePasteboard?()
 
                 // Simulate Cmd+V
+                self.willSimulatePaste?()
                 let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: true)
                 let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: false)
                 keyDown?.flags = .maskCommand
@@ -198,13 +289,15 @@ class SnippetManager: ObservableObject {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                     if let savedItems = savedItems, !savedItems.isEmpty {
                         pasteboard.clearContents()
-                        for itemDict in savedItems {
+                        let restored: [NSPasteboardItem] = savedItems.map { itemDict in
                             let item = NSPasteboardItem()
                             for (type, data) in itemDict {
                                 item.setData(data, forType: type)
                             }
-                            pasteboard.writeObjects([item])
+                            return item
                         }
+                        pasteboard.writeObjects(restored)
+                        self.didWritePasteboard?()
                     }
                 }
             }
@@ -216,6 +309,17 @@ class SnippetManager: ObservableObject {
     /// Check if a trigger is already used by another snippet.
     func isTriggerTaken(_ trigger: String, excludingId: UUID? = nil) -> Bool {
         snippets.contains { $0.trigger == trigger && $0.id != excludingId }
+    }
+
+    /// An existing trigger that would clash with `trigger` because one starts
+    /// with the other: typing the longer one always fires the shorter one
+    /// first, so the longer could never be reached.
+    func conflictingTrigger(for trigger: String, excludingId: UUID? = nil) -> String? {
+        guard !trigger.isEmpty else { return nil }
+        return snippets.first {
+            $0.id != excludingId && $0.trigger != trigger && !$0.trigger.isEmpty
+                && ($0.trigger.hasPrefix(trigger) || trigger.hasPrefix($0.trigger))
+        }?.trigger
     }
 
     var enabledSnippetCount: Int {

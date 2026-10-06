@@ -137,7 +137,8 @@ struct SettingsView: View {
             StorageSettingsPane(
                 settings: settings,
                 clipboardManager: clipboardManager,
-                pinboardManager: pinboardManager
+                pinboardManager: pinboardManager,
+                snippetManager: snippetManager
             )
         case .about:
             AboutSettingsPane()
@@ -242,13 +243,40 @@ struct SettingsToggleRow: View {
 
             Spacer()
 
-            Toggle("", isOn: $isOn)
-                .toggleStyle(.switch)
-                .scaleEffect(0.75)
+            Toggle(title, isOn: $isOn)
+                .labelsHidden()
+                .toggleStyle(BrandSwitchStyle())
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
         .background(Brand.white)
+    }
+}
+
+/// The app's switch: square track, square thumb, ink when on. Replaces the
+/// system switch scaled to 75% (which kept its unscaled layout box, sat a few
+/// points off the right edge, and was the one rounded control in a square UI).
+struct BrandSwitchStyle: ToggleStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        Button {
+            configuration.isOn.toggle()
+        } label: {
+            ZStack(alignment: configuration.isOn ? .trailing : .leading) {
+                Rectangle()
+                    .fill(configuration.isOn ? Brand.black : Brand.gray300)
+                    .frame(width: 32, height: 18)
+                Rectangle()
+                    .fill(Brand.white)
+                    .frame(width: 12, height: 12)
+                    .padding(3)
+            }
+            .animation(.snappy(duration: 0.16), value: configuration.isOn)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityRepresentation {
+            Toggle(isOn: configuration.$isOn) { configuration.label }
+        }
     }
 }
 
@@ -419,6 +447,12 @@ struct GeneralSettingsPane: View {
                     )
                 }
 
+                // Only in builds signed for iCloud: a switch that can't do
+                // anything has no business being in Settings
+                if CloudSyncEngine.isEntitled {
+                    SyncSettingsGroup(settings: settings)
+                }
+
                 SettingsGroupBox(title: "Clipboard") {
                     SettingsToggleRow(
                         title: "Monitor clipboard",
@@ -454,6 +488,37 @@ struct GeneralSettingsPane: View {
             }
             .padding(28)
         }
+    }
+}
+
+/// iCloud sync: the switch, and a line saying what state sync is in.
+struct SyncSettingsGroup: View {
+    @ObservedObject var settings: SettingsManager
+
+    var body: some View {
+        SettingsGroupBox(title: "iCloud") {
+            SettingsToggleRow(
+                title: "Sync with iCloud",
+                subtitle: "Keep clips, pinboards and snippets in step with Superclip on your iPhone",
+                isOn: $settings.syncEnabled
+            )
+            if settings.syncEnabled {
+                SettingsDivider()
+                if let coordinator = MacSyncCoordinator.current {
+                    SyncStatusRow(coordinator: coordinator)
+                } else {
+                    SettingsInfoRow(title: "Status", value: "Starting\u{2026}")
+                }
+            }
+        }
+    }
+}
+
+private struct SyncStatusRow: View {
+    @ObservedObject var coordinator: MacSyncCoordinator
+
+    var body: some View {
+        SettingsInfoRow(title: "Status", value: coordinator.status.label)
     }
 }
 
@@ -508,6 +573,12 @@ struct AppearanceSettingsPane: View {
                         subtitle: "Display when items were copied",
                         isOn: $settings.showTimestamps
                     )
+                    SettingsDivider()
+                    SettingsToggleRow(
+                        title: "Show keyboard hints",
+                        subtitle: "A strip of shortcuts along the bottom of the drawer",
+                        isOn: $settings.showKeyboardHints
+                    )
                 }
 
                 SettingsGroupBox(title: "Preview") {
@@ -538,9 +609,10 @@ struct ShortcutsSettingsPane: View {
     @State private var pasteStackConfig: HotkeyConfig = .defaultPasteStack
     @State private var ocrConfig: HotkeyConfig = .defaultOCR
     @State private var screenshotConfig: HotkeyConfig = .defaultScreenshot
+    @State private var fullscreenScreenshotConfig: HotkeyConfig = .defaultFullscreenScreenshot
 
     var allConfigs: [HotkeyConfig] {
-        [historyConfig, pasteStackConfig, ocrConfig, screenshotConfig]
+        [historyConfig, pasteStackConfig, ocrConfig, screenshotConfig, fullscreenScreenshotConfig]
     }
 
     var body: some View {
@@ -566,17 +638,24 @@ struct ShortcutsSettingsPane: View {
                     )
                     SettingsDivider()
                     HotkeyRecorderView(
-                        title: "Screen capture OCR",
+                        title: "Text Sniper (OCR)",
                         config: $ocrConfig,
                         allConfigs: allConfigs,
                         onChanged: { settings.ocrHotkey = ocrConfig.dictionary }
                     )
                     SettingsDivider()
                     HotkeyRecorderView(
-                        title: "Screenshot capture",
+                        title: "Take screenshot",
                         config: $screenshotConfig,
                         allConfigs: allConfigs,
                         onChanged: { settings.screenshotHotkey = screenshotConfig.dictionary }
+                    )
+                    SettingsDivider()
+                    HotkeyRecorderView(
+                        title: "Capture full screen",
+                        config: $fullscreenScreenshotConfig,
+                        allConfigs: allConfigs,
+                        onChanged: { settings.fullscreenScreenshotHotkey = fullscreenScreenshotConfig.dictionary }
                     )
                     SettingsDivider()
                     HStack {
@@ -587,6 +666,7 @@ struct ShortcutsSettingsPane: View {
                             pasteStackConfig = .defaultPasteStack
                             ocrConfig = .defaultOCR
                             screenshotConfig = .defaultScreenshot
+                            fullscreenScreenshotConfig = .defaultFullscreenScreenshot
                         } label: {
                             Text("RESET")
                                 .font(.system(size: 10, weight: .bold, design: .monospaced))
@@ -607,21 +687,27 @@ struct ShortcutsSettingsPane: View {
                 }
 
                 SettingsGroupBox(title: "Navigation") {
-                    SettingsShortcutRow(title: "Navigate items", shortcut: "\u{2190} \u{2192}")
+                    SettingsShortcutRow(title: "Move between items", shortcut: "\u{2190} \u{2192}")
                     SettingsDivider()
-                    SettingsShortcutRow(title: "Select item", shortcut: "\u{21A9}")
+                    SettingsShortcutRow(title: "Paste item", shortcut: "\u{21A9}")
                     SettingsDivider()
-                    SettingsShortcutRow(title: "Toggle preview", shortcut: "Space")
+                    SettingsShortcutRow(title: "Paste as plain text", shortcut: "\u{21E7}\u{21A9}")
+                    SettingsDivider()
+                    SettingsShortcutRow(title: "Copy without closing", shortcut: "\u{2318}C")
+                    SettingsDivider()
+                    SettingsShortcutRow(title: "Preview", shortcut: "Space")
+                    SettingsDivider()
+                    SettingsShortcutRow(title: "Edit text", shortcut: "Hold Space")
                     SettingsDivider()
                     SettingsShortcutRow(title: "Delete item", shortcut: "\u{232B}")
                     SettingsDivider()
                     SettingsShortcutRow(title: "Undo delete", shortcut: "\u{2318}Z")
                     SettingsDivider()
-                    SettingsShortcutRow(title: "Search", shortcut: "/")
+                    SettingsShortcutRow(title: "Search", shortcut: "Just type")
                     SettingsDivider()
-                    SettingsShortcutRow(title: "Navigate pinboards", shortcut: "\u{2318}\u{2190} \u{2318}\u{2192}")
+                    SettingsShortcutRow(title: "Switch pinboard", shortcut: "\u{2318}\u{2190} \u{2318}\u{2192}")
                     SettingsDivider()
-                    SettingsShortcutRow(title: "Quick select", shortcut: "\u{2318}1-9")
+                    SettingsShortcutRow(title: "Quick paste", shortcut: "\u{2318}1\u{2013}9, \u{2318}0")
                 }
             }
             .padding(28)
@@ -631,6 +717,7 @@ struct ShortcutsSettingsPane: View {
             pasteStackConfig = settings.hotkeyConfigForPasteStack()
             ocrConfig = settings.hotkeyConfigForOCR()
             screenshotConfig = settings.hotkeyConfigForScreenshot()
+            fullscreenScreenshotConfig = settings.hotkeyConfigForFullscreenScreenshot()
         }
     }
 }
@@ -652,6 +739,19 @@ struct ScreenCaptureSettingsPane: View {
                         title: "Auto-copy to clipboard",
                         subtitle: "Automatically copy screenshots to the clipboard",
                         isOn: $settings.screenshotAutoCopy
+                    )
+                }
+
+                SettingsGroupBox(title: "macOS Shortcuts") {
+                    SettingsButtonRow(
+                        title: "Using \u{2318}\u{21E7}3 and \u{2318}\u{21E7}4",
+                        subtitle: "macOS keeps these for its own screenshots. Turn them off under Keyboard Shortcuts \u{203A} Screenshots, or pick different keys in Shortcuts.",
+                        buttonTitle: "Open",
+                        action: {
+                            if let url = URL(string: "x-apple.systempreferences:com.apple.Keyboard-Settings.extension") {
+                                NSWorkspace.shared.open(url)
+                            }
+                        }
                     )
                 }
             }
@@ -842,6 +942,7 @@ struct IgnoredAppsSection: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Add app to ignored list")
 
             Rectangle()
                 .fill(Brand.gray200)
@@ -860,6 +961,7 @@ struct IgnoredAppsSection: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Remove app from ignored list")
             .disabled(selectedAppID == nil)
 
             Spacer()
@@ -988,11 +1090,11 @@ struct StorageSettingsPane: View {
     @ObservedObject var settings: SettingsManager
     @ObservedObject var clipboardManager: ClipboardManager
     @ObservedObject var pinboardManager: PinboardManager
+    @ObservedObject var snippetManager: SnippetManager
 
     @State private var showClearHistoryAlert = false
     @State private var showClearPinboardsAlert = false
-    @State private var showExportAlert = false
-    @State private var showImportAlert = false
+    @State private var transferMessage: String?
 
     private let historySizeOptions = [0, 25, 50, 100, 200, 500]
 
@@ -1031,7 +1133,7 @@ struct StorageSettingsPane: View {
                 SettingsGroupBox(title: "Data") {
                     SettingsButtonRow(
                         title: "Clear clipboard history",
-                        subtitle: "Remove all items from history",
+                        subtitle: "Remove everything except pinned items",
                         buttonTitle: "Clear",
                         action: { showClearHistoryAlert = true }
                     )
@@ -1045,16 +1147,16 @@ struct StorageSettingsPane: View {
                     SettingsDivider()
                     SettingsButtonRow(
                         title: "Export data",
-                        subtitle: "Export history and pins to a file",
+                        subtitle: "Save history, pinboards and snippets to a file",
                         buttonTitle: "Export",
-                        action: { showExportAlert = true }
+                        action: { exportData() }
                     )
                     SettingsDivider()
                     SettingsButtonRow(
                         title: "Import data",
-                        subtitle: "Restore from an exported file",
+                        subtitle: "Add the contents of an exported file to what you have",
                         buttonTitle: "Import",
-                        action: { showImportAlert = true }
+                        action: { importData() }
                     )
                     SettingsDivider()
                     SettingsToggleRow(
@@ -1072,7 +1174,7 @@ struct StorageSettingsPane: View {
                 clipboardManager.clearHistory()
             }
         } message: {
-            Text("This will remove all \(clipboardManager.history.count) items from your clipboard history. This cannot be undone.")
+            Text("This will remove your clipboard history. Items pinned to a pinboard are kept. This cannot be undone.")
         }
         .alert("Clear Pinboards", isPresented: $showClearPinboardsAlert) {
             Button("Cancel", role: .cancel) {}
@@ -1082,15 +1184,50 @@ struct StorageSettingsPane: View {
         } message: {
             Text("This will remove all pinned items from every pinboard. This cannot be undone.")
         }
-        .alert("Export Not Available", isPresented: $showExportAlert) {
+        .alert(
+            "Superclip",
+            isPresented: Binding(
+                get: { transferMessage != nil },
+                set: { if !$0 { transferMessage = nil } })
+        ) {
             Button("OK", role: .cancel) {}
         } message: {
-            Text("Export functionality is coming in a future update.")
+            Text(transferMessage ?? "")
         }
-        .alert("Import Not Available", isPresented: $showImportAlert) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text("Import functionality is coming in a future update.")
+    }
+
+    private func exportData() {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.json]
+        panel.canCreateDirectories = true
+        let stamp = Date().formatted(.iso8601.year().month().day())
+        panel.nameFieldStringValue = "Superclip Export \(stamp).json"
+        panel.message = "The export contains your clipboard history in readable form. Keep it somewhere private."
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            let data = try DataArchive.export(
+                clipboard: clipboardManager, pinboards: pinboardManager, snippets: snippetManager)
+            try data.write(to: url, options: .atomic)
+            transferMessage = "Exported \(clipboardManager.history.count) clips, \(pinboardManager.pinboards.count) pinboards and \(snippetManager.snippets.count) snippets."
+        } catch {
+            transferMessage = "Export failed: \(error.localizedDescription)"
+        }
+    }
+
+    private func importData() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.json]
+        panel.allowsMultipleSelection = false
+        panel.message = "Choose a Superclip export. Its contents are added to what you already have."
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            let data = try Data(contentsOf: url)
+            let summary = try DataArchive.importArchive(
+                data, clipboard: clipboardManager, pinboards: pinboardManager,
+                snippets: snippetManager)
+            transferMessage = summary.description
+        } catch {
+            transferMessage = "Import failed: \(error.localizedDescription)"
         }
     }
 }
@@ -1098,7 +1235,6 @@ struct StorageSettingsPane: View {
 // MARK: - About Settings Pane
 
 struct AboutSettingsPane: View {
-    @State private var showUpToDateAlert = false
     @State private var showResetAlert = false
 
     var body: some View {
@@ -1146,16 +1282,16 @@ struct AboutSettingsPane: View {
                     SettingsButtonRow(
                         title: "Check for updates",
                         buttonTitle: "Check",
-                        action: { showUpToDateAlert = true }
+                        action: {
+                            NotificationCenter.default.post(name: .superclipCheckForUpdates, object: nil)
+                        }
                     )
                     SettingsDivider()
                     SettingsButtonRow(
-                        title: "Rate on App Store",
-                        buttonTitle: "Rate",
+                        title: "Setup guide",
+                        buttonTitle: "Show",
                         action: {
-                            if let url = URL(string: "macappstore://apps.apple.com/app/id0000000000?action=write-review") {
-                                NSWorkspace.shared.open(url)
-                            }
+                            NotificationCenter.default.post(name: .superclipShowSetupGuide, object: nil)
                         }
                     )
                     SettingsDivider()
@@ -1216,11 +1352,6 @@ struct AboutSettingsPane: View {
                 .buttonStyle(.plain)
             }
             .padding(.bottom, 28)
-        }
-        .alert("Up to Date", isPresented: $showUpToDateAlert) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text("You're running the latest version of Superclip.")
         }
         .alert("Reset Superclip?", isPresented: $showResetAlert) {
             Button("Cancel", role: .cancel) {}
@@ -1334,6 +1465,7 @@ struct SnippetsSettingsPane: View {
                         .frame(width: 32, height: 26)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Add snippet")
 
                 Rectangle()
                     .fill(Brand.gray200)
@@ -1351,6 +1483,7 @@ struct SnippetsSettingsPane: View {
                         .frame(width: 32, height: 26)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Delete snippet")
                 .disabled(selectedSnippetId == nil)
 
                 Spacer()
@@ -1548,6 +1681,10 @@ struct SnippetsSettingsPane: View {
         let excludeId = isCreating ? nil : selectedSnippetId
         if snippetManager.isTriggerTaken(trimmedTrigger, excludingId: excludeId) {
             editError = "This trigger is already used by another snippet"
+            return
+        }
+        if let clash = snippetManager.conflictingTrigger(for: trimmedTrigger, excludingId: excludeId) {
+            editError = "Clashes with the trigger \u{201C}\(clash)\u{201D}: one starts with the other, so the longer one could never fire"
             return
         }
 

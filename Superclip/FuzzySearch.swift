@@ -17,10 +17,11 @@ enum FuzzySearch {
 
     /// Filter and rank items by query. Returns items sorted by relevance (highest first).
     static func search(query: String, in items: [ClipboardItem]) -> [ClipboardItem] {
-        let query = query.lowercased().trimmingCharacters(in: .whitespaces)
-        guard !query.isEmpty else { return items }
+        let normalized = query.lowercased().trimmingCharacters(in: .whitespaces)
+        guard !normalized.isEmpty else { return items }
 
         var scored: [ScoredItem] = []
+        let query = Query(normalized)
 
         for item in items {
             let bestScore = scoreItem(item, query: query)
@@ -40,11 +41,54 @@ enum FuzzySearch {
 
     // MARK: - Scoring
 
-    private static func scoreItem(_ item: ClipboardItem, query: String) -> Int {
+    /// The query plus the variants every item is tested against, built once
+    /// per search instead of once per item.
+    private struct Query {
+        let text: String
+        let afterSpace: String
+        let afterDot: String
+        let afterSlash: String
+
+        init(_ text: String) {
+            self.text = text
+            afterSpace = " " + text
+            afterDot = "." + text
+            afterSlash = "/" + text
+        }
+    }
+
+    /// Only this much of a clip is searched. Matching megabytes of a pasted
+    /// log on every keystroke is what made search stutter on large histories.
+    private static let maxSearchedLength = 20_000
+
+    /// Above this length the loose "letters appear in order" match is skipped:
+    /// in a long text almost any short query matches that way, so it only adds
+    /// noise and cost.
+    private static let maxFuzzyLength = 2_000
+
+    /// Lowercased search text per clip, cached so it is not rebuilt for every
+    /// item on every keystroke.
+    private static let lowercasedCache: NSCache<NSString, NSString> = {
+        let cache = NSCache<NSString, NSString>()
+        cache.countLimit = 3_000
+        cache.totalCostLimit = 32 * 1024 * 1024
+        return cache
+    }()
+
+    private static func searchText(for content: String) -> String {
+        let key = content as NSString
+        if let cached = lowercasedCache.object(forKey: key) { return cached as String }
+        let lowered = (content.utf16.count > maxSearchedLength
+            ? String(content.prefix(maxSearchedLength)) : content).lowercased()
+        lowercasedCache.setObject(lowered as NSString, forKey: key, cost: lowered.utf8.count)
+        return lowered
+    }
+
+    private static func scoreItem(_ item: ClipboardItem, query: Query) -> Int {
         var bestScore = 0
 
         // Score against main content
-        bestScore = max(bestScore, scoreString(item.content.lowercased(), query: query, weight: 10))
+        bestScore = max(bestScore, scoreString(searchText(for: item.content), query: query, weight: 10))
 
         // Score against source app name
         if let appName = item.sourceApp?.name.lowercased() {
@@ -78,75 +122,64 @@ enum FuzzySearch {
 
     /// Score a string against a query. Higher = better match.
     /// Weight multiplies the base score (allows prioritizing certain fields).
-    private static func scoreString(_ text: String, query: String, weight: Int) -> Int {
+    private static func scoreString(_ text: String, query: Query, weight: Int) -> Int {
         guard !text.isEmpty else { return 0 }
 
         // Exact match (highest)
-        if text == query {
+        if text == query.text {
             return 100 * weight
         }
 
         // Exact contains
-        if text.contains(query) {
+        if text.contains(query.text) {
             // Bonus for prefix match
-            if text.hasPrefix(query) {
+            if text.hasPrefix(query.text) {
                 return 80 * weight
             }
             // Bonus for word-boundary match
-            if text.contains(" \(query)") || text.contains(".\(query)") || text.contains("/\(query)") {
+            if text.contains(query.afterSpace) || text.contains(query.afterDot)
+                || text.contains(query.afterSlash)
+            {
                 return 70 * weight
             }
             return 60 * weight
         }
 
         // Fuzzy: check if query chars appear in order (subsequence match)
-        if fuzzyMatch(text: text, query: query) {
-            // Score based on how compact the match is
-            let compactness = fuzzyCompactness(text: text, query: query)
+        if text.utf8.count <= maxFuzzyLength, let compactness = fuzzyCompactness(text: text, query: query.text) {
             return Int(Double(40 * weight) * compactness)
         }
 
         return 0
     }
 
-    /// Check if all characters of query appear in text in order.
-    private static func fuzzyMatch(text: String, query: String) -> Bool {
-        var textIndex = text.startIndex
-        var queryIndex = query.startIndex
+    /// If every unit of `query` appears in `text` in order, how compact that
+    /// match is (1.0 = adjacent, lower = more spread out); nil if it does not
+    /// match. Walks UTF-8 bytes: indexing by Character was the slow part of
+    /// search, and a byte-wise subsequence gives the same answer.
+    private static func fuzzyCompactness(text: String, query: String) -> Double? {
+        let queryBytes = Array(query.utf8)
+        guard !queryBytes.isEmpty else { return nil }
 
-        while textIndex < text.endIndex && queryIndex < query.endIndex {
-            if text[textIndex] == query[queryIndex] {
-                queryIndex = query.index(after: queryIndex)
-            }
-            textIndex = text.index(after: textIndex)
-        }
-
-        return queryIndex == query.endIndex
-    }
-
-    /// How compact the fuzzy match is (1.0 = characters are adjacent, lower = more spread out).
-    private static func fuzzyCompactness(text: String, query: String) -> Double {
-        guard query.count > 1 else { return 1.0 }
-
-        var textIndex = text.startIndex
-        var queryIndex = query.startIndex
+        var queryIndex = 0
         var firstMatchPos: Int?
-        var lastMatchPos: Int = 0
+        var lastMatchPos = 0
         var pos = 0
 
-        while textIndex < text.endIndex && queryIndex < query.endIndex {
-            if text[textIndex] == query[queryIndex] {
+        for byte in text.utf8 {
+            if byte == queryBytes[queryIndex] {
                 if firstMatchPos == nil { firstMatchPos = pos }
                 lastMatchPos = pos
-                queryIndex = query.index(after: queryIndex)
+                queryIndex += 1
+                if queryIndex == queryBytes.count { break }
             }
-            textIndex = text.index(after: textIndex)
             pos += 1
         }
 
-        guard let first = firstMatchPos else { return 0 }
+        guard queryIndex == queryBytes.count, let first = firstMatchPos else { return nil }
+        guard queryBytes.count > 1 else { return 1.0 }
         let span = lastMatchPos - first + 1
-        // Best case: span == query.count (all chars adjacent)
-        return Double(query.count) / Double(max(span, query.count))
+        // Best case: span == query length (all adjacent)
+        return Double(queryBytes.count) / Double(max(span, queryBytes.count))
     }
 }

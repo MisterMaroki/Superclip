@@ -35,7 +35,7 @@ class PreviewPanel: NSPanel {
 
     super.init(
       contentRect: .zero,
-      styleMask: [.borderless, .nonactivatingPanel, .titled],
+      styleMask: [.borderless, .nonactivatingPanel],
       backing: .buffered,
       defer: true
     )

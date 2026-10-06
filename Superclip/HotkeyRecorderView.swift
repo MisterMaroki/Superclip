@@ -30,6 +30,18 @@ struct HotkeyConfig: Equatable {
         keyCombo.description
     }
 
+    /// One string per key, for drawing the combo as individual key caps.
+    var keyCaps: [String] {
+        var caps: [String] = []
+        let mods = modifiers
+        if mods.contains(.control) { caps.append("\u{2303}") }
+        if mods.contains(.option) { caps.append("\u{2325}") }
+        if mods.contains(.command) { caps.append("\u{2318}") }
+        if mods.contains(.shift) { caps.append("\u{21E7}") }
+        if let key = key { caps.append(key.description) }
+        return caps
+    }
+
     var isValid: Bool {
         // Must have at least one modifier (Cmd, Ctrl, Option)
         // Shift alone is not sufficient
@@ -43,6 +55,7 @@ struct HotkeyConfig: Equatable {
     static let defaultPasteStack = HotkeyConfig(carbonKeyCode: UInt32(kVK_ANSI_C), carbonModifiers: NSEvent.ModifierFlags([.command, .shift]).carbonFlags)
     static let defaultOCR = HotkeyConfig(carbonKeyCode: UInt32(kVK_ANSI_Grave), carbonModifiers: NSEvent.ModifierFlags([.command, .shift]).carbonFlags)
     static let defaultScreenshot = HotkeyConfig(carbonKeyCode: UInt32(kVK_ANSI_4), carbonModifiers: NSEvent.ModifierFlags([.command, .shift]).carbonFlags)
+    static let defaultFullscreenScreenshot = HotkeyConfig(carbonKeyCode: UInt32(kVK_ANSI_3), carbonModifiers: NSEvent.ModifierFlags([.command, .shift]).carbonFlags)
 
     // UserDefaults serialization
     var dictionary: [String: Int] {
@@ -77,9 +90,10 @@ struct HotkeyRecorderView: View {
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 3) {
+                // Same type as every other settings row
                 Text(title)
-                    .font(.system(size: 13))
-                    .foregroundStyle(.primary.opacity(0.95))
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Brand.black)
 
                 if let error = errorMessage {
                     Text(error)
@@ -101,7 +115,9 @@ struct HotkeyRecorderView: View {
                     .foregroundStyle(isRecording ? Brand.white : Brand.gray700)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 5)
-                    .frame(minWidth: 100)
+                    // Wide enough for "Press shortcut..." so the button
+                    // doesn't jump in width when recording starts
+                    .frame(minWidth: 150)
                     .background(
                         Rectangle()
                             .fill(isRecording ? Brand.black : Color.primary.opacity(0.08))
@@ -119,8 +135,12 @@ struct HotkeyRecorderView: View {
                 HotkeyCapture(isRecording: $isRecording, onCapture: handleCapture)
             )
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, 14)
         .padding(.vertical, 10)
+        .background(Brand.white)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(title), shortcut \(config.displayString)")
+
     }
 
     private func handleCapture(_ keyCode: UInt16, _ modifierFlags: NSEvent.ModifierFlags) {

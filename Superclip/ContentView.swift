@@ -91,15 +91,56 @@ struct ContentView: View {
   @State private var dragLocation: CGPoint? = nil
   @State private var dragMonitorTimer: Timer? = nil
   @State private var dragMouseUpMonitor: Any? = nil
-  @State private var cardCenterXPositions: [Int: CGFloat] = [:]  // index -> center X in screen coords
+  /// index -> card center X in screen coords. A plain reference box, not view
+  /// state: every visible card writes here on every scroll frame, and nothing
+  /// needs to re-render when it changes.
+  @State private var cardPositions = CardPositions()
+  /// Memo for `currentItems` (see there).
+  @State private var itemsCache = VisibleItemsCache()
   @State private var previewUpdateWorkItem: DispatchWorkItem? = nil
+  @State private var toastText: String?
+  @State private var toastWorkItem: DispatchWorkItem?
 
+  /// Name of the app a paste will land in. The drawer is a non-activating
+  /// panel, so the user's app is still frontmost while it is open.
+  private let pasteTargetName: String = {
+    guard let app = NSWorkspace.shared.frontmostApplication,
+      app.bundleIdentifier != Bundle.main.bundleIdentifier
+    else { return "" }
+    return app.localizedName ?? ""
+  }()
+
+  /// The cards currently shown: history, or a pinboard, narrowed by search.
+  ///
+  /// This is read many times per render (count checks, selection, the list
+  /// itself) and each read used to re-filter or re-search the whole history,
+  /// so one keystroke in search ran well over a dozen full searches. The
+  /// result is now computed once and reused until one of its inputs changes.
   var currentItems: [ClipboardItem] {
+    let key = VisibleItemsCache.Key(
+      historyVersion: clipboardManager.historyVersion,
+      query: searchText,
+      filter: selectedFilter,
+      pinboardId: { if case .pinboard(let p) = viewMode { return p.id } else { return nil } }(),
+      pinboards: pinboardManager.pinboards
+    )
+    if itemsCache.key == key { return itemsCache.items }
+    let unfiltered = computeCurrentItems()
+    let items = selectedFilter == .all ? unfiltered : unfiltered.filter(selectedFilter.matches)
+    itemsCache.key = key
+    itemsCache.items = items
+    return items
+  }
+
+  private func computeCurrentItems() -> [ClipboardItem] {
     switch viewMode {
     case .clipboard:
       return filteredHistory
     case .pinboard(let pinboard):
-      let pinboardItems = pinboardManager.getItems(for: pinboard, from: clipboardManager.history)
+      // viewMode holds a snapshot of the pinboard; membership has to come from
+      // the live one or pin/unpin never shows up while the board is open.
+      let live = pinboardManager.pinboards.first(where: { $0.id == pinboard.id }) ?? pinboard
+      let pinboardItems = pinboardManager.getItems(for: live, from: clipboardManager.history)
       if searchText.isEmpty {
         return pinboardItems
       }
@@ -132,12 +173,43 @@ struct ContentView: View {
       headerView
         .padding(.top, 12)
 
+      // Type filters, shown while searching (and for as long as one is active)
+      if showSearchField || selectedFilter != .all {
+        filterBarView
+          .transition(.opacity)
+      }
+
       // Clipboard history list
       itemsListView
+
+      // What the keys do, right where the hands already are. Every action
+      // here used to be discoverable only from the tutorial or the menus.
+      if settings.showKeyboardHints {
+        KeyHintBar(hints: keyHints, trailing: showSearchField ? nil : "Type to search")
+      }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .background(Brand.white)
     .clipShape(Rectangle())
+    .overlay(alignment: .top) {
+      // Hairline top edge: the drawer has no shadow, and in dark mode a
+      // near-black surface over a dark window had no visible boundary
+      Rectangle().fill(Brand.gray300).frame(height: 1).allowsHitTesting(false)
+    }
+    .overlay(alignment: .bottom) {
+      if let toastText = toastText {
+        Text(toastText)
+          .font(.system(size: 12, weight: .semibold))
+          .foregroundStyle(Brand.white)
+          .padding(.horizontal, 14)
+          .padding(.vertical, 7)
+          .background(Brand.black)
+          .padding(.bottom, settings.showKeyboardHints ? 46 : 22)
+          .transition(.opacity.combined(with: .move(edge: .bottom)))
+          .allowsHitTesting(false)
+          .accessibilityAddTraits(.updatesFrequently)
+      }
+    }
     .overlay(alignment: .top) {
       // Invisible resize edge at the top — cursor changes on hover, drag to resize
       Rectangle()
@@ -195,13 +267,36 @@ struct ContentView: View {
       updateNavigationForCurrentItems()
     }
     .onChange(of: navigationState.shouldSelectAndDismiss) { shouldSelect in
-      if shouldSelect, let item = selectedItem {
+      if shouldSelect {
+        // Always clear the flag: left set (e.g. Return on an empty list) it
+        // would swallow every later Return, since onChange never fires again.
+        navigationState.shouldSelectAndDismiss = false
+        guard let item = selectedItem else { return }
         clipboardManager.copyToClipboard(item)
         settings.playSound()
-        navigationState.shouldSelectAndDismiss = false
         DispatchQueue.main.asyncAfter(deadline: .now()) {
           dismiss(settings.pasteAfterSelecting)
         }
+      }
+    }
+    .onChange(of: navigationState.shouldPastePlainAndDismiss) { shouldPaste in
+      if shouldPaste {
+        navigationState.shouldPastePlainAndDismiss = false
+        guard let item = selectedItem else { return }
+        copyPlain(item)
+        settings.playSound()
+        DispatchQueue.main.asyncAfter(deadline: .now()) {
+          dismiss(settings.pasteAfterSelecting)
+        }
+      }
+    }
+    .onChange(of: navigationState.shouldCopyCurrent) { shouldCopy in
+      if shouldCopy {
+        navigationState.shouldCopyCurrent = false
+        guard let item = selectedItem else { return }
+        clipboardManager.copyToClipboard(item)
+        settings.playSound()
+        showToast("Copied")
       }
     }
     .onChange(of: navigationState.shouldFocusSearch) { shouldFocus in
@@ -216,6 +311,9 @@ struct ContentView: View {
     }
     .onChange(of: showSearchField) { isShowing in
       onSearchingChanged?(isShowing)
+    }
+    .onChange(of: selectedFilter) { _ in
+      if navigationState.selectedIndex != 0 { navigationState.selectedIndex = 0 }
     }
     .onChange(of: isSearchFocused) { isFocused in
       onSearchFocusChanged?(isFocused)
@@ -240,12 +338,16 @@ struct ContentView: View {
         searchText = ""
         showSearchField = false
         isSearchFocused = false
+        // Esc clears the type filter along with the search. (Arrowing into
+        // the results closes an empty search field but keeps the filter.)
+        selectedFilter = .all
       }
     }
     .onChange(of: navigationState.shouldShowPreview) { shouldShow in
-      if shouldShow, let item = selectedItem {
+      if shouldShow {
         navigationState.shouldShowPreview = false
-        let centerX = cardCenterXPositions[navigationState.selectedIndex] ?? 0
+        guard let item = selectedItem else { return }
+        let centerX = cardPositions.centerX[navigationState.selectedIndex] ?? 0
         onPreview?(item, navigationState.selectedIndex, centerX)
       }
     }
@@ -263,17 +365,29 @@ struct ContentView: View {
       navigationState.selectedItemId = newId
     }
     .onChange(of: navigationState.shouldDeleteCurrent) { shouldDelete in
-      if shouldDelete, let item = selectedItem {
+      if shouldDelete {
         navigationState.shouldDeleteCurrent = false
-        clipboardManager.deleteItem(item)
-        // Adjust selection if needed
-        if navigationState.selectedIndex >= currentItems.count - 1 {
-          navigationState.selectedIndex = max(0, currentItems.count - 2)
+        guard let item = selectedItem else { return }
+        if case .pinboard(let pinboard) = viewMode {
+          // Inside a pinboard, Backspace takes the clip off the board. It
+          // stays in history; deleting it outright would be a surprise here.
+          pinboardManager.removeItem(item.id, from: pinboard)
+          showToast("Removed from \(pinboard.name)")
+          if navigationState.selectedIndex >= currentItems.count {
+            navigationState.selectedIndex = max(0, currentItems.count - 1)
+          }
+        } else {
+          deleteWithFeedback(item)
+          // Adjust selection if needed (the removal itself lands on the next runloop turn)
+          if navigationState.selectedIndex >= currentItems.count - 1 {
+            navigationState.selectedIndex = max(0, currentItems.count - 2)
+          }
         }
       }
     }
     .onChange(of: viewMode) { _ in
-      navigationState.selectedIndex = 0
+      // @Published does not de-duplicate: writing 0 over 0 still re-renders
+      if navigationState.selectedIndex != 0 { navigationState.selectedIndex = 0 }
       navigationState.itemCount = currentItems.count
     }
     .onChange(of: navigationState.shouldMovePinboardLeft) { shouldMove in
@@ -354,6 +468,61 @@ struct ContentView: View {
     }
   }
 
+  /// Hints for the current mode: searching, inside a pinboard, or browsing.
+  private var keyHints: [KeyHint] {
+    if showSearchField {
+      return [
+        KeyHint(keys: "\u{2190}\u{2192}", label: "Browse results"),
+        KeyHint(keys: "\u{21A9}", label: "Paste"),
+        KeyHint(keys: "esc", label: "Clear search"),
+      ]
+    }
+    var hints = [
+      KeyHint(keys: "\u{21A9}", label: "Paste"),
+      KeyHint(keys: "\u{21E7}\u{21A9}", label: "Plain text"),
+      KeyHint(keys: "\u{2318}C", label: "Copy"),
+      KeyHint(keys: "space", label: "Preview"),
+      KeyHint(keys: "hold space", label: "Edit"),
+    ]
+    if case .pinboard = viewMode {
+      hints.append(KeyHint(keys: "\u{232B}", label: "Unpin"))
+    } else {
+      hints.append(KeyHint(keys: "\u{232B}", label: "Delete"))
+    }
+    if !pinboardManager.pinboards.isEmpty {
+      hints.append(KeyHint(keys: "\u{2318}\u{2190}\u{2192}", label: "Pinboards"))
+    }
+    return hints
+  }
+
+  // MARK: - Feedback
+
+  /// Brief confirmation at the bottom of the drawer for actions that
+  /// otherwise change nothing visible (copy, pin, delete).
+  private func showToast(_ text: String) {
+    toastWorkItem?.cancel()
+    withAnimation(.easeOut(duration: 0.15)) { toastText = text }
+    let work = DispatchWorkItem {
+      withAnimation(.easeIn(duration: 0.2)) { toastText = nil }
+    }
+    toastWorkItem = work
+    DispatchQueue.main.asyncAfter(deadline: .now() + 1.8, execute: work)
+  }
+
+  private func deleteWithFeedback(_ item: ClipboardItem) {
+    clipboardManager.deleteItem(item)
+    showToast("Deleted \u{00B7} \u{2318}Z to undo")
+  }
+
+  /// Plain-text copy only means something for text; other types copy as they are.
+  private func copyPlain(_ item: ClipboardItem) {
+    if item.type == .text || item.type == .url {
+      clipboardManager.copyToClipboardAsPlainText(item)
+    } else {
+      clipboardManager.copyToClipboard(item)
+    }
+  }
+
   private func updateNavigationForCurrentItems() {
     navigationState.itemCount = currentItems.count
     if navigationState.selectedIndex >= currentItems.count && currentItems.count > 0 {
@@ -373,7 +542,7 @@ struct ContentView: View {
       else { return }
 
       let item = currentItems[index]
-      let centerX = cardCenterXPositions[index] ?? 0
+      let centerX = cardPositions.centerX[index] ?? 0
 
       if centerX > 0 {
         onPreview?(item, index, centerX)
@@ -462,7 +631,7 @@ struct ContentView: View {
               .foregroundStyle(.primary)
               .focused($isSearchFocused)
               .onChange(of: searchText) { _ in
-                navigationState.selectedIndex = 0
+                if navigationState.selectedIndex != 0 { navigationState.selectedIndex = 0 }
               }
 
             if !searchText.isEmpty {
@@ -482,12 +651,14 @@ struct ContentView: View {
           .background(Brand.gray100)
           .frame(width: 220)
         } else {
-          HeaderIconButton(icon: "magnifyingglass") {
-            showSearchField = true
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-              isSearchFocused = true
-            }
-          }
+          HeaderIconButton(
+            icon: "magnifyingglass",
+            action: {
+              showSearchField = true
+              DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                isSearchFocused = true
+              }
+            }, helpText: "Search (or just start typing)")
         }
 
         // Clipboard tab
@@ -507,89 +678,28 @@ struct ContentView: View {
           }
         )
 
-        // Pinboard tabs
-        ForEach(pinboardManager.pinboards) { pinboard in
-          if editingPinboard?.id == pinboard.id && !showSearchField {
-            // Editing mode (only when not searching)
-            PinboardEditView(
-              name: $editingPinboardName,
-              color: $editingPinboardColor,
-              isFocused: $isEditingPinboard,
-              onSave: {
-                var updated = pinboard
-                updated.name = editingPinboardName.isEmpty ? "Untitled" : editingPinboardName
-                updated.color = editingPinboardColor
-
-                pinboardManager.updatePinboard(updated)
-
-                editingPinboard = nil
-                isEditingPinboard = false
-                onEditingPinboardChanged?(false)
-
-                if case .pinboard(let current) = viewMode, current.id == pinboard.id {
-                  viewMode = .pinboard(updated)
-                }
-              },
-              onCancel: {
-                editingPinboard = nil
-                isEditingPinboard = false
-                onEditingPinboardChanged?(false)
-              }
-            )
-          } else {
-            // Display mode (normal or compact when searching)
-            PinboardTabButton(
-              pinboard: pinboard,
-              isSelected: {
-                if case .pinboard(let current) = viewMode {
-                  return current.id == pinboard.id
-                }
-                return false
-              }(),
-              isCompact: showSearchField,
-              itemCount: settings.showItemCount ? pinboard.itemIds.count : nil,
-              onSelect: {
-                viewMode = .pinboard(pinboard)
-              },
-              onEdit: {
-                editingPinboard = pinboard
-                editingPinboardName = pinboard.name
-                editingPinboardColor = pinboard.color
-                isEditingPinboard = true
-                onEditingPinboardChanged?(true)
-              },
-              onDelete: {
-                if case .pinboard(let current) = viewMode, current.id == pinboard.id {
-                  viewMode = .clipboard
-                }
-                pinboardManager.deletePinboard(pinboard)
-              },
-              onColorChange: { newColor in
-                var updated = pinboard
-                updated.color = newColor
-                pinboardManager.updatePinboard(updated)
-                if case .pinboard(let current) = viewMode, current.id == pinboard.id {
-                  viewMode = .pinboard(updated)
-                }
-              },
-              onDrop: { itemId in
-                pinboardManager.addItem(itemId, to: pinboard)
-              }
-            )
+        // Pinboard tabs. With more boards than fit, they scroll sideways
+        // instead of wrapping to two lines and running under the settings button.
+        ViewThatFits(in: .horizontal) {
+          HStack(spacing: showSearchField ? 8 : 16) { pinboardTabs }
+          ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: showSearchField ? 8 : 16) { pinboardTabs }
           }
         }
 
         // Add pinboard button (hide when searching)
         if !showSearchField {
-          HeaderIconButton(icon: "plus") {
-            let newPinboard = pinboardManager.createPinboard(name: "Untitled", color: .red)
-            editingPinboard = newPinboard
-            editingPinboardName = "Untitled"
-            editingPinboardColor = .red
-            isEditingPinboard = true
-            onEditingPinboardChanged?(true)
-            viewMode = .pinboard(newPinboard)
-          }
+          HeaderIconButton(
+            icon: "plus",
+            action: {
+              let newPinboard = pinboardManager.createPinboard(name: "Untitled", color: .red)
+              editingPinboard = newPinboard
+              editingPinboardName = "Untitled"
+              editingPinboardColor = .red
+              isEditingPinboard = true
+              onEditingPinboardChanged?(true)
+              viewMode = .pinboard(newPinboard)
+            }, helpText: "New pinboard")
         }
 
         // Text sniper button (always visible)
@@ -599,6 +709,7 @@ struct ContentView: View {
             onTextSnipe?()
           }, helpText: "Text Sniper (Cmd+Shift+`)")
       }
+      .padding(.horizontal, 52)
 
       // Settings button - far right
       HStack {
@@ -611,6 +722,81 @@ struct ContentView: View {
           helpText: "Settings"
         )
         .padding(.trailing, 8)
+      }
+    }
+  }
+
+  @ViewBuilder
+  private var pinboardTabs: some View {
+    ForEach(pinboardManager.pinboards) { pinboard in
+      if editingPinboard?.id == pinboard.id && !showSearchField {
+        // Editing mode (only when not searching)
+        PinboardEditView(
+          name: $editingPinboardName,
+          color: $editingPinboardColor,
+          isFocused: $isEditingPinboard,
+          onSave: {
+            var updated = pinboard
+            updated.name = editingPinboardName.isEmpty ? "Untitled" : editingPinboardName
+            updated.color = editingPinboardColor
+
+            pinboardManager.updatePinboard(updated)
+
+            editingPinboard = nil
+            isEditingPinboard = false
+            onEditingPinboardChanged?(false)
+
+            if case .pinboard(let current) = viewMode, current.id == pinboard.id {
+              viewMode = .pinboard(updated)
+            }
+          },
+          onCancel: {
+            editingPinboard = nil
+            isEditingPinboard = false
+            onEditingPinboardChanged?(false)
+          }
+        )
+      } else {
+        // Display mode (normal or compact when searching)
+        PinboardTabButton(
+          pinboard: pinboard,
+          isSelected: {
+            if case .pinboard(let current) = viewMode {
+              return current.id == pinboard.id
+            }
+            return false
+          }(),
+          isCompact: showSearchField,
+          itemCount: settings.showItemCount ? pinboard.itemIds.count : nil,
+          onSelect: {
+            viewMode = .pinboard(pinboard)
+          },
+          onEdit: {
+            editingPinboard = pinboard
+            editingPinboardName = pinboard.name
+            editingPinboardColor = pinboard.color
+            isEditingPinboard = true
+            onEditingPinboardChanged?(true)
+          },
+          onDelete: {
+            if case .pinboard(let current) = viewMode, current.id == pinboard.id {
+              viewMode = .clipboard
+            }
+            pinboardManager.deletePinboard(pinboard)
+          },
+          onColorChange: { newColor in
+            var updated = pinboard
+            updated.color = newColor
+            pinboardManager.updatePinboard(updated)
+            if case .pinboard(let current) = viewMode, current.id == pinboard.id {
+              viewMode = .pinboard(updated)
+            }
+          },
+          onDrop: { itemId in
+            pinboardManager.addItem(itemId, to: pinboard)
+            showToast("Pinned to \(pinboard.name)")
+          }
+        )
       }
     }
   }
@@ -633,7 +819,10 @@ struct ContentView: View {
         }
       }
       .padding(.horizontal, 20)
-      .padding(.vertical, 6)
+      .padding(.top, 8)
+      .padding(.bottom, 2)
+      // Centre the pills when they fit; scroll when they don't
+      .frame(maxWidth: .infinity)
     }
   }
 
@@ -642,22 +831,20 @@ struct ContentView: View {
   var itemsListView: some View {
     Group {
       if currentItems.isEmpty {
-        VStack(spacing: 12) {
-          Image(
-            systemName: viewMode == .clipboard && clipboardManager.history.isEmpty
-              ? "doc.on.clipboard" : "magnifyingglass"
-          )
-          .font(.system(size: 40))
-          .foregroundStyle(.primary.opacity(0.45))
+        VStack(spacing: 10) {
+          Image(systemName: emptyStateIcon)
+            .font(.system(size: 34, weight: .light))
+            .foregroundStyle(.primary.opacity(0.45))
 
           Text(emptyStateMessage)
-            .font(.system(size: 13))
+            .font(.system(size: 13, weight: .medium))
             .foregroundStyle(Brand.gray600)
 
-          if viewMode == .clipboard && clipboardManager.history.isEmpty {
-            Text("Copy something to get started")
+          if let hint = emptyStateHint {
+            Text(hint)
               .font(.system(size: 12))
               .foregroundStyle(Brand.gray500)
+              .multilineTextAlignment(.center)
           }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -672,7 +859,7 @@ struct ContentView: View {
                   isSelected: navigationState.selectedIndex == index,
                   quickAccessNumber: navigationState.isCommandHeld && index < 10
                     ? (index == 9 ? 0 : index + 1) : nil,
-                  holdProgress: navigationState.holdProgress,
+                  hold: navigationState.hold,
                   showSourceAppIcons: settings.showSourceAppIcons,
                   showTimestamps: settings.showTimestamps,
                   showLinkPreviews: settings.showLinkPreviews,
@@ -696,15 +883,16 @@ struct ContentView: View {
                   },
                   onCopy: {
                     clipboardManager.copyToClipboard(item)
+                    showToast("Copied")
                   },
                   onPasteAsPlainText: {
-                    clipboardManager.copyToClipboardAsPlainText(item)
+                    copyPlain(item)
                     DispatchQueue.main.asyncAfter(deadline: .now()) {
-                      dismiss(true)
+                      dismiss(settings.pasteAfterSelecting)
                     }
                   },
                   onDelete: {
-                    clipboardManager.deleteItem(item)
+                    deleteWithFeedback(item)
                   },
                   onEdit: {
                     navigationState.selectedIndex = index
@@ -712,14 +900,19 @@ struct ContentView: View {
                   },
                   onPreview: {
                     navigationState.selectedIndex = index
-                    let centerX = cardCenterXPositions[index] ?? 0
+                    let centerX = cardPositions.centerX[index] ?? 0
                     onPreview?(item, index, centerX)
                   },
                   onPinTo: { pinboard in
                     pinboardManager.addItem(item.id, to: pinboard)
+                    showToast("Pinned to \(pinboard.name)")
+                  },
+                  onUnpinFrom: { pinboard in
+                    pinboardManager.removeItem(item.id, from: pinboard)
+                    showToast("Removed from \(pinboard.name)")
                   },
                   pinboards: pinboardManager.pinboards,
-                  currentAppName: "Current App"
+                  currentAppName: pasteTargetName
                 )
                 .equatable()
                 .id(item.id)
@@ -732,10 +925,10 @@ struct ContentView: View {
                   GeometryReader { geo in
                     Color.clear
                       .onAppear {
-                        cardCenterXPositions[index] = geo.frame(in: .global).midX
+                        cardPositions.centerX[index] = geo.frame(in: .global).midX
                       }
                       .onChange(of: geo.frame(in: .global)) { newFrame in
-                        cardCenterXPositions[index] = newFrame.midX
+                        cardPositions.centerX[index] = newFrame.midX
                       }
                   }
                 )
@@ -768,11 +961,35 @@ struct ContentView: View {
   }
 
   var emptyStateMessage: String {
+    if !searchText.isEmpty { return "No results for \u{201C}\(searchText)\u{201D}" }
+    if selectedFilter != .all { return "No \(selectedFilter.rawValue.lowercased()) here" }
     switch viewMode {
     case .clipboard:
-      return clipboardManager.history.isEmpty ? "No clipboard history yet" : "No results found"
+      return "No clipboard history yet"
     case .pinboard:
-      return searchText.isEmpty ? "This pinboard is empty" : "No results found"
+      return "This pinboard is empty"
+    }
+  }
+
+  private var emptyStateIcon: String {
+    if !searchText.isEmpty { return "magnifyingglass" }
+    if selectedFilter != .all { return selectedFilter.icon }
+    switch viewMode {
+    case .clipboard: return settings.monitorClipboard ? "doc.on.clipboard" : "pause.circle"
+    case .pinboard: return "pin"
+    }
+  }
+
+  private var emptyStateHint: String? {
+    if !searchText.isEmpty { return "Press Esc to clear the search" }
+    if selectedFilter != .all { return "Choose All to see everything" }
+    switch viewMode {
+    case .clipboard:
+      return settings.monitorClipboard
+        ? "Copy something to get started"
+        : "Clipboard monitoring is paused. Turn it back on from the menu bar or Settings."
+    case .pinboard:
+      return "Drag a card onto this tab, or right-click a card and choose Pin"
     }
   }
 
@@ -789,14 +1006,16 @@ struct ClipboardItemCard: View, Equatable {
     lhs.showLinkPreviews == rhs.showLinkPreviews &&
     lhs.syntaxHighlighting == rhs.syntaxHighlighting &&
     lhs.currentAppName == rhs.currentAppName &&
-    (lhs.isSelected ? lhs.holdProgress == rhs.holdProgress : true)
+    lhs.pinboards == rhs.pinboards
   }
 
   let item: ClipboardItem
   let index: Int
   let isSelected: Bool
   let quickAccessNumber: Int?  // 1-9 for first 9, 0 for 10th, nil if not in first 10 or command not held
-  let holdProgress: Double  // 0...1 for hold-to-edit progress
+  /// Hold-to-edit progress. Passed by reference and observed only by the
+  /// ring overlay, so a hold animates without re-rendering any card.
+  let hold: HoldProgress
   var showSourceAppIcons: Bool = true
   var showTimestamps: Bool = true
   var showLinkPreviews: Bool = true
@@ -811,8 +1030,26 @@ struct ClipboardItemCard: View, Equatable {
   var onEdit: (() -> Void)? = nil
   var onPreview: (() -> Void)? = nil
   var onPinTo: ((Pinboard) -> Void)? = nil
+  var onUnpinFrom: ((Pinboard) -> Void)? = nil
   var pinboards: [Pinboard] = []
-  var currentAppName: String = "Application"
+  /// App the paste will land in; empty when unknown
+  var currentAppName: String = ""
+
+  /// One spoken line for the card: what it is, where it came from, what it says.
+  private var accessibilitySummary: String {
+    var parts = [item.typeLabel]
+    if let app = item.sourceApp?.name { parts.append("from \(app)") }
+    switch item.type {
+    case .image: parts.append(item.imageDimensions ?? "image")
+    case .file: parts.append(item.content)
+    default: parts.append(String(cardText.prefix(140)))
+    }
+    return parts.joined(separator: ", ")
+  }
+
+  private var memberPinboards: [Pinboard] {
+    pinboards.filter { $0.itemIds.contains(item.id) }
+  }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
@@ -833,6 +1070,19 @@ struct ClipboardItemCard: View, Equatable {
         .lineLimit(1)
 
         Spacer(minLength: 4)
+
+        // Pinboard membership dots (in the header row so they never sit on
+        // top of the app icon or the tag badges)
+        if !memberPinboards.isEmpty {
+          HStack(spacing: 3) {
+            ForEach(memberPinboards) { pinboard in
+              Circle()
+                .fill(pinboard.color.color)
+                .frame(width: 7, height: 7)
+            }
+          }
+          .help("Pinned to " + memberPinboards.map(\.name).joined(separator: ", "))
+        }
 
         // Detected content tag dots
         ContentTagBadgesRow(tags: item.detectedTags)
@@ -875,8 +1125,9 @@ struct ClipboardItemCard: View, Equatable {
     .aspectRatio(1, contentMode: .fit)
     .clipShape(Rectangle())
     .overlay(
+      // Inset 2pt when selected: a 1pt line disappears against image edges
       Rectangle()
-        .stroke(isSelected ? Brand.black : Brand.gray200, lineWidth: 1)
+        .strokeBorder(isSelected ? Brand.black : Brand.gray200, lineWidth: isSelected ? 2 : 1)
     )
     .overlay(alignment: .bottomLeading) {
       if let number = quickAccessNumber {
@@ -889,44 +1140,10 @@ struct ClipboardItemCard: View, Equatable {
           .transition(.scale.combined(with: .opacity))
       }
     }
-    .overlay(alignment: .topTrailing) {
-      let memberPinboards = pinboards.filter { $0.itemIds.contains(item.id) }
-      if !memberPinboards.isEmpty {
-        HStack(spacing: 3) {
-          ForEach(memberPinboards) { pinboard in
-            Circle()
-              .fill(pinboard.color.color)
-              .frame(width: 8, height: 8)
-          }
-        }
-        .padding(6)
-      }
-    }
     .overlay {
       // Hold-to-edit progress ring (only for editable items when selected and holding)
-      if isSelected && (item.type == .text || item.type == .url) && holdProgress > 0 {
-        ZStack {
-          // Background ring (subtle)
-          Circle()
-            .stroke(Color.primary.opacity(0.2), lineWidth: 3)
-            .frame(width: 50, height: 50)
-
-          // Progress ring (fills clockwise)
-          Circle()
-            .trim(from: 0, to: holdProgress)
-            .stroke(
-              Color.primary.opacity(0.9),
-              style: StrokeStyle(lineWidth: 3, lineCap: .round)
-            )
-            .frame(width: 50, height: 50)
-            .rotationEffect(.degrees(-90))  // Start from top
-
-          // Edit icon in center
-          Image(systemName: "pencil")
-            .font(.system(size: 18, weight: .medium))
-            .foregroundStyle(.primary)
-            .opacity(0.7 + holdProgress * 0.3)
-        }
+      if isSelected && (item.type == .text || item.type == .url) {
+        HoldRingOverlay(hold: hold)
       }
     }
     .animation(.easeOut(duration: 0.15), value: quickAccessNumber != nil)
@@ -935,6 +1152,11 @@ struct ClipboardItemCard: View, Equatable {
     .onTapGesture {
       onSelect()
     }
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(accessibilitySummary)
+    .accessibilityHint("Pastes this clip")
+    .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+    .accessibilityAction { onSelect() }
     .onHover { hovering in
       if hovering {
         NSCursor.pointingHand.push()
@@ -962,7 +1184,8 @@ struct ClipboardItemCard: View, Equatable {
         onEdit: onEdit,
         onDelete: onDelete,
         onPreview: onPreview,
-        onPinTo: onPinTo
+        onPinTo: onPinTo,
+        onUnpinFrom: onUnpinFrom
       )
     }
   }
@@ -981,14 +1204,9 @@ struct ClipboardItemCard: View, Equatable {
       return nil
     }
 
-    // Also register as plain text with a special prefix as fallback
-    provider.registerDataRepresentation(
-      forTypeIdentifier: UTType.plainText.identifier, visibility: .all
-    ) { completion in
-      let text = "SUPERCLIP_ITEM_ID:\(itemIdString)"
-      completion(text.data(using: .utf8), nil)
-      return nil
-    }
+    // (No plain-text copy of the ID: registered ahead of the real content it
+    // is what other apps received, so dragging a card into a document
+    // dropped "SUPERCLIP_ITEM_ID:..." instead of the clip.)
 
     switch item.type {
     case .text:
@@ -1004,7 +1222,18 @@ struct ClipboardItemCard: View, Equatable {
       provider.registerObject(item.content as NSString, visibility: .all)
 
     case .image:
-      if let nsImage = item.nsImage {
+      // Offer the compressed bytes, so a card dragged to the desktop or into
+      // another app arrives as a PNG rather than an uncompressed TIFF
+      if let stored = ImageStore.shared.loadData(for: item.id) ?? item.imageData,
+        let representation = ClipboardManager.compactImageRepresentation(of: stored)
+      {
+        let typeIdentifier = representation.type == .png ? UTType.png.identifier : UTType.jpeg.identifier
+        provider.suggestedName = "Superclip Image"
+        provider.registerDataRepresentation(forTypeIdentifier: typeIdentifier, visibility: .all) { completion in
+          completion(representation.data, nil)
+          return nil
+        }
+      } else if let nsImage = item.nsImage {
         provider.registerObject(nsImage, visibility: .all)
       }
 
@@ -1037,6 +1266,8 @@ struct ClipboardItemCard: View, Equatable {
   private var metadataLabel: String? {
     switch item.type {
     case .text:
+      // A character count says nothing useful about a colour swatch
+      if cardColor != nil { return nil }
       return "\(item.content.count)"
     case .image:
       return item.imageDimensions
@@ -1066,69 +1297,19 @@ struct ClipboardItemCard: View, Equatable {
     }
   }
 
+  /// The colour this card represents, when the whole clip is one colour value.
+  /// Clips that merely contain a colour (a stylesheet, "Fixes #123") get no fill.
+  private var cardColor: ContentDetector.RGB? {
+    guard item.type == .text, item.detectedTags.contains(.color) else { return nil }
+    return ContentDetector.singleColor(in: item.content)
+  }
+
   /// Content area background
   private var contentBackground: Color {
-    if item.detectedTags.contains(.color), let parsed = parsedColor {
-      return parsed.opacity(0.4)
+    if let c = cardColor {
+      return Color(red: c.r, green: c.g, blue: c.b)
     }
     return Brand.white
-  }
-
-  /// Parse the first color value found in the item content
-  private var parsedColor: Color? {
-    let text = item.content.trimmingCharacters(in: .whitespacesAndNewlines)
-
-    // Hex: #RGB or #RRGGBB
-    if let match = text.range(of: #"#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})\b"#, options: .regularExpression) {
-      var hex = String(text[match]).dropFirst() // remove #
-      if hex.count == 3 {
-        hex = hex.map { "\($0)\($0)" }.joined()[...]
-      }
-      if let val = UInt64(hex, radix: 16) {
-        let r = Double((val >> 16) & 0xFF) / 255.0
-        let g = Double((val >> 8) & 0xFF) / 255.0
-        let b = Double(val & 0xFF) / 255.0
-        return Color(red: r, green: g, blue: b)
-      }
-    }
-
-    // rgb(r, g, b) or rgba(r, g, b, a)
-    if let match = text.range(of: #"rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})"#, options: .regularExpression) {
-      let sub = String(text[match])
-      let nums = sub.components(separatedBy: CharacterSet.decimalDigits.inverted).compactMap { Int($0) }
-      if nums.count >= 3 {
-        return Color(red: Double(nums[0]) / 255.0, green: Double(nums[1]) / 255.0, blue: Double(nums[2]) / 255.0)
-      }
-    }
-
-    // hsl(h, s%, l%)
-    if let match = text.range(of: #"hsla?\(\s*(\d{1,3})\s*,\s*(\d{1,3})%?\s*,\s*(\d{1,3})%?"#, options: .regularExpression) {
-      let sub = String(text[match])
-      let nums = sub.components(separatedBy: CharacterSet.decimalDigits.inverted).compactMap { Int($0) }
-      if nums.count >= 3 {
-        let (r, g, b) = Self.hslToRGB(h: Double(nums[0]), s: Double(nums[1]) / 100.0, l: Double(nums[2]) / 100.0)
-        return Color(red: r, green: g, blue: b)
-      }
-    }
-
-    return nil
-  }
-
-  private static func hslToRGB(h: Double, s: Double, l: Double) -> (Double, Double, Double) {
-    guard s > 0 else { return (l, l, l) }
-    let c = (1 - abs(2 * l - 1)) * s
-    let x = c * (1 - abs((h / 60).truncatingRemainder(dividingBy: 2) - 1))
-    let m = l - c / 2
-    let (r1, g1, b1): (Double, Double, Double)
-    switch h {
-    case 0..<60:   (r1, g1, b1) = (c, x, 0)
-    case 60..<120:  (r1, g1, b1) = (x, c, 0)
-    case 120..<180: (r1, g1, b1) = (0, c, x)
-    case 180..<240: (r1, g1, b1) = (0, x, c)
-    case 240..<300: (r1, g1, b1) = (x, 0, c)
-    default:        (r1, g1, b1) = (c, 0, x)
-    }
-    return (r1 + m, g1 + m, b1 + m)
   }
 
   @ViewBuilder
@@ -1145,20 +1326,39 @@ struct ClipboardItemCard: View, Equatable {
     }
   }
 
+  /// What the card shows: the clip without surrounding blank space (clips are
+  /// stored exactly as copied), cut to what could ever fit. Handing SwiftUI a
+  /// megabyte of pasted log for an eight-line card made that card slow every
+  /// time it was laid out.
+  private var cardText: String {
+    let limit = 1_500
+    let head = item.content.utf16.count > limit ? String(item.content.prefix(limit)) : item.content
+    return head.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
   var textContentView: some View {
     Group {
-      if let attributedString = item.attributedString {
+      if let c = cardColor {
+        // Colour swatch card: the fill is the real colour, so the label
+        // colour is picked from its brightness rather than the app theme.
+        Text(item.content.trimmingCharacters(in: .whitespacesAndNewlines))
+          .font(.system(size: 14, weight: .semibold, design: .monospaced))
+          .foregroundStyle(c.prefersDarkText ? Color.black.opacity(0.85) : Color.white.opacity(0.95))
+          .lineLimit(2)
+          .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+          .padding(10)
+      } else if let attributedString = item.attributedString {
         // Display rich text preview
         RichTextCardPreview(attributedString: attributedString)
           .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
           .padding(10)
-      } else if syntaxHighlighting, let highlighted = SyntaxHighlighter.highlight(item.content) {
+      } else if syntaxHighlighting, let highlighted = SyntaxHighlighter.highlight(cardText) {
         // Display syntax-highlighted code preview
         RichTextCardPreview(attributedString: highlighted)
           .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
           .padding(10)
       } else {
-        Text(item.content)
+        Text(cardText)
           .font(.system(size: 13))
           .foregroundStyle(.primary.opacity(0.85))
           .lineLimit(8)
@@ -1170,21 +1370,8 @@ struct ClipboardItemCard: View, Equatable {
   }
 
   var imageContentView: some View {
-    Group {
-      if let thumb = item.thumbnail {
-        Image(nsImage: thumb)
-          .resizable()
-          .aspectRatio(contentMode: .fit)
-          .frame(maxWidth: .infinity, maxHeight: .infinity)
-      } else {
-        VStack {
-          Image(systemName: "photo")
-            .font(.system(size: 32))
-            .foregroundStyle(.tertiary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-      }
-    }
+    ClipThumbnailView(item: item)
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
   }
 
   // Media file extensions
@@ -1370,10 +1557,156 @@ struct ClipboardItemCard: View, Equatable {
   }
 }
 
+// MARK: - Key hints
+
+struct KeyHint: Identifiable {
+  let keys: String
+  let label: String
+  var id: String { keys + label }
+}
+
+/// A quiet strip of "key  action" pairs along the bottom edge of the drawer.
+struct KeyHintBar: View {
+  let hints: [KeyHint]
+  var trailing: String? = nil
+
+  var body: some View {
+    HStack(spacing: 16) {
+      ForEach(hints) { hint in
+        HStack(spacing: 6) {
+          Text(hint.keys)
+            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+            .foregroundStyle(Brand.gray700)
+            .padding(.horizontal, 5)
+            .frame(height: 16)
+            .background(Brand.gray100)
+            .overlay(Rectangle().stroke(Brand.gray300, lineWidth: 1))
+          Text(hint.label)
+            .font(.system(size: 11))
+            .foregroundStyle(Brand.gray600)
+        }
+        .fixedSize()
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(hint.label): \(hint.keys)")
+      }
+      Spacer(minLength: 12)
+      if let trailing {
+        Text(trailing)
+          .font(.system(size: 11))
+          .foregroundStyle(Brand.gray500)
+          .fixedSize()
+      }
+    }
+    .padding(.horizontal, 20)
+    .frame(height: 28)
+    .background(Brand.white)
+    .overlay(alignment: .top) { Rectangle().fill(Brand.gray200).frame(height: 1) }
+    .clipped()
+  }
+}
+
+// MARK: - Drawer support types
+
+/// Card positions for anchoring the preview arrow. A reference type so
+/// writes during scrolling do not invalidate the drawer.
+final class CardPositions {
+  var centerX: [Int: CGFloat] = [:]
+}
+
+/// Memo for the drawer's visible item list.
+final class VisibleItemsCache {
+  struct Key: Equatable {
+    let historyVersion: Int
+    let query: String
+    let filter: FilterTag
+    let pinboardId: UUID?
+    let pinboards: [Pinboard]
+  }
+  var key: Key?
+  var items: [ClipboardItem] = []
+}
+
+/// The hold-Space-to-edit ring. Observes the progress object itself so the
+/// 60fps updates stay inside this small view.
+struct HoldRingOverlay: View {
+  @ObservedObject var hold: HoldProgress
+
+  var body: some View {
+    if hold.value > 0 {
+      ZStack {
+        // Plate: the ring sits on top of card text or a link image, so it
+        // needs its own backing to stay readable
+        Circle()
+          .fill(Brand.white.opacity(0.92))
+          .frame(width: 70, height: 70)
+
+        // Background ring (subtle)
+        Circle()
+          .stroke(Brand.black.opacity(0.2), lineWidth: 3)
+          .frame(width: 50, height: 50)
+
+        // Progress ring (fills clockwise)
+        Circle()
+          .trim(from: 0, to: hold.value)
+          .stroke(
+            Brand.black.opacity(0.9),
+            style: StrokeStyle(lineWidth: 3, lineCap: .round)
+          )
+          .frame(width: 50, height: 50)
+          .rotationEffect(.degrees(-90))  // Start from top
+
+        // Edit icon in center
+        Image(systemName: "pencil")
+          .font(.system(size: 18, weight: .medium))
+          .foregroundStyle(Brand.black)
+          .opacity(0.7 + hold.value * 0.3)
+      }
+    }
+  }
+}
+
+/// Thumbnail for an image clip. Shows the cached thumbnail immediately when
+/// there is one; otherwise loads it off the main thread behind a placeholder.
+struct ClipThumbnailView: View {
+  let item: ClipboardItem
+  var contentMode: ContentMode = .fit
+  @State private var loaded: NSImage?
+
+  var body: some View {
+    Group {
+      if let image = loaded ?? item.cachedThumbnail {
+        Image(nsImage: image)
+          .resizable()
+          .aspectRatio(contentMode: contentMode)
+      } else {
+        Image(systemName: "photo")
+          .font(.system(size: 28))
+          .foregroundStyle(.tertiary)
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
+      }
+    }
+    .onAppear { load() }
+    .onChange(of: item.id) { _ in
+      loaded = nil
+      load()
+    }
+  }
+
+  private func load() {
+    guard loaded == nil, item.cachedThumbnail == nil else { return }
+    let id = item.id
+    item.loadThumbnail { image in
+      // The view may have been reused for another clip in the meantime
+      if id == item.id { loaded = image }
+    }
+  }
+}
+
 // MARK: - Item Context Menu
 
 struct ItemContextMenu: View {
   let item: ClipboardItem
+  /// App the paste will land in; empty when unknown
   let currentAppName: String
   let pinboards: [Pinboard]
   let onSelect: () -> Void
@@ -1383,102 +1716,97 @@ struct ItemContextMenu: View {
   var onDelete: (() -> Void)?
   var onPreview: (() -> Void)?
   var onPinTo: ((Pinboard) -> Void)?
+  var onUnpinFrom: ((Pinboard) -> Void)?
+
+  private var isTextual: Bool { item.type == .text || item.type == .url }
 
   var body: some View {
-    // Paste to current app
     Button {
       onSelect()
     } label: {
-      Text("Paste to \(currentAppName)")
+      Label(
+        currentAppName.isEmpty ? "Paste" : "Paste to \(currentAppName)",
+        systemImage: "arrow.down.doc")
     }
     .keyboardShortcut(.return, modifiers: [])
 
-    // Paste as Plain Text
-    Button {
-      onPasteAsPlainText?()
-    } label: {
-      Text("Paste as Plain Text")
+    if isTextual {
+      Button {
+        onPasteAsPlainText?()
+      } label: {
+        Label("Paste as Plain Text", systemImage: "doc.plaintext")
+      }
+      .keyboardShortcut(.return, modifiers: .shift)
     }
-    .keyboardShortcut(.return, modifiers: .shift)
 
-    // Copy
     Button {
       onCopy?()
     } label: {
-      Text("Copy")
+      Label("Copy", systemImage: "doc.on.doc")
     }
     .keyboardShortcut("c", modifiers: .command)
 
     Divider()
 
-    // Preview
     Button {
       onPreview?()
     } label: {
-      Text("Preview")
+      Label("Preview", systemImage: "eye")
     }
     .keyboardShortcut(.space, modifiers: [])
 
-    // Edit (hold space) - only for text/url
-    if item.type == .text || item.type == .url {
+    if isTextual {
       Button {
         onEdit?()
       } label: {
-        Text("Edit — hold ␣")
+        Label("Edit (hold Space)", systemImage: "pencil")
       }
     }
-
-    // Writing Tools (not implemented)
-    Menu {
-      Text("Coming soon")
-    } label: {
-      Label("Writing Tools", systemImage: "pencil.and.outline")
-    }
-
-    // Rename (not implemented)
-    Button {
-      // TODO: Implement rename
-    } label: {
-      Text("Rename")
-    }
-    .keyboardShortcut("r", modifiers: .command)
-    .disabled(true)
-
-    // Delete
-    Button(role: .destructive) {
-      onDelete?()
-    } label: {
-      Text("Delete")
-    }
-    .keyboardShortcut(.delete, modifiers: [])
 
     // Quick Actions submenu (context-aware)
     QuickActionsContextMenu(item: item)
 
     Divider()
 
-    // Pin submenu
+    // Pin submenu: a checked board already holds this clip; choosing it unpins
     Menu {
       ForEach(pinboards) { pinboard in
-        Button {
-          onPinTo?(pinboard)
-        } label: {
+        Toggle(
+          isOn: Binding(
+            get: { pinboard.itemIds.contains(item.id) },
+            set: { isOn in
+              if isOn {
+                onPinTo?(pinboard)
+              } else {
+                onUnpinFrom?(pinboard)
+              }
+            }
+          )
+        ) {
           Label {
             Text(pinboard.name)
           } icon: {
-            Image(systemName: "circle.fill")
-              .symbolRenderingMode(.monochrome)
-              .foregroundStyle(pinboard.color.color)
+            // Menus render SF Symbols as templates and drop their tint, so
+            // the pinboard colour needs a real bitmap.
+            Image(nsImage: coloredCircleImage(color: pinboard.color.nsColor))
           }
         }
       }
       if pinboards.isEmpty {
-        Text("No pinboards")
+        Text("No pinboards yet. Use + in the drawer header.")
       }
     } label: {
       Label("Pin", systemImage: "pin")
     }
 
+    Divider()
+
+    Button(role: .destructive) {
+      onDelete?()
+    } label: {
+      Label("Delete", systemImage: "trash")
+    }
+    .keyboardShortcut(.delete, modifiers: [])
   }
 }
 
@@ -1572,9 +1900,11 @@ struct VideoThumbnailView: View {
 
       // Play button overlay
       VStack {
+        // Fixed white-on-dark: it sits on a video frame, not on app chrome
         Image(systemName: "play.circle.fill")
           .font(.system(size: 36))
-          .foregroundStyle(.primary.opacity(0.9))
+          .symbolRenderingMode(.palette)
+          .foregroundStyle(Color.white, Color.black.opacity(0.55))
 
         Text("VIDEO")
           .font(.system(size: 10, weight: .semibold))
@@ -1629,7 +1959,9 @@ struct AudioFileThumbnailView: View {
         ForEach(0..<20, id: \.self) { i in
           Rectangle()
             .fill(Brand.gray500)
-            .frame(width: 6, height: CGFloat.random(in: 15...50))
+            // Fixed pseudo-random heights: random() here redrew a different
+            // waveform every time the card re-rendered
+            .frame(width: 6, height: 15 + CGFloat((i * 37 + 13) % 36))
         }
       }
 
@@ -1672,12 +2004,17 @@ struct RichTextCardPreview: NSViewRepresentable {
     // Prevent vertical expansion - keep text at top
     textView.isVerticallyResizable = false
     textView.autoresizingMask = [.width]
+    // Rich text saved from a light-mode app carries black text; remap it so
+    // it stays readable on a dark card
+    textView.usesAdaptiveColorMappingForDarkAppearance = true
     textView.textStorage?.setAttributedString(attributedString)
     return textView
   }
 
   func updateNSView(_ nsView: NSTextView, context: Context) {
-    nsView.textStorage?.setAttributedString(attributedString)
+    if nsView.textStorage?.isEqual(to: attributedString) != true {
+      nsView.textStorage?.setAttributedString(attributedString)
+    }
   }
 }
 
@@ -1713,6 +2050,8 @@ struct FilterPillButton: View {
     .onHover { hovering in
       isHovered = hovering
     }
+    .accessibilityLabel("Show \(tag.rawValue)")
+    .accessibilityAddTraits(isSelected ? .isSelected : [])
   }
 }
 
@@ -1790,6 +2129,7 @@ struct HeaderIconButton: View {
       isHovered = hovering
     }
     .help(helpText ?? "")
+    .accessibilityLabel(helpText ?? icon)
   }
 }
 
@@ -1904,6 +2244,11 @@ struct PinboardTabButton: View {
           Text(pinboard.name)
             .font(.system(size: 13, weight: .medium))
             .foregroundStyle(.primary.opacity(0.9))
+            .lineLimit(1)
+            .truncationMode(.tail)
+            // Natural width, capped: long names truncate instead of wrapping
+            .frame(maxWidth: 160)
+            .fixedSize(horizontal: true, vertical: false)
           if let count = itemCount {
             Text("\(count)")
               .font(.system(size: 11, weight: .medium, design: .rounded))
@@ -1990,19 +2335,40 @@ struct PinboardTabButton: View {
 
       return false
     }
+    .help(pinboard.name)
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel("\(pinboard.name) pinboard, \(pinboard.itemIds.count) items")
+    .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
     .contextMenu {
-      Button("Rename") {
+      Button {
         onEdit()
+      } label: {
+        Label("Rename", systemImage: "pencil")
       }
 
       Divider()
       PinboardColorPicker(currentColor: pinboard.color, onColorChange: onColorChange)
       Divider()
-      Button(role: .destructive) {
-        onDelete()
-      } label: {
-        Text("Delete \(pinboard.name)")
-          .foregroundStyle(.red)
+      if pinboard.itemIds.isEmpty {
+        Button(role: .destructive) {
+          onDelete()
+        } label: {
+          Label("Delete Pinboard", systemImage: "trash")
+        }
+      } else {
+        // Deleting can't be undone, so a board with clips takes a second,
+        // deliberate click. The clips themselves stay in history.
+        Menu {
+          Button(role: .destructive) {
+            onDelete()
+          } label: {
+            Label(
+              "Delete \u{201C}\(pinboard.name)\u{201D} and unpin \(pinboard.itemIds.count) \(pinboard.itemIds.count == 1 ? "clip" : "clips")",
+              systemImage: "trash")
+          }
+        } label: {
+          Label("Delete Pinboard", systemImage: "trash")
+        }
       }
     }
   }

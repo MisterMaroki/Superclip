@@ -106,8 +106,8 @@ class LinkMetadata: NSObject {
     /// In-memory image cache shared across all LinkMetadata instances.
     private static let imageCache: NSCache<NSURL, NSImage> = {
         let c = NSCache<NSURL, NSImage>()
-        c.countLimit = 15
-        c.totalCostLimit = 20 * 1024 * 1024  // 20 MB
+        c.countLimit = 60
+        c.totalCostLimit = 48 * 1024 * 1024  // 48 MB
         return c
     }()
     private static let iconCache: NSCache<NSURL, NSImage> = {
@@ -140,7 +140,8 @@ class LinkMetadata: NSObject {
         if let cached = Self.imageCache.object(forKey: key) { return cached }
         guard let data = LinkImageStore.shared.loadImage(for: url),
               let img = NSImage(data: data) else { return nil }
-        Self.imageCache.setObject(img, forKey: key, cost: data.count)
+        // Cost by decoded size: file size says little about memory use
+        Self.imageCache.setObject(img, forKey: key, cost: Int(img.size.width * img.size.height * 4))
         return img
     }
 
@@ -220,6 +221,25 @@ class LinkImageStore {
         try? FileManager.default.removeItem(at: iconDir)
         try? FileManager.default.createDirectory(at: imageDir, withIntermediateDirectories: true)
         try? FileManager.default.createDirectory(at: iconDir, withIntermediateDirectories: true)
+    }
+
+    /// Remove preview images whose link is no longer in history. Until now
+    /// nothing pruned this folder, so it only ever grew. Files newer than five
+    /// minutes are left alone (a fetch may have just written them).
+    func cleanupOrphans(keeping urls: [URL]) {
+        let valid = Set(urls.map { safeFilename(for: $0) + ".dat" })
+        let cutoff = Date().addingTimeInterval(-300)
+        for dir in [imageDir, iconDir] {
+            let files = (try? FileManager.default.contentsOfDirectory(
+                at: dir, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
+            for file in files where !valid.contains(file.lastPathComponent) {
+                let modified = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?
+                    .contentModificationDate ?? .distantPast
+                if modified < cutoff {
+                    try? FileManager.default.removeItem(at: file)
+                }
+            }
+        }
     }
 
     // MARK: - Private
@@ -327,6 +347,8 @@ struct ClipboardItem: Identifiable, Equatable {
                 case "pdf":
                     return "PDF"
                 default:
+                    // Folders and extension-less files would otherwise get an empty label
+                    if ext.isEmpty { return url.hasDirectoryPath ? "Folder" : "File" }
                     return ext.uppercased()
                 }
             }
@@ -366,7 +388,10 @@ struct ClipboardItem: Identifiable, Equatable {
     }()
 
     var timeAgo: String {
-        Self.relativeFormatter.localizedString(for: timestamp, relativeTo: Date())
+        let now = Date()
+        // The formatter renders a just-copied item as "in 0 sec" / "0 sec ago"
+        if now.timeIntervalSince(timestamp) < 5 { return "Just now" }
+        return Self.relativeFormatter.localizedString(for: timestamp, relativeTo: now)
     }
     
     /// Full-resolution image cache — only for active preview/paste. Kept tiny.
@@ -380,10 +405,36 @@ struct ClipboardItem: Identifiable, Equatable {
     /// Thumbnail cache for card display — small images, modest count.
     private static let thumbnailCache: NSCache<NSUUID, NSImage> = {
         let cache = NSCache<NSUUID, NSImage>()
-        cache.countLimit = 30
-        cache.totalCostLimit = 20 * 1024 * 1024  // 20 MB
+        // A thumbnail is about half a megabyte decoded. The old limits (30
+        // entries / 20 MB) held roughly one screenful, so scrolling back
+        // through image clips re-read and re-decoded every one.
+        cache.countLimit = 200
+        cache.totalCostLimit = 96 * 1024 * 1024  // 96 MB
         return cache
     }()
+
+    /// The thumbnail if it is already in memory. Never touches the disk, so
+    /// it is safe to read from a view body.
+    var cachedThumbnail: NSImage? {
+        Self.thumbnailCache.object(forKey: id as NSUUID)
+    }
+
+    /// Produce the thumbnail off the main thread and deliver it on the main
+    /// thread. Reading and decoding the original image inside a view body
+    /// blocked scrolling for tens of milliseconds per image card.
+    func loadThumbnail(completion: @escaping (NSImage?) -> Void) {
+        if let cached = cachedThumbnail {
+            completion(cached)
+            return
+        }
+        let item = self
+        DispatchQueue.global(qos: .userInitiated).async {
+            let thumb = item.thumbnail
+            DispatchQueue.main.async {
+                completion(thumb)
+            }
+        }
+    }
 
     /// Full-resolution image — loaded on demand from memory or disk.
     /// Used for preview, paste, share, drag-and-drop. Evicts aggressively.
@@ -535,9 +586,16 @@ struct CodableClipboardItem: Codable {
     let sourceApp: CodableSourceApp?
     let rtfBase64: String?  // Legacy: kept for migration from older history.json files
     let detectedTags: Set<ContentTag>?
+    /// Link preview facts, saved so links are not all re-fetched from the
+    /// network after every launch. The images themselves live in LinkImageStore.
+    let linkFetched: Bool?
+    let linkTitle: String?
+    let linkHasImage: Bool?
+    let linkHasIcon: Bool?
 
     enum CodingKeys: String, CodingKey {
         case id, content, timestamp, type, hasImage, imageHash, hasRTF, fileURLPaths, sourceApp, rtfBase64, detectedTags
+        case linkFetched, linkTitle, linkHasImage, linkHasIcon
     }
 
     init(from item: ClipboardItem) {
@@ -554,6 +612,17 @@ struct CodableClipboardItem: Codable {
         // Only include base64 if data hasn't been migrated to disk yet.
         self.rtfBase64 = nil
         self.detectedTags = item.detectedTags.isEmpty ? nil : item.detectedTags
+        if let meta = item.linkMetadata {
+            self.linkFetched = true
+            self.linkTitle = meta.title
+            self.linkHasImage = meta.hasImage
+            self.linkHasIcon = meta.hasIcon
+        } else {
+            self.linkFetched = nil
+            self.linkTitle = nil
+            self.linkHasImage = nil
+            self.linkHasIcon = nil
+        }
     }
 
     init(from decoder: Decoder) throws {
@@ -568,6 +637,10 @@ struct CodableClipboardItem: Codable {
         sourceApp = try container.decodeIfPresent(CodableSourceApp.self, forKey: .sourceApp)
         rtfBase64 = try container.decodeIfPresent(String.self, forKey: .rtfBase64)
         detectedTags = try container.decodeIfPresent(Set<ContentTag>.self, forKey: .detectedTags)
+        linkFetched = try container.decodeIfPresent(Bool.self, forKey: .linkFetched)
+        linkTitle = try container.decodeIfPresent(String.self, forKey: .linkTitle)
+        linkHasImage = try container.decodeIfPresent(Bool.self, forKey: .linkHasImage)
+        linkHasIcon = try container.decodeIfPresent(Bool.self, forKey: .linkHasIcon)
         // hasRTF: true if the flag is set, OR if legacy base64 data exists, OR if an RTF file exists on disk
         let flagValue = try container.decodeIfPresent(Bool.self, forKey: .hasRTF) ?? false
         hasRTF = flagValue || rtfBase64 != nil || RTFStore.shared.exists(for: id)
@@ -583,6 +656,14 @@ struct CodableClipboardItem: Codable {
         let fileURLs = fileURLPaths?.map { URL(fileURLWithPath: $0) }
         let source = sourceApp?.toSourceApp()
 
+        // Restore saved link preview facts; images load lazily from disk
+        var restoredLink: LinkMetadata?
+        if type == .url, linkFetched == true, let url = URL(string: content) {
+            restoredLink = LinkMetadata(
+                title: linkTitle, url: url,
+                hasImage: linkHasImage ?? false, hasIcon: linkHasIcon ?? false)
+        }
+
         return ClipboardItem(
             id: id,
             content: content,
@@ -593,7 +674,7 @@ struct CodableClipboardItem: Codable {
             imageHash: imageHash,
             fileURLs: fileURLs,
             sourceApp: source,
-            linkMetadata: nil,  // Re-fetched on demand
+            linkMetadata: restoredLink,  // nil = fetched on demand when the card appears
             rtfData: nil,       // Loaded on demand from RTFStore
             hasRTF: hasRTF,
             detectedTags: detectedTags ?? []

@@ -112,20 +112,20 @@ struct ScreenCaptureView: View {
             }
 
             Text("|")
-                .foregroundStyle(.primary.opacity(0.3))
+                .foregroundStyle(.white.opacity(0.3))
 
             HStack(spacing: 6) {
                 Text("ESC")
                     .font(.system(size: 11, weight: .semibold, design: .monospaced))
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
-                    .background(Color.primary.opacity(0.2))
+                    .background(Color.white.opacity(0.2))
                     .cornerRadius(4)
                 Text("Cancel")
                     .font(.system(size: 13))
             }
         }
-        .foregroundStyle(.primary)
+        .foregroundStyle(.white)
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
         .background(Color.black.opacity(0.6))
@@ -137,7 +137,7 @@ struct ScreenCaptureView: View {
         let text = "\(Int(rect.width)) x \(Int(rect.height))"
         Text(text)
             .font(.system(size: 11, weight: .medium, design: .monospaced))
-            .foregroundStyle(.primary)
+            .foregroundStyle(.white)
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
             .background(Color.black.opacity(0.7))
@@ -174,7 +174,7 @@ struct SelectionOverlay: View {
             // Draw selection border
             context.stroke(
                 cutout,
-                with: .color(Brand.white),
+                with: .color(Color.white),
                 lineWidth: 2
             )
 
@@ -194,7 +194,7 @@ struct SelectionOverlay: View {
                     width: handleSize,
                     height: handleSize
                 )
-                context.fill(Path(handleRect), with: .color(Brand.white))
+                context.fill(Path(handleRect), with: .color(Color.white))
             }
         }
         .allowsHitTesting(false)
@@ -211,13 +211,18 @@ struct CrosshairView: View {
             var vLine = Path()
             vLine.move(to: CGPoint(x: position.x, y: 0))
             vLine.addLine(to: CGPoint(x: position.x, y: size.height))
-            context.stroke(vLine, with: .color(Brand.white.opacity(0.5)), lineWidth: 1)
 
             // Horizontal line
             var hLine = Path()
             hLine.move(to: CGPoint(x: 0, y: position.y))
             hLine.addLine(to: CGPoint(x: size.width, y: position.y))
-            context.stroke(hLine, with: .color(Brand.white.opacity(0.5)), lineWidth: 1)
+
+            // Dark underlay first: the lines sit over arbitrary screen content,
+            // and white alone disappears on a light page.
+            context.stroke(vLine, with: .color(.black.opacity(0.25)), lineWidth: 3)
+            context.stroke(hLine, with: .color(.black.opacity(0.25)), lineWidth: 3)
+            context.stroke(vLine, with: .color(Color.white.opacity(0.5)), lineWidth: 1)
+            context.stroke(hLine, with: .color(Color.white.opacity(0.5)), lineWidth: 1)
 
             // Center crosshair indicator
             let centerSize: CGFloat = 20
@@ -231,7 +236,8 @@ struct CrosshairView: View {
             centerCross.move(to: CGPoint(x: position.x, y: position.y - centerSize / 2))
             centerCross.addLine(to: CGPoint(x: position.x, y: position.y + centerSize / 2))
 
-            context.stroke(centerCross, with: .color(Brand.white), lineWidth: 2)
+            context.stroke(centerCross, with: .color(.black.opacity(0.35)), lineWidth: 4)
+            context.stroke(centerCross, with: .color(Color.white), lineWidth: 2)
         }
         .allowsHitTesting(false)
     }

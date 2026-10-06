@@ -83,6 +83,13 @@ class RichTextEditorPanel: NSPanel {
                 return nil
             }
 
+            // Cmd+W - close without saving
+            if event.modifierFlags.contains(.command) && event.keyCode == 13 {
+                self.onCancel?()
+                self.closePanel()
+                return nil
+            }
+
             // Cmd+Enter or Cmd+S - save
             if event.modifierFlags.contains(.command) {
                 if event.keyCode == 36 || event.keyCode == 1 { // Enter or S

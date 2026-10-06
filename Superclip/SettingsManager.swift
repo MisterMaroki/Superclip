@@ -18,6 +18,14 @@ class SettingsManager: ObservableObject {
         }
     }
 
+    // MARK: - Sync
+
+    /// Sync clips, pinboards and snippets through the user's iCloud. Off until
+    /// the user turns it on: a clipboard history is private by default.
+    @Published var syncEnabled: Bool {
+        didSet { defaults.set(syncEnabled, forKey: Keys.syncEnabled) }
+    }
+
     // MARK: - Clipboard
 
     @Published var monitorClipboard: Bool {
@@ -57,6 +65,11 @@ class SettingsManager: ObservableObject {
 
     @Published var showTimestamps: Bool {
         didSet { defaults.set(showTimestamps, forKey: Keys.showTimestamps) }
+    }
+
+    /// The strip of key hints along the bottom of the drawer.
+    @Published var showKeyboardHints: Bool {
+        didSet { defaults.set(showKeyboardHints, forKey: Keys.showKeyboardHints) }
     }
 
     @Published var showLinkPreviews: Bool {
@@ -103,6 +116,10 @@ class SettingsManager: ObservableObject {
         didSet { defaults.set(screenshotHotkey, forKey: Keys.screenshotHotkey) }
     }
 
+    @Published var fullscreenScreenshotHotkey: [String: Int] {
+        didSet { defaults.set(fullscreenScreenshotHotkey, forKey: Keys.fullscreenScreenshotHotkey) }
+    }
+
     // MARK: - Screen Capture
 
     @Published var screenshotAutoCopy: Bool {
@@ -132,6 +149,7 @@ class SettingsManager: ObservableObject {
     private enum Keys {
         static let launchAtLogin = "Superclip.launchAtLogin"
         static let monitorClipboard = "Superclip.monitorClipboard"
+        static let syncEnabled = "Superclip.syncEnabled"
         static let deduplicateItems = "Superclip.deduplicateItems"
         static let detectLinks = "Superclip.detectLinks"
         static let pasteAfterSelecting = "Superclip.pasteAfterSelecting"
@@ -139,6 +157,7 @@ class SettingsManager: ObservableObject {
         static let theme = "Superclip.theme"
         static let showSourceAppIcons = "Superclip.showSourceAppIcons"
         static let showTimestamps = "Superclip.showTimestamps"
+        static let showKeyboardHints = "Superclip.showKeyboardHints"
         static let showLinkPreviews = "Superclip.showLinkPreviews"
         static let showItemCount = "Superclip.showItemCount"
         static let syntaxHighlighting = "Superclip.syntaxHighlighting"
@@ -149,6 +168,7 @@ class SettingsManager: ObservableObject {
         static let pasteStackHotkey = "Superclip.pasteStackHotkey"
         static let ocrHotkey = "Superclip.ocrHotkey"
         static let screenshotHotkey = "Superclip.screenshotHotkey"
+        static let fullscreenScreenshotHotkey = "Superclip.fullscreenScreenshotHotkey"
         static let screenshotAutoCopy = "Superclip.screenshotAutoCopy"
         static let drawerHeight = "Superclip.drawerHeight"
         static let maxHistorySize = "Superclip.maxHistorySize"
@@ -177,18 +197,24 @@ class SettingsManager: ObservableObject {
             Keys.ignoreConfidentialContent: true,
             Keys.ignoreTransientContent: true,
             Keys.ignoredAppBundleIDs: ["com.apple.keychainaccess", "com.apple.Passwords"],
-            Keys.drawerHeight: Double(280),
+            Keys.showKeyboardHints: true,
+            // 28pt taller than before: room for the key-hint strip without shrinking the cards
+            Keys.drawerHeight: Double(308),
             Keys.maxHistorySize: 0,
             Keys.clearOnQuit: false,
             Keys.historyHotkey: HotkeyConfig.defaultHistory.dictionary,
             Keys.pasteStackHotkey: HotkeyConfig.defaultPasteStack.dictionary,
             Keys.ocrHotkey: HotkeyConfig.defaultOCR.dictionary,
             Keys.screenshotHotkey: HotkeyConfig.defaultScreenshot.dictionary,
+            Keys.fullscreenScreenshotHotkey: HotkeyConfig.defaultFullscreenScreenshot.dictionary,
             Keys.screenshotAutoCopy: true,
         ])
 
-        self.launchAtLogin = d.bool(forKey: Keys.launchAtLogin)
+        // Reflect what the system actually has registered: the stored flag
+        // alone can claim "on" when nothing was ever registered.
+        self.launchAtLogin = SMAppService.mainApp.status == .enabled
         self.monitorClipboard = d.bool(forKey: Keys.monitorClipboard)
+        self.syncEnabled = d.bool(forKey: Keys.syncEnabled)
         self.deduplicateItems = d.bool(forKey: Keys.deduplicateItems)
         self.detectLinks = d.bool(forKey: Keys.detectLinks)
         self.pasteAfterSelecting = d.bool(forKey: Keys.pasteAfterSelecting)
@@ -196,6 +222,7 @@ class SettingsManager: ObservableObject {
         self.theme = d.string(forKey: Keys.theme) ?? "System"
         self.showSourceAppIcons = d.bool(forKey: Keys.showSourceAppIcons)
         self.showTimestamps = d.bool(forKey: Keys.showTimestamps)
+        self.showKeyboardHints = d.bool(forKey: Keys.showKeyboardHints)
         self.showLinkPreviews = d.bool(forKey: Keys.showLinkPreviews)
         self.showItemCount = d.bool(forKey: Keys.showItemCount)
         self.syntaxHighlighting = d.bool(forKey: Keys.syntaxHighlighting)
@@ -205,6 +232,7 @@ class SettingsManager: ObservableObject {
         self.pasteStackHotkey = (d.dictionary(forKey: Keys.pasteStackHotkey) as? [String: Int]) ?? HotkeyConfig.defaultPasteStack.dictionary
         self.ocrHotkey = (d.dictionary(forKey: Keys.ocrHotkey) as? [String: Int]) ?? HotkeyConfig.defaultOCR.dictionary
         self.screenshotHotkey = (d.dictionary(forKey: Keys.screenshotHotkey) as? [String: Int]) ?? HotkeyConfig.defaultScreenshot.dictionary
+        self.fullscreenScreenshotHotkey = (d.dictionary(forKey: Keys.fullscreenScreenshotHotkey) as? [String: Int]) ?? HotkeyConfig.defaultFullscreenScreenshot.dictionary
         self.screenshotAutoCopy = d.bool(forKey: Keys.screenshotAutoCopy)
         self.drawerHeight = CGFloat(d.double(forKey: Keys.drawerHeight))
         self.ignoredAppBundleIDs = d.stringArray(forKey: Keys.ignoredAppBundleIDs) ?? []
@@ -283,17 +311,26 @@ class SettingsManager: ObservableObject {
         HotkeyConfig(dictionary: screenshotHotkey) ?? .defaultScreenshot
     }
 
+    func hotkeyConfigForFullscreenScreenshot() -> HotkeyConfig {
+        HotkeyConfig(dictionary: fullscreenScreenshotHotkey) ?? .defaultFullscreenScreenshot
+    }
+
     func resetHotkeysToDefaults() {
         historyHotkey = HotkeyConfig.defaultHistory.dictionary
         pasteStackHotkey = HotkeyConfig.defaultPasteStack.dictionary
         ocrHotkey = HotkeyConfig.defaultOCR.dictionary
         screenshotHotkey = HotkeyConfig.defaultScreenshot.dictionary
+        fullscreenScreenshotHotkey = HotkeyConfig.defaultFullscreenScreenshot.dictionary
     }
 
     // MARK: - Reset
 
+    /// Set by "Quit & Reset" so termination erases stored history instead of saving it.
+    static var isResettingAllData = false
+
     /// Removes all Superclip keys from UserDefaults (settings, onboarding flag, pinboards, etc.)
     static func resetAllUserDefaults() {
+        isResettingAllData = true
         guard let domain = Bundle.main.bundleIdentifier else { return }
         UserDefaults.standard.removePersistentDomain(forName: domain)
         UserDefaults.standard.synchronize()

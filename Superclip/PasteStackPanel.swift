@@ -17,7 +17,10 @@ class PasteStackPanel: NSPanel {
     private let panelWidth: CGFloat = 320
     private let headerHeight: CGFloat = 44
     private let emptyStateHeight: CGFloat = 150
-    private let itemRowHeight: CGFloat = 58
+    private let itemRowHeight: CGFloat = 50
+    private let gridRowHeight: CGFloat = 102  // 96pt tile + 6pt spacing, 3 per row
+    private let gridColumns = 3
+    private var isGrid = false
     private let verticalPadding: CGFloat = 16
     private let minHeight: CGFloat = 150
     private let maxHeight: CGFloat = 600
@@ -28,7 +31,7 @@ class PasteStackPanel: NSPanel {
         
         super.init(
             contentRect: .zero,
-            styleMask: [.borderless, .nonactivatingPanel, .titled],
+            styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: true
         )
@@ -46,6 +49,11 @@ class PasteStackPanel: NSPanel {
         hasShadow = true
         level = .floating
         isMovableByWindowBackground = true // Allow dragging the panel
+        // Never take keyboard focus for a click. The stack has no text fields,
+        // and if it becomes key the app the user is pasting into stops being
+        // the paste target: clicking a row pasted nowhere and later Cmd+V
+        // presses went to Superclip instead of that app.
+        becomesKeyOnlyIfNeeded = true
         titlebarAppearsTransparent = true
         titleVisibility = .hidden
         
@@ -66,6 +74,11 @@ class PasteStackPanel: NSPanel {
             navigationState: navigationState,
             onClose: { [weak self] in
                 self?.appDelegate?.closePasteStackWindow(andPaste: false)
+            },
+            onViewModeChanged: { [weak self] mode in
+                guard let self = self else { return }
+                self.isGrid = mode == .grid
+                self.updateWindowHeight(for: self.pasteStackManager.stackItems.count)
             }
         ) { [weak self] shouldPaste in
             self?.appDelegate?.handlePasteStackPaste(shouldPaste: shouldPaste)
@@ -91,7 +104,14 @@ class PasteStackPanel: NSPanel {
             return headerHeight + emptyStateHeight
         }
         
-        let contentHeight = headerHeight + (CGFloat(itemCount) * itemRowHeight) + verticalPadding
+        let rowsHeight: CGFloat
+        if isGrid {
+            let rows = (itemCount + gridColumns - 1) / gridColumns
+            rowsHeight = CGFloat(rows) * gridRowHeight
+        } else {
+            rowsHeight = CGFloat(itemCount) * itemRowHeight
+        }
+        let contentHeight = headerHeight + rowsHeight + verticalPadding
         return min(max(contentHeight, minHeight), maxHeight)
     }
     

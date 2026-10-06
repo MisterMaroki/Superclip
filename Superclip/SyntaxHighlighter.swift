@@ -26,11 +26,25 @@ enum SyntaxHighlighter {
     /// Colorization is O(regexes × length); above this size fall back to plain text.
     private static let maxHighlightLength = 50_000
 
+    /// Texts already judged not to be code. Without this the (linear but not
+    /// free) code heuristic re-ran on every card render for every plain clip.
+    private static let notCode: NSCache<NSString, NSNumber> = {
+        let c = NSCache<NSString, NSNumber>()
+        c.countLimit = 400
+        return c
+    }()
+
     /// Returns a highlighted attributed string if the text looks like code, otherwise nil.
     static func highlight(_ text: String) -> NSAttributedString? {
-        guard text.count <= maxHighlightLength, looksLikeCode(text) else { return nil }
         let key = text as NSString
+        // Cache first: both the positive and the negative answer
         if let cached = cache.object(forKey: key) { return cached }
+        if notCode.object(forKey: key) != nil { return nil }
+
+        guard text.utf16.count <= maxHighlightLength, looksLikeCode(text) else {
+            notCode.setObject(1, forKey: key)
+            return nil
+        }
         let result = colorize(text)
         cache.setObject(result, forKey: key)
         return result
@@ -96,32 +110,52 @@ enum SyntaxHighlighter {
             .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .regular),
         ])
 
-        let keywordColor = NSColor.systemPurple
-        let stringColor = NSColor.systemRed
-        let numberColor = NSColor.systemOrange
-        let commentColor = NSColor.systemGreen
+        // The system accent colours are tuned for dark backgrounds; systemGreen
+        // and systemOrange at 11pt are barely readable on a light card. Each
+        // token colour therefore has its own light-mode value.
+        func adaptive(light: UInt32, dark: UInt32) -> NSColor {
+            func rgb(_ hex: UInt32) -> NSColor {
+                NSColor(
+                    srgbRed: CGFloat((hex >> 16) & 0xFF) / 255, green: CGFloat((hex >> 8) & 0xFF) / 255,
+                    blue: CGFloat(hex & 0xFF) / 255, alpha: 1)
+            }
+            return NSColor(name: nil) { appearance in
+                appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? rgb(dark) : rgb(light)
+            }
+        }
+        let keywordColor = adaptive(light: 0x8E24AA, dark: 0xD9A0F5)
+        let stringColor = adaptive(light: 0xC41A16, dark: 0xFF8A80)
+        let numberColor = adaptive(light: 0xA84A00, dark: 0xFFB45E)
+        let commentColor = adaptive(light: 0x2E7D32, dark: 0x86C98F)
 
         let nsText = text as NSString
 
-        // Highlight single-line comments (// and #)
-        applyRegex("//[^\n]*", to: result, in: nsText, color: commentColor)
-        applyRegex("#[^\n]*", to: result, in: nsText, color: commentColor)
-
-        // Highlight multi-line comments /* ... */
-        applyRegex("/\\*[\\s\\S]*?\\*/", to: result, in: nsText, color: commentColor)
-
-        // Highlight strings (double-quoted and single-quoted, non-greedy)
-        applyRegex("\"(?:[^\"\\\\]|\\\\.)*\"", to: result, in: nsText, color: stringColor)
-        applyRegex("'(?:[^'\\\\]|\\\\.)*'", to: result, in: nsText, color: stringColor)
-
-        // Highlight numbers
-        applyRegex("\\b\\d+(\\.\\d+)?\\b", to: result, in: nsText, color: numberColor)
+        // Order matters: later passes paint over earlier ones. Keywords and
+        // numbers go first so that strings, then comments, win where they
+        // overlap. (Painted the other way round, "// return if ready" showed
+        // "return" and "if" as keywords inside the comment.)
 
         // Highlight keywords (word-boundary match)
         for keyword in keywords {
             applyRegex("\\b\(NSRegularExpression.escapedPattern(for: keyword))\\b",
                         to: result, in: nsText, color: keywordColor)
         }
+
+        // Highlight numbers
+        applyRegex("\\b\\d+(\\.\\d+)?\\b", to: result, in: nsText, color: numberColor)
+
+        // Highlight strings (double-quoted and single-quoted, non-greedy)
+        applyRegex("\"(?:[^\"\\\\]|\\\\.)*\"", to: result, in: nsText, color: stringColor)
+        applyRegex("'(?:[^'\\\\]|\\\\.)*'", to: result, in: nsText, color: stringColor)
+
+        // Highlight single-line comments. "#" only counts at the start of a
+        // line or after whitespace and before a space or "!", so CSS colours
+        // (#fff), "#if" and "#selector" are left alone.
+        applyRegex("//[^\n]*", to: result, in: nsText, color: commentColor)
+        applyRegex("(?m)(?:^|(?<=\\s))#[ !][^\n]*", to: result, in: nsText, color: commentColor)
+
+        // Highlight multi-line comments /* ... */
+        applyRegex("/\\*[\\s\\S]*?\\*/", to: result, in: nsText, color: commentColor)
 
         return result
     }

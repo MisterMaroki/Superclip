@@ -91,7 +91,9 @@ class ContentPanel: NSPanel {
         let panelWidth: CGFloat = 500
         let panelHeight: CGFloat = 400
         let idx = self.navigationState.selectedIndex
-        let cardWidth = drawerFrame.height - 64
+        // Cards are square and fill the drawer between the header and the
+        // bottom edge (less the key-hint strip when it is showing)
+        let cardWidth = drawerFrame.height - 64 - (settings.showKeyboardHints ? 28 : 0)
         let cardSpacing: CGFloat = 14
         let horizontalPadding: CGFloat = 20
         let cardStartX = drawerFrame.minX + horizontalPadding

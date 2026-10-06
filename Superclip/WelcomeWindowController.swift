@@ -29,9 +29,9 @@ final class WelcomeWindowController: NSWindowController, NSWindowDelegate {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    func configure(onComplete: @escaping () -> Void) {
+    func configure(settings: SettingsManager, onComplete: @escaping () -> Void) {
         self.onComplete = onComplete
-        let view = OnboardingView(onComplete: { [weak self] in
+        let view = OnboardingView(settings: settings, onComplete: { [weak self] in
             UserDefaults.standard.set(true, forKey: Self.hasSeenWelcomeKey)
             self?.window?.close()
         })

@@ -1,0 +1,611 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		01555694D450F2FC37E09640 /* CloudSyncEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2705C2C21EAD1A9D8F019A1D /* CloudSyncEngine.swift */; };
+		0A832A879981D85FEDB2C062 /* PinboardsScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = D88A03B1A137878378CAB232 /* PinboardsScreen.swift */; };
+		1CED1624835261ED23A5E10F /* Clip.swift in Sources */ = {isa = PBXBuildFile; fileRef = 281DAFC6A566BA87F95DE950 /* Clip.swift */; };
+		382E0D4DD685EBE6DDE5994A /* SyncMerge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02947BCBB04D3E7545F89011 /* SyncMerge.swift */; };
+		3944921D8854A04566A9966A /* ClipDetailSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = F807B4831A8D667A328AC0AF /* ClipDetailSheet.swift */; };
+		3FB93C69D5A63E806FECE2F6 /* Ink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46C20C5EFD3A776C28B1F1B6 /* Ink.swift */; };
+		43221F20343A7042D747CCAB /* SnippetsScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8D9C5D7E4EEE50FB6CA6804 /* SnippetsScreen.swift */; };
+		64C1002314196EEBA8B27A1B /* SharedInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6B97D71E16B6B0CB34071DD /* SharedInbox.swift */; };
+		6C8CEE85B458604782656E1F /* SyncModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70E51B7ABFCD480ADA50DB08 /* SyncModels.swift */; };
+		7236B436C12D1328A90BECB8 /* HistoryScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2975AB7948D14AD17932E3CA /* HistoryScreen.swift */; };
+		74EFB4D1B1E959C477AF4016 /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A48B530B17AAA88A4F422AC /* ShareViewController.swift */; };
+		862B791CAF35D5C4D40E7A0D /* SettingsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8227443AC15BC395C5046ACF /* SettingsSheet.swift */; };
+		8EDEB8E91982790A7383AEF1 /* SharedInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6B97D71E16B6B0CB34071DD /* SharedInbox.swift */; };
+		9FD5831988AA9E106624DADE /* Ink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46C20C5EFD3A776C28B1F1B6 /* Ink.swift */; };
+		B101CB1C57EBD6E58B59E1FD /* PhoneSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 464209DCA08F2CA48E03A40A /* PhoneSync.swift */; };
+		B7CD331224F2612A04D40DC9 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 0C836E539E5F1B6112EC76DA /* Assets.xcassets */; };
+		B8C9C446B35A0C79BCE0DAF4 /* SuperclipShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = C0AB42F17294C3CE0FE4F28A /* SuperclipShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		D15915B07E5DD587967D8603 /* ClipStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05C3B135044AEF9B9E4B37EC /* ClipStore.swift */; };
+		D873211B58FCEB294ED21725 /* CloudRecordCoding.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9D7ADAB28B5DC0D312F405D /* CloudRecordCoding.swift */; };
+		E99F18CBC6F6AC616D56AEA6 /* SampleLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BCEC51AC046A98688B3C8C9 /* SampleLibrary.swift */; };
+		F32FB29943060D50F2636E01 /* SuperclipApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2DD21500C029961C309A925 /* SuperclipApp.swift */; };
+		FEB14321E9A50518C16B676A /* ClipCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5011934A297FF4A7AC4467A2 /* ClipCard.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		2B74D6A51FE427C5B56B8D9C /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = E8315EBF42D95DFFB309A6CF /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 2586953C8B6A812AAE1A2649;
+			remoteInfo = SuperclipShare;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		36613DC96C73C0BE5F94D176 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				B8C9C446B35A0C79BCE0DAF4 /* SuperclipShare.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		02947BCBB04D3E7545F89011 /* SyncMerge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncMerge.swift; sourceTree = "<group>"; };
+		05C3B135044AEF9B9E4B37EC /* ClipStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipStore.swift; sourceTree = "<group>"; };
+		0C836E539E5F1B6112EC76DA /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		1A48B530B17AAA88A4F422AC /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
+		237CD8C79353F01AF6D1D44C /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		2705C2C21EAD1A9D8F019A1D /* CloudSyncEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudSyncEngine.swift; sourceTree = "<group>"; };
+		281DAFC6A566BA87F95DE950 /* Clip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Clip.swift; sourceTree = "<group>"; };
+		2975AB7948D14AD17932E3CA /* HistoryScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryScreen.swift; sourceTree = "<group>"; };
+		2BCEC51AC046A98688B3C8C9 /* SampleLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SampleLibrary.swift; sourceTree = "<group>"; };
+		464209DCA08F2CA48E03A40A /* PhoneSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneSync.swift; sourceTree = "<group>"; };
+		46C20C5EFD3A776C28B1F1B6 /* Ink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Ink.swift; sourceTree = "<group>"; };
+		5011934A297FF4A7AC4467A2 /* ClipCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipCard.swift; sourceTree = "<group>"; };
+		70E51B7ABFCD480ADA50DB08 /* SyncModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncModels.swift; sourceTree = "<group>"; };
+		8227443AC15BC395C5046ACF /* SettingsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsSheet.swift; sourceTree = "<group>"; };
+		95439E57E9EB6803FE45004B /* SuperclipiOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = SuperclipiOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		ABE58DE7815DCA7324F1C907 /* SuperclipShare.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SuperclipShare.entitlements; sourceTree = "<group>"; };
+		B2DD21500C029961C309A925 /* SuperclipApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SuperclipApp.swift; sourceTree = "<group>"; };
+		B9D7ADAB28B5DC0D312F405D /* CloudRecordCoding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudRecordCoding.swift; sourceTree = "<group>"; };
+		C0AB42F17294C3CE0FE4F28A /* SuperclipShare.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = SuperclipShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		C6B97D71E16B6B0CB34071DD /* SharedInbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedInbox.swift; sourceTree = "<group>"; };
+		D88A03B1A137878378CAB232 /* PinboardsScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinboardsScreen.swift; sourceTree = "<group>"; };
+		D8D9C5D7E4EEE50FB6CA6804 /* SnippetsScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnippetsScreen.swift; sourceTree = "<group>"; };
+		F807B4831A8D667A328AC0AF /* ClipDetailSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipDetailSheet.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		0F823309917C7DE2B43FB212 /* Design */ = {
+			isa = PBXGroup;
+			children = (
+				46C20C5EFD3A776C28B1F1B6 /* Ink.swift */,
+			);
+			path = Design;
+			sourceTree = "<group>";
+		};
+		2B1F8B2A44BDF68F64C22A4A /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				C6B97D71E16B6B0CB34071DD /* SharedInbox.swift */,
+			);
+			path = Shared;
+			sourceTree = "<group>";
+		};
+		322E11252B7B2C4D70C08647 /* Model */ = {
+			isa = PBXGroup;
+			children = (
+				281DAFC6A566BA87F95DE950 /* Clip.swift */,
+				05C3B135044AEF9B9E4B37EC /* ClipStore.swift */,
+				2BCEC51AC046A98688B3C8C9 /* SampleLibrary.swift */,
+			);
+			path = Model;
+			sourceTree = "<group>";
+		};
+		686CF6F88032CFB1D2D734B9 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				0C836E539E5F1B6112EC76DA /* Assets.xcassets */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		72D1B809B17DD40915909E93 /* Sync */ = {
+			isa = PBXGroup;
+			children = (
+				464209DCA08F2CA48E03A40A /* PhoneSync.swift */,
+			);
+			path = Sync;
+			sourceTree = "<group>";
+		};
+		7E30D15250574E2F4DBD3133 /* Superclip */ = {
+			isa = PBXGroup;
+			children = (
+				D31F2D9C2C1327B1268F8EE5 /* Sync */,
+			);
+			path = Superclip;
+			sourceTree = "<group>";
+		};
+		9A2DB3371B54106AED70D804 /* Superclip */ = {
+			isa = PBXGroup;
+			children = (
+				7E30D15250574E2F4DBD3133 /* Superclip */,
+			);
+			name = Superclip;
+			path = ..;
+			sourceTree = "<group>";
+		};
+		C115F698B93F759DE8F23B69 /* Screens */ = {
+			isa = PBXGroup;
+			children = (
+				F807B4831A8D667A328AC0AF /* ClipDetailSheet.swift */,
+				2975AB7948D14AD17932E3CA /* HistoryScreen.swift */,
+				D88A03B1A137878378CAB232 /* PinboardsScreen.swift */,
+				8227443AC15BC395C5046ACF /* SettingsSheet.swift */,
+				D8D9C5D7E4EEE50FB6CA6804 /* SnippetsScreen.swift */,
+			);
+			path = Screens;
+			sourceTree = "<group>";
+		};
+		C4E86F1D537EAD27D73C0C77 /* Components */ = {
+			isa = PBXGroup;
+			children = (
+				5011934A297FF4A7AC4467A2 /* ClipCard.swift */,
+			);
+			path = Components;
+			sourceTree = "<group>";
+		};
+		D05CE7417FE02F7196E814BC /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				95439E57E9EB6803FE45004B /* SuperclipiOS.app */,
+				C0AB42F17294C3CE0FE4F28A /* SuperclipShare.appex */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		D31F2D9C2C1327B1268F8EE5 /* Sync */ = {
+			isa = PBXGroup;
+			children = (
+				B9D7ADAB28B5DC0D312F405D /* CloudRecordCoding.swift */,
+				2705C2C21EAD1A9D8F019A1D /* CloudSyncEngine.swift */,
+				02947BCBB04D3E7545F89011 /* SyncMerge.swift */,
+				70E51B7ABFCD480ADA50DB08 /* SyncModels.swift */,
+			);
+			name = Sync;
+			path = ../Superclip/Sync;
+			sourceTree = "<group>";
+		};
+		E292B5314FBA415FD4C09520 /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				B2DD21500C029961C309A925 /* SuperclipApp.swift */,
+				C4E86F1D537EAD27D73C0C77 /* Components */,
+				0F823309917C7DE2B43FB212 /* Design */,
+				322E11252B7B2C4D70C08647 /* Model */,
+				C115F698B93F759DE8F23B69 /* Screens */,
+				2B1F8B2A44BDF68F64C22A4A /* Shared */,
+				72D1B809B17DD40915909E93 /* Sync */,
+			);
+			path = Sources;
+			sourceTree = "<group>";
+		};
+		EC3A1F43B3C0FEBAEEB01D75 /* ShareExtension */ = {
+			isa = PBXGroup;
+			children = (
+				237CD8C79353F01AF6D1D44C /* Info.plist */,
+				1A48B530B17AAA88A4F422AC /* ShareViewController.swift */,
+				ABE58DE7815DCA7324F1C907 /* SuperclipShare.entitlements */,
+			);
+			path = ShareExtension;
+			sourceTree = "<group>";
+		};
+		F34D40EEF209AB3FEBCD0B89 /* Shared Sync */ = {
+			isa = PBXGroup;
+			children = (
+				D31F2D9C2C1327B1268F8EE5 /* Sync */,
+			);
+			name = "Shared Sync";
+			sourceTree = "<group>";
+		};
+		FE60FD99A453A0142ACBDFCA = {
+			isa = PBXGroup;
+			children = (
+				686CF6F88032CFB1D2D734B9 /* Resources */,
+				F34D40EEF209AB3FEBCD0B89 /* Shared Sync */,
+				EC3A1F43B3C0FEBAEEB01D75 /* ShareExtension */,
+				E292B5314FBA415FD4C09520 /* Sources */,
+				9A2DB3371B54106AED70D804 /* Superclip */,
+				D05CE7417FE02F7196E814BC /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		2586953C8B6A812AAE1A2649 /* SuperclipShare */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F240B310E53EB2C3606C96E8 /* Build configuration list for PBXNativeTarget "SuperclipShare" */;
+			buildPhases = (
+				04D0BF153C72C98C9476220E /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = SuperclipShare;
+			packageProductDependencies = (
+			);
+			productName = SuperclipShare;
+			productReference = C0AB42F17294C3CE0FE4F28A /* SuperclipShare.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		B5146DBAE6F1870015A205EB /* SuperclipiOS */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 10F2318665FB69F56866898E /* Build configuration list for PBXNativeTarget "SuperclipiOS" */;
+			buildPhases = (
+				553C3884728EA490ABE77270 /* Sources */,
+				2BB4E3F03FDBCE0628C74C19 /* Resources */,
+				36613DC96C73C0BE5F94D176 /* Embed Foundation Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				270BD9D2A7A0797F2064806F /* PBXTargetDependency */,
+			);
+			name = SuperclipiOS;
+			packageProductDependencies = (
+			);
+			productName = SuperclipiOS;
+			productReference = 95439E57E9EB6803FE45004B /* SuperclipiOS.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		E8315EBF42D95DFFB309A6CF /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					2586953C8B6A812AAE1A2649 = {
+						DevelopmentTeam = S34Q66469Q;
+					};
+					B5146DBAE6F1870015A205EB = {
+						DevelopmentTeam = S34Q66469Q;
+					};
+				};
+			};
+			buildConfigurationList = 23A2F04B94458064174E8E08 /* Build configuration list for PBXProject "SuperclipiOS" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = FE60FD99A453A0142ACBDFCA;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = D05CE7417FE02F7196E814BC /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				B5146DBAE6F1870015A205EB /* SuperclipiOS */,
+				2586953C8B6A812AAE1A2649 /* SuperclipShare */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		2BB4E3F03FDBCE0628C74C19 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B7CD331224F2612A04D40DC9 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		04D0BF153C72C98C9476220E /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				9FD5831988AA9E106624DADE /* Ink.swift in Sources */,
+				74EFB4D1B1E959C477AF4016 /* ShareViewController.swift in Sources */,
+				64C1002314196EEBA8B27A1B /* SharedInbox.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		553C3884728EA490ABE77270 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1CED1624835261ED23A5E10F /* Clip.swift in Sources */,
+				FEB14321E9A50518C16B676A /* ClipCard.swift in Sources */,
+				3944921D8854A04566A9966A /* ClipDetailSheet.swift in Sources */,
+				D15915B07E5DD587967D8603 /* ClipStore.swift in Sources */,
+				D873211B58FCEB294ED21725 /* CloudRecordCoding.swift in Sources */,
+				01555694D450F2FC37E09640 /* CloudSyncEngine.swift in Sources */,
+				7236B436C12D1328A90BECB8 /* HistoryScreen.swift in Sources */,
+				3FB93C69D5A63E806FECE2F6 /* Ink.swift in Sources */,
+				B101CB1C57EBD6E58B59E1FD /* PhoneSync.swift in Sources */,
+				0A832A879981D85FEDB2C062 /* PinboardsScreen.swift in Sources */,
+				E99F18CBC6F6AC616D56AEA6 /* SampleLibrary.swift in Sources */,
+				862B791CAF35D5C4D40E7A0D /* SettingsSheet.swift in Sources */,
+				8EDEB8E91982790A7383AEF1 /* SharedInbox.swift in Sources */,
+				43221F20343A7042D747CCAB /* SnippetsScreen.swift in Sources */,
+				F32FB29943060D50F2636E01 /* SuperclipApp.swift in Sources */,
+				382E0D4DD685EBE6DDE5994A /* SyncMerge.swift in Sources */,
+				6C8CEE85B458604782656E1F /* SyncModels.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		270BD9D2A7A0797F2064806F /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 2586953C8B6A812AAE1A2649 /* SuperclipShare */;
+			targetProxy = 2B74D6A51FE427C5B56B8D9C /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		48C3F4B6CE97779748E7C34F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		57744C5E76A7F4511E55554A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = SuperclipiOS.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = S34Q66469Q;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = Superclip;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIBackgroundModes = "remote-notification";
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.omarmaroki.Superclip.ios;
+				PRODUCT_NAME = Superclip;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		79632CADC0FEFC2F29FE0801 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = ShareExtension/SuperclipShare.entitlements;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = S34Q66469Q;
+				INFOPLIST_FILE = ShareExtension/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.omarmaroki.Superclip.ios.share;
+				PRODUCT_NAME = SuperclipShare;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		8D18DBA4DACD82F3ECF82121 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = ShareExtension/SuperclipShare.entitlements;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = S34Q66469Q;
+				INFOPLIST_FILE = ShareExtension/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.omarmaroki.Superclip.ios.share;
+				PRODUCT_NAME = SuperclipShare;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		A03F1A8EBCBCEBD4D5A8D5B6 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = SuperclipiOS.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = S34Q66469Q;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = Superclip;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIBackgroundModes = "remote-notification";
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.omarmaroki.Superclip.ios;
+				PRODUCT_NAME = Superclip;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		E94542FF108E31D57ACAD844 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		10F2318665FB69F56866898E /* Build configuration list for PBXNativeTarget "SuperclipiOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A03F1A8EBCBCEBD4D5A8D5B6 /* Debug */,
+				57744C5E76A7F4511E55554A /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		23A2F04B94458064174E8E08 /* Build configuration list for PBXProject "SuperclipiOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E94542FF108E31D57ACAD844 /* Debug */,
+				48C3F4B6CE97779748E7C34F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		F240B310E53EB2C3606C96E8 /* Build configuration list for PBXNativeTarget "SuperclipShare" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				8D18DBA4DACD82F3ECF82121 /* Debug */,
+				79632CADC0FEFC2F29FE0801 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = E8315EBF42D95DFFB309A6CF /* Project object */;
+}

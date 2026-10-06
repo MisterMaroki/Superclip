@@ -21,7 +21,7 @@ class SettingsPanel: NSPanel {
 
         super.init(
             contentRect: NSRect(x: 0, y: 0, width: 680, height: 480),
-            styleMask: [.borderless, .nonactivatingPanel, .titled],
+            styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: true
         )

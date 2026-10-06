@@ -441,20 +441,29 @@ struct ImageAnnotationEditorView: View {
             Circle()
               .fill(color)
               .frame(width: 18, height: 18)
+              // Hairline so the white/black presets stay visible against the bar
+              .overlay(
+                Circle()
+                  .stroke(Color.primary.opacity(0.25), lineWidth: 0.5)
+              )
+              // Selection ring sits outside the swatch so it never blends into it
               .overlay(
                 Circle()
                   .stroke(
-                    annotationState.selectedColor == color ? Color.white : Color.clear,
-                    lineWidth: 2
+                    annotationState.selectedColor == color ? Brand.black : Color.clear,
+                    lineWidth: 1.5
                   )
+                  .padding(-2.5)
               )
           }
           .buttonStyle(.plain)
         }
 
+        // Natural size: the system well is wider than 24pt and a fixed frame
+        // lets it spill over the last preset swatch.
         ColorPicker("", selection: $annotationState.selectedColor)
           .labelsHidden()
-          .frame(width: 24, height: 24)
+          .fixedSize()
       }
 
       Divider()
@@ -712,7 +721,7 @@ struct ImageAnnotationEditorView: View {
           Text(showingSaveConfirmation ? "Copied!" : "Copy")
             .font(.system(size: 11, weight: .medium))
         }
-        .foregroundStyle(.primary)
+        .foregroundStyle(showingSaveConfirmation ? Color.white : Brand.white)
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
         .background(showingSaveConfirmation ? Color.green : Brand.black)
@@ -749,9 +758,12 @@ struct ImageAnnotationEditorView: View {
     if let (image, data) = flattenImage() {
       let pasteboard = NSPasteboard.general
       pasteboard.clearContents()
-      pasteboard.writeObjects([image])
+      // PNG only: adding the NSImage as well put a multi-megabyte
+      // uncompressed TIFF first on the clipboard
       if let pngData = data {
-        pasteboard.setData(pngData, forType: .png)
+        ClipboardManager.writeImage(pngData, to: pasteboard)
+      } else {
+        pasteboard.writeObjects([image])
       }
       onSave(image, data ?? self.pngData)
       onDismiss()
@@ -1348,6 +1360,10 @@ struct ToolButton: View {
 
 struct CheckerboardBackground: View {
   let squareSize: CGFloat = 10
+  /// Dark by default (the editor's canvas). The preview passes theme-aware
+  /// colours so a light panel doesn't get a black box in the middle.
+  var first: Color = Color(white: 0.15)
+  var second: Color = Color(white: 0.1)
 
   var body: some View {
     Canvas { context, size in
@@ -1365,7 +1381,7 @@ struct CheckerboardBackground: View {
           )
           context.fill(
             Path(rect),
-            with: .color(isLight ? Color(white: 0.15) : Color(white: 0.1))
+            with: .color(isLight ? first : second)
           )
         }
       }
@@ -1459,7 +1475,9 @@ struct CropOverlayView: View {
             path.addLine(to: CGPoint(
               x: cropRect.maxX, y: cropRect.minY + cropRect.height * 2 / 3))
           }
-          .stroke(Color.primary.opacity(0.4), lineWidth: 1)
+          // White line with a crisp dark twin so the grid reads on light and dark images
+          .stroke(Color.white.opacity(0.7), lineWidth: 1)
+          .shadow(color: .black.opacity(0.6), radius: 0, x: 1, y: 1)
         }
 
         // Corner handles
@@ -1489,7 +1507,7 @@ struct CropOverlayView: View {
               Text("Apply Crop")
                 .font(.system(size: 12, weight: .medium))
             }
-            .foregroundStyle(.primary)
+            .foregroundStyle(.white)
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .background(Color.blue)
@@ -1505,11 +1523,14 @@ struct CropOverlayView: View {
         VStack(spacing: 8) {
           Image(systemName: "crop")
             .font(.system(size: 32))
-            .foregroundStyle(.primary.opacity(0.6))
+            .foregroundStyle(.white.opacity(0.85))
           Text("Drag to select crop area")
             .font(.system(size: 13))
-            .foregroundStyle(.primary.opacity(0.6))
+            .foregroundStyle(.white.opacity(0.85))
         }
+        // Scrim: the hint sits directly on the image, which may be any brightness
+        .padding(20)
+        .background(Color.black.opacity(0.5))
       }
     }
     .contentShape(Rectangle())

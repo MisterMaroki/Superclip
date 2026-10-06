@@ -135,6 +135,8 @@ struct PreviewView: View {
             .foregroundStyle(.primary.opacity(0.6))
         }
         .buttonStyle(.plain)
+        .help("Close preview (Esc)")
+        .accessibilityLabel("Close preview")
 
         // Type label
         HStack(spacing: 6) {
@@ -143,7 +145,7 @@ struct PreviewView: View {
               .resizable()
               .frame(width: 16, height: 16)
           }
-          Text(item.type.rawValue.capitalized)
+          Text(item.typeLabel)
             .font(.system(size: 13, weight: .medium))
             .foregroundStyle(.primary)
         }
@@ -188,6 +190,7 @@ struct PreviewView: View {
             PinboardDropdownLabel(item: item, pinboardManager: pinboardManager)
           }
           .menuStyle(.borderlessButton)
+          .fixedSize()
 
           // Share button
           ShareButtonView(item: item)
@@ -252,8 +255,10 @@ struct PreviewView: View {
         if item.type == .image {
           // Footer for image types: dimensions on left, Copy to Clipboard on right
           HStack {
-            if let nsImage = item.nsImage {
-              Text("\(Int(nsImage.size.width)) × \(Int(nsImage.size.height))")
+            // Pixel dimensions, the same figure the card shows. NSImage.size
+            // is in points, which halves a Retina screenshot's numbers.
+            if let dimensions = item.imageDimensions {
+              Text(dimensions)
                 .font(.system(size: 11))
                 .foregroundStyle(Brand.gray600)
             }
@@ -319,6 +324,7 @@ struct PreviewView: View {
               .foregroundStyle(Brand.gray600)
 
             Text("·")
+              .font(.system(size: 11))
               .foregroundStyle(Brand.gray500)
 
             Text("\(wordCount) \(wordCount == 1 ? "word" : "words")")
@@ -326,6 +332,7 @@ struct PreviewView: View {
               .foregroundStyle(Brand.gray600)
 
             Text("·")
+              .font(.system(size: 11))
               .foregroundStyle(Brand.gray500)
 
             Text("\(lineCount) \(lineCount == 1 ? "line" : "lines")")
@@ -364,7 +371,7 @@ struct PreviewView: View {
     .clipShape(Rectangle())
     .overlay(
       Rectangle()
-        .stroke(Color.primary.opacity(0.15), lineWidth: 1)
+        .stroke(Brand.gray300, lineWidth: 1)
     )
 
   }
@@ -374,6 +381,13 @@ struct PreviewView: View {
       if let attributedString = item.attributedString {
         // Display rich text content
         AttributedTextView(attributedString: attributedString)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .padding(.horizontal, 16)
+          .padding(.top, 24)
+          .padding(.bottom, 16)
+      } else if let code = highlightedCode {
+        // Code: monospaced and coloured, as the "Syntax highlighting" setting promises
+        AttributedTextView(attributedString: code)
           .frame(maxWidth: .infinity, alignment: .leading)
           .padding(.horizontal, 16)
           .padding(.top, 24)
@@ -389,6 +403,19 @@ struct PreviewView: View {
           .padding(.bottom, 16)
       }
     }
+  }
+
+  /// The clip as highlighted code, when highlighting is on and it looks like code.
+  private var highlightedCode: NSAttributedString? {
+    guard UserDefaults.standard.bool(forKey: "Superclip.syntaxHighlighting"),
+      let highlighted = SyntaxHighlighter.highlight(editableContent)
+    else { return nil }
+    // Cards use 11pt; the preview has room for a more readable size
+    let sized = NSMutableAttributedString(attributedString: highlighted)
+    sized.addAttribute(
+      .font, value: NSFont.monospacedSystemFont(ofSize: 12.5, weight: .regular),
+      range: NSRange(location: 0, length: sized.length))
+    return sized
   }
 
   var filePreview: some View {
@@ -407,7 +434,7 @@ struct PreviewView: View {
 
   var imagePreview: some View {
     ZStack {
-      CheckerboardBackground()
+      CheckerboardBackground(first: Brand.gray100, second: Brand.gray200)
 
       if let nsImage = item.nsImage {
         Image(nsImage: nsImage)
@@ -479,10 +506,10 @@ struct PreviewView: View {
   }
 
   private func copyImageToClipboard() {
-    guard let nsImage = item.nsImage else { return }
-    let pasteboard = NSPasteboard.general
-    pasteboard.clearContents()
-    pasteboard.writeObjects([nsImage])
+    // Through the manager, so the existing card moves to the front. Writing
+    // the pasteboard directly was picked up by the poll as a new, differently
+    // encoded image and added a duplicate card.
+    clipboardManager.copyToClipboard(item)
   }
 
   private func openInBrowser() {
@@ -643,7 +670,7 @@ struct AudioPlayerView: View {
       // Waveform visualization placeholder
       HStack(spacing: 2) {
         ForEach(0..<40, id: \.self) { i in
-          RoundedRectangle(cornerRadius: 2)
+          Rectangle()
             .fill(
               i < Int((currentTime / max(duration, 1)) * 40)
                 ? Brand.gray500 : Brand.gray500.opacity(0.3)
@@ -778,12 +805,35 @@ struct AttributedTextView: NSViewRepresentable {
     textView.backgroundColor = .clear
     textView.textContainerInset = .zero
     textView.textContainer?.lineFragmentPadding = 0
+    textView.isVerticallyResizable = false
+    textView.isHorizontallyResizable = false
+    textView.textContainer?.widthTracksTextView = false
+    // Rich text saved from a light-mode app carries black text; let AppKit
+    // remap it so it stays readable on a dark panel
+    textView.usesAdaptiveColorMappingForDarkAppearance = true
     textView.textStorage?.setAttributedString(attributedString)
     return textView
   }
 
   func updateNSView(_ nsView: NSTextView, context: Context) {
-    nsView.textStorage?.setAttributedString(attributedString)
+    // Resetting identical text discards the selection and redoes layout
+    if nsView.textStorage?.isEqual(to: attributedString) != true {
+      nsView.textStorage?.setAttributedString(attributedString)
+    }
+  }
+
+  /// Report the height the text really needs at the offered width. A bare
+  /// NSTextView has no intrinsic size, so inside a ScrollView SwiftUI gave it
+  /// an arbitrary height and the text was drawn offset, with only its last
+  /// lines visible.
+  func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSTextView, context: Context) -> CGSize? {
+    guard let container = nsView.textContainer, let layoutManager = nsView.layoutManager,
+      let width = proposal.width, width > 0, width.isFinite
+    else { return nil }
+    container.containerSize = NSSize(width: width, height: .greatestFiniteMagnitude)
+    layoutManager.ensureLayout(for: container)
+    let used = layoutManager.usedRect(for: container)
+    return CGSize(width: width, height: ceil(used.height))
   }
 }
 
@@ -798,6 +848,10 @@ struct WebView: NSViewRepresentable {
     webView.navigationDelegate = context.coordinator
     webView.allowsBackForwardNavigationGestures = false
     webView.allowsMagnification = false
+    // No opaque white sheet before the page paints: in dark mode that was a
+    // full-size white flash on every link preview.
+    webView.setValue(false, forKey: "drawsBackground")
+    webView.underPageBackgroundColor = .clear
     return webView
   }
 
@@ -818,7 +872,31 @@ struct WebView: NSViewRepresentable {
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-      // Handle error if needed
+      showFailure(in: webView, error: error)
+    }
+
+    func webView(
+      _ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!,
+      withError error: Error
+    ) {
+      showFailure(in: webView, error: error)
+    }
+
+    /// Offline or unreachable: say so instead of leaving an empty rectangle.
+    private func showFailure(in webView: WKWebView, error: Error) {
+      // A cancelled load (the user moved to another card) is not a failure
+      if (error as NSError).code == NSURLErrorCancelled { return }
+      let html = """
+        <html><head><meta name="color-scheme" content="light dark"><style>
+        body { font: 13px -apple-system; display: flex; height: 100vh; margin: 0;
+               align-items: center; justify-content: center; text-align: center;
+               color: #6b6b6b; background: transparent; }
+        @media (prefers-color-scheme: dark) { body { color: #a6a6a6; } }
+        b { display: block; font-weight: 600; margin-bottom: 4px; }
+        </style></head><body><div><b>This page couldn\u{2019}t be loaded</b>
+        Check your connection, or open the link in your browser.</div></body></html>
+        """
+      webView.loadHTMLString(html, baseURL: nil)
     }
   }
 }
@@ -872,7 +950,7 @@ struct ArrowShape: Shape {
 
 // MARK: - Helper for colored circle in menus
 
-private func coloredCircleImage(color: NSColor, size: CGFloat = 12) -> NSImage {
+func coloredCircleImage(color: NSColor, size: CGFloat = 12) -> NSImage {
   let image = NSImage(size: NSSize(width: size, height: size))
   image.lockFocus()
   color.setFill()
@@ -956,7 +1034,10 @@ struct ShareButtonView: NSViewRepresentable {
     button.bezelStyle = .inline
     button.target = context.coordinator
     button.action = #selector(Coordinator.showSharePicker(_:))
-    button.contentTintColor = .labelColor.withAlphaComponent(0.6)
+    // A dynamic system colour. Deriving one with withAlphaComponent froze it
+    // to whichever appearance was current at that moment, which left the
+    // icon near-white (invisible) on the light preview header.
+    button.contentTintColor = .secondaryLabelColor
     button.setContentHuggingPriority(.required, for: .horizontal)
     button.setContentHuggingPriority(.required, for: .vertical)
     return button

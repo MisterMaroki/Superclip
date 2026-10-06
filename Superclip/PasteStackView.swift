@@ -6,24 +6,6 @@
 import SwiftUI
 import AVFoundation
 
-enum SortOrder {
-    case ascending  // Oldest first (first copied at top)
-    case descending // Newest first (last copied at top)
-
-    var label: String {
-        switch self {
-        case .ascending:
-            return "Oldest first"
-        case .descending:
-            return "Newest first"
-        }
-    }
-
-    mutating func toggle() {
-        self = self == .ascending ? .descending : .ascending
-    }
-}
-
 enum PasteStackViewMode {
     case list
     case grid
@@ -37,19 +19,18 @@ struct PasteStackView: View {
     @ObservedObject var pasteStackManager: PasteStackManager
     @ObservedObject var navigationState: NavigationState
     var onClose: () -> Void
+    /// Lets the panel size itself for the layout in use
+    var onViewModeChanged: ((PasteStackViewMode) -> Void)? = nil
     var dismiss: (Bool) -> Void
 
-    @State private var sortOrder: SortOrder = .ascending
     @State private var viewMode: PasteStackViewMode = .list
     @State private var userOverrodeViewMode = false
 
+    /// Items in paste order: row 1 is what the next Cmd+V pastes.
     var sortedItems: [ClipboardItem] {
-        switch sortOrder {
-        case .ascending:
-            return pasteStackManager.stackItems // Already in order of copy (oldest first)
-        case .descending:
-            return pasteStackManager.stackItems.reversed()
-        }
+        pasteStackManager.newestFirst
+            ? pasteStackManager.stackItems.reversed()
+            : pasteStackManager.stackItems
     }
 
     var selectedItem: ClipboardItem? {
@@ -75,6 +56,7 @@ struct PasteStackView: View {
                 }
                 .buttonStyle(.plain)
                 .help("Close paste stack")
+                .accessibilityLabel("Close paste stack")
 
                 Text("Paste Stack")
                     .font(.system(size: 12, weight: .medium))
@@ -83,7 +65,8 @@ struct PasteStackView: View {
                 Spacer()
 
                 if !pasteStackManager.stackItems.isEmpty {
-                    Text("\(pasteStackManager.stackItems.count) items")
+                    Text(pasteStackManager.stackItems.count == 1
+                         ? "1 item" : "\(pasteStackManager.stackItems.count) items")
                         .font(.system(size: 10))
                         .foregroundStyle(Brand.gray600)
                 }
@@ -104,30 +87,34 @@ struct PasteStackView: View {
                     }
                     .buttonStyle(.plain)
                     .help(viewMode == .grid ? "List view" : "Grid view")
+                    .accessibilityLabel(viewMode == .grid ? "Switch to list view" : "Switch to grid view")
                 }
 
                 // Sort button
                 if !pasteStackManager.stackItems.isEmpty {
                     Button {
                         withAnimation(.easeInOut(duration: 0.2)) {
-                            sortOrder.toggle()
+                            pasteStackManager.newestFirst.toggle()
                             navigationState.selectedIndex = 0
                         }
                     } label: {
                         VStack(spacing: 0) {
                             Image(systemName: "arrow.up")
                                 .font(.system(size: 9, weight: .semibold))
-                                .foregroundStyle(sortOrder == .ascending ? .white.opacity(0.9) : .white.opacity(0.35))
+                                .foregroundStyle(pasteStackManager.newestFirst ? Brand.gray400 : Brand.black)
                             Image(systemName: "arrow.down")
                                 .font(.system(size: 9, weight: .semibold))
-                                .foregroundStyle(sortOrder == .descending ? .white.opacity(0.9) : .white.opacity(0.35))
+                                .foregroundStyle(pasteStackManager.newestFirst ? Brand.black : Brand.gray400)
                         }
                         .padding(.horizontal, 6)
                         .padding(.vertical, 4)
                         .background(Color.primary.opacity(0.1))
                     }
                     .buttonStyle(.plain)
-                    .help(sortOrder.label)
+                    .help(pasteStackManager.newestFirst
+                          ? "Pasting newest first. Click to paste oldest first."
+                          : "Pasting oldest first. Click to paste newest first.")
+                    .accessibilityLabel("Paste order")
                 }
 
                 // Clear button
@@ -141,6 +128,7 @@ struct PasteStackView: View {
                     }
                     .buttonStyle(.plain)
                     .help("Clear stack")
+                    .accessibilityLabel("Clear stack")
                 }
 
             }
@@ -155,11 +143,11 @@ struct PasteStackView: View {
                         .font(.system(size: 28))
                         .foregroundStyle(.primary.opacity(0.45))
 
-                    Text("Copy items to add to stack")
+                    Text("Copy a few things in a row")
                         .font(.system(size: 12))
                         .foregroundStyle(Brand.gray600)
 
-                    Text("⌘C to copy, then select to paste in order")
+                    Text("Then press \u{2318}V repeatedly to paste them in order")
                         .font(.system(size: 10))
                         .foregroundStyle(Brand.gray600)
                 }
@@ -187,6 +175,7 @@ struct PasteStackView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Brand.white)
         .clipShape(Rectangle())
+        .overlay(Rectangle().stroke(Brand.gray300, lineWidth: 1))
         .onAppear {
             navigationState.itemCount = sortedItems.count
             navigationState.selectedIndex = 0
@@ -208,11 +197,14 @@ struct PasteStackView: View {
                 }
             }
         }
+        .onChange(of: viewMode) { newMode in
+            onViewModeChanged?(newMode)
+        }
         .onChange(of: navigationState.shouldSelectAndDismiss) { shouldSelect in
-            if shouldSelect, let item = selectedItem {
-                pasteStackManager.copyToClipboard(item)
-                pasteStackManager.removeItem(item)
+            if shouldSelect {
                 navigationState.shouldSelectAndDismiss = false
+                guard let item = selectedItem else { return }
+                pasteStackManager.prepareToPaste(item)
 
                 // Adjust selected index
                 if navigationState.selectedIndex >= sortedItems.count {
@@ -241,8 +233,7 @@ struct PasteStackView: View {
                     isSelected: navigationState.selectedIndex == index,
                     onSelect: {
                         navigationState.selectedIndex = index
-                        pasteStackManager.copyToClipboard(item)
-                        pasteStackManager.removeItem(item)
+                        pasteStackManager.prepareToPaste(item)
                         if navigationState.selectedIndex >= items.count {
                             navigationState.selectedIndex = max(0, items.count - 1)
                         }
@@ -262,7 +253,7 @@ struct PasteStackView: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
-        .id("grid-\(sortOrder == .ascending ? "asc" : "desc")")
+        .id("grid-\(pasteStackManager.newestFirst ? "desc" : "asc")")
     }
 
     // MARK: - List Content
@@ -277,8 +268,7 @@ struct PasteStackView: View {
                     isSelected: navigationState.selectedIndex == index,
                     onSelect: {
                         navigationState.selectedIndex = index
-                        pasteStackManager.copyToClipboard(item)
-                        pasteStackManager.removeItem(item)
+                        pasteStackManager.prepareToPaste(item)
 
                         // Adjust selected index if needed
                         if navigationState.selectedIndex >= items.count {
@@ -301,7 +291,7 @@ struct PasteStackView: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
-        .id(sortOrder == .ascending ? "asc" : "desc")
+        .id(pasteStackManager.newestFirst ? "desc" : "asc")
     }
 }
 
@@ -344,9 +334,12 @@ struct PasteStackGridTile: View {
                     Button {
                         onDelete()
                     } label: {
+                        // Adaptive x on an adaptive disc: readable on the tile
+                        // colour in both themes and over image tiles
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 14))
-                            .foregroundStyle(Brand.white.opacity(0.85))
+                            .symbolRenderingMode(.palette)
+                            .foregroundStyle(Brand.white, Brand.black)
                     }
                     .buttonStyle(.plain)
                     .padding(4)
@@ -355,8 +348,8 @@ struct PasteStackGridTile: View {
         }
         .overlay(
             Rectangle()
-                .stroke(
-                    isSelected ? Color.white.opacity(0.8) : (isHovered ? Color.white.opacity(0.25) : Color.clear),
+                .strokeBorder(
+                    isSelected ? Brand.black : (isHovered ? Brand.gray400 : Color.clear),
                     lineWidth: isSelected ? 2 : 1
                 )
         )
@@ -383,11 +376,10 @@ struct PasteStackGridTile: View {
             }
         case .file:
             if let urls = item.fileURLs, let firstURL = urls.first, urls.count == 1,
-               Self.imageExtensions.contains(firstURL.pathExtension.lowercased()),
-               let image = NSImage(contentsOf: firstURL) {
-                Image(nsImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
+               Self.imageExtensions.contains(firstURL.pathExtension.lowercased()) {
+                // Cached, downsampled, loaded off the main thread. Decoding the
+                // file here re-ran on every hover in and out.
+                FileImageThumbnailView(url: firstURL)
             } else {
                 placeholderTile(icon: "doc")
             }
@@ -658,7 +650,8 @@ struct PasteStackItemRow: View {
                             // Play icon overlay
                             Image(systemName: "play.circle.fill")
                                 .font(.system(size: 14))
-                                .foregroundStyle(.primary.opacity(0.9))
+                                .symbolRenderingMode(.palette)
+                                .foregroundStyle(Color.white, Color.black.opacity(0.55))
                                 .shadow(radius: 2)
                         }
                         .onAppear {

@@ -3,8 +3,10 @@
 Global:
 hotkeys:
 open panel - cmd+shft+a
-copy to clipboard - cmd+c
-copy and open in paste stack - cmd+shft+c
+open paste stack - cmd+shft+c
+screenshot (area / window / full screen) - cmd+shft+4
+capture full screen now - cmd+shft+3
+text sniper (ocr) - cmd+shft+`
 paste (simulate) - cmd+v
 
 Panel:
@@ -14,7 +16,8 @@ navigate items - arrow left/right
 navigate pinboards - cmd+arrow left/right
 search - type any single character
 in searching state:
-clear search and stop searching - esc
+filter by type - pills under the header (links, images, files, code, colors, emails, json, phones)
+clear search and filter - esc
 
 buttons:
 search - focuses search
@@ -32,9 +35,12 @@ Cards:
 hotkeys:
 open preview - space
 open edit - hold space
-copy - cmd+c
-paste - cmd+v / enter (when focused)
-delete - backspace
+copy (drawer stays open) - cmd+c
+paste - enter (when focused)
+paste as plain text - shift+enter
+quick paste - cmd+1-9, cmd+0
+delete - backspace (inside a pinboard: unpin)
+undo delete - cmd+z
 actions:
 pin / unpin
 open link (if URL)
@@ -48,9 +54,11 @@ Paste Stack:
 hotkeys:
 open paste stack - cmd+shft+c
 behaviors:
-session-scoped stack
+session-scoped stack: copies made while it is open are queued
 auto-advance after each paste (cmd+v)
-remove item - backspace
+paste order - oldest first, or newest first (toggle in the header)
+click a row to paste that item
+remove item - x button on the row
 actions:
 copy item to clipboard
 paste current item
@@ -131,10 +139,19 @@ AppIntents / Shortcuts (expose actions)
 link metadata fetching (title, description, favicon)
 
 Persistence & Export:
-history (max 100) with deduplication
+history with deduplication (size limit in settings, default unlimited)
+clearing history keeps pinned items
 pinboards persisted across launches
 snippets persisted across launches
-export/import settings and data (pins, history)
+export/import history, pinboards and snippets (settings > storage)
+
+iCloud Sync (needs setup, see SYNC_SETUP.md):
+clips, pinboards and snippets sync between Mac and iPhone through the user's iCloud
+off by default on the Mac (settings > general), on by default on the iPhone
+copied files do not sync; unpinned clips leave iCloud after 30 days; images over 10 MB sync as details only
+
+iPhone app (SuperclipiOS/):
+clipboard, pinboards, snippets, search, share extension
 
 Automation targets:
 build & archive + notarize

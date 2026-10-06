@@ -129,7 +129,7 @@ enum QuickActionAnalyzer {
 
     // Phone
     let stripped = text.trimmingCharacters(in: .whitespacesAndNewlines)
-    if matches(pattern: phonePattern, in: stripped) {
+    if matches(pattern: phonePattern, in: stripped), ContentDetector.isPlausiblePhone(stripped) {
       let digits = stripped.filter { $0.isNumber || $0 == "+" }
       if digits.count >= 7 {
         results.append(.phone(raw: stripped, digits: digits))
@@ -137,7 +137,13 @@ enum QuickActionAnalyzer {
     }
 
     // File path (Unix-style)
-    if matches(pattern: filePathPattern, in: text) && !text.contains("\n") {
+    // "// TODO", "/imagine a cat" and "~5 minutes" all start like a path. A
+    // real one has a directory separator past the first character, or exists.
+    if matches(pattern: filePathPattern, in: text) && !text.contains("\n"),
+      !text.hasPrefix("//"),
+      text.dropFirst().contains("/")
+        || FileManager.default.fileExists(atPath: (text as NSString).expandingTildeInPath)
+    {
       results.append(.filePath(path: text))
     }
 
@@ -292,7 +298,7 @@ enum QuickActionAnalyzer {
     guard let data = raw.data(using: .utf8),
       let obj = try? JSONSerialization.jsonObject(with: data),
       let pretty = try? JSONSerialization.data(
-        withJSONObject: obj, options: [.prettyPrinted, .sortedKeys])
+        withJSONObject: obj, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
     else { return nil }
     return String(data: pretty, encoding: .utf8)
   }
@@ -300,7 +306,8 @@ enum QuickActionAnalyzer {
   static func minifyJSON(_ raw: String) -> String? {
     guard let data = raw.data(using: .utf8),
       let obj = try? JSONSerialization.jsonObject(with: data),
-      let compact = try? JSONSerialization.data(withJSONObject: obj, options: [])
+      let compact = try? JSONSerialization.data(
+        withJSONObject: obj, options: [.withoutEscapingSlashes])
     else { return nil }
     return String(data: compact, encoding: .utf8)
   }
@@ -690,6 +697,13 @@ struct ColorSpectrumView: View {
             Circle()
               .stroke(Color.white, lineWidth: 2)
           )
+          // Dark outer ring: the white one alone vanishes over the pale end
+          // of the spectrum, which is where white and grey colours sit
+          .overlay(
+            Circle()
+              .stroke(Color.black.opacity(0.45), lineWidth: 1)
+              .padding(-1.5)
+          )
           .position(
             x: (hue / 360.0) * size.width,
             y: (1.0 - saturation) * size.height
@@ -814,9 +828,9 @@ struct InlineColorEditor: View {
         }
       }
 
-      // Brightness slider
+      // Brightness slider ("V" for value, as in HSV: "B" is taken by blue below)
       ColorChannelSlider(
-        label: "B",
+        label: "V",
         value: $brightness,
         range: 0...100,
         color: .gray
@@ -1143,11 +1157,13 @@ struct ColorChipView: View {
     .padding(.vertical, 4)
     .background(
       Rectangle()
-        .fill(isSelected ? Color.accentColor.opacity(0.15) : Color.primary.opacity(0.06))
+        .fill(isSelected ? Brand.gray200 : Color.primary.opacity(0.06))
     )
     .overlay(
+      // Brand selection (ink outline), not system blue: this was the only
+      // accent-coloured selection state in the app
       Rectangle()
-        .stroke(isSelected ? Color.accentColor.opacity(0.5) : Color.clear, lineWidth: 1.5)
+        .strokeBorder(isSelected ? Brand.black : Color.clear, lineWidth: 1.5)
     )
     .contentShape(Rectangle())
   }

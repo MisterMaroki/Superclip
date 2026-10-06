@@ -131,7 +131,7 @@ struct ScreenshotCaptureOverlayView: View {
             Text(captureMode.rawValue)
               .font(.system(size: 13, weight: .medium))
           }
-          .foregroundStyle(mode == captureMode ? .black : .primary)
+          .foregroundStyle(mode == captureMode ? .black : .white)
           .padding(.horizontal, 14)
           .padding(.vertical, 8)
           .background(
@@ -143,7 +143,7 @@ struct ScreenshotCaptureOverlayView: View {
       }
 
       Rectangle()
-        .fill(Color.primary.opacity(0.2))
+        .fill(Color.white.opacity(0.2))
         .frame(width: 1, height: 20)
         .padding(.horizontal, 8)
 
@@ -152,14 +152,14 @@ struct ScreenshotCaptureOverlayView: View {
           .font(.system(size: 11, weight: .semibold, design: .monospaced))
           .padding(.horizontal, 6)
           .padding(.vertical, 2)
-          .background(Color.primary.opacity(0.2))
+          .background(Color.white.opacity(0.2))
         Text("Cancel")
           .font(.system(size: 13))
       }
-      .foregroundStyle(.primary.opacity(0.7))
+      .foregroundStyle(.white.opacity(0.7))
 
       Rectangle()
-        .fill(Color.primary.opacity(0.2))
+        .fill(Color.white.opacity(0.2))
         .frame(width: 1, height: 20)
         .padding(.horizontal, 8)
 
@@ -168,11 +168,11 @@ struct ScreenshotCaptureOverlayView: View {
           .font(.system(size: 11, weight: .semibold, design: .monospaced))
           .padding(.horizontal, 6)
           .padding(.vertical, 2)
-          .background(Color.primary.opacity(0.2))
+          .background(Color.white.opacity(0.2))
         Text("Switch mode")
           .font(.system(size: 13))
       }
-      .foregroundStyle(.primary.opacity(0.7))
+      .foregroundStyle(.white.opacity(0.7))
     }
     .padding(.horizontal, 20)
     .padding(.vertical, 12)
@@ -235,7 +235,7 @@ struct ScreenshotCaptureOverlayView: View {
     let text = "\(Int(rect.width)) x \(Int(rect.height))"
     Text(text)
       .font(.system(size: 11, weight: .medium, design: .monospaced))
-      .foregroundStyle(.primary)
+      .foregroundStyle(.white)
       .padding(.horizontal, 8)
       .padding(.vertical, 4)
       .background(Color.black.opacity(0.7))
@@ -269,10 +269,10 @@ struct ScreenshotCaptureOverlayView: View {
         VStack(spacing: 8) {
           Image(systemName: "cursorarrow.click.2")
             .font(.system(size: 28))
-            .foregroundStyle(.primary.opacity(0.5))
+            .foregroundStyle(.white.opacity(0.5))
           Text("Hover over a window and click to capture")
             .font(.system(size: 14, weight: .medium))
-            .foregroundStyle(.primary.opacity(0.6))
+            .foregroundStyle(.white.opacity(0.6))
         }
         .padding(20)
         .background(Color.black.opacity(0.5))
@@ -301,11 +301,11 @@ struct ScreenshotCaptureOverlayView: View {
     VStack(spacing: 16) {
       Image(systemName: "rectangle.inset.filled")
         .font(.system(size: 36))
-        .foregroundStyle(.primary.opacity(0.6))
+        .foregroundStyle(.white.opacity(0.6))
 
       Text("Click anywhere to capture the full screen")
         .font(.system(size: 15, weight: .medium))
-        .foregroundStyle(.primary.opacity(0.7))
+        .foregroundStyle(.white.opacity(0.7))
     }
     .padding(24)
     .background(Color.black.opacity(0.5))

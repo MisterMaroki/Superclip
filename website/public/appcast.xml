@@ -3,12 +3,12 @@
     <channel>
         <title>Superclip</title>
         <item>
-            <title>1.1</title>
-            <pubDate>Fri, 18 Sep 2026 16:34:15 +0100</pubDate>
-            <sparkle:version>2</sparkle:version>
-            <sparkle:shortVersionString>1.1</sparkle:shortVersionString>
+            <title>1.2</title>
+            <pubDate>Tue, 06 Oct 2026 20:21:30 +0100</pubDate>
+            <sparkle:version>3</sparkle:version>
+            <sparkle:shortVersionString>1.2</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <enclosure url="https://superclip-tan.vercel.app/releases/Superclip-1.1.dmg" length="3447814" type="application/octet-stream" sparkle:edSignature="16Mrwe9TSkrZiPUAhdVzHFy6GDGU18YB6zwaeizvLeZP5lSV9dbPIA2Lo2IUcy0nA30XAyxeVpV5+6Ep6p0wCw=="/>
+            <enclosure url="https://superclip-tan.vercel.app/releases/Superclip-1.2.dmg" length="3913665" type="application/octet-stream" sparkle:edSignature="4YKifsn1xK7wUnOBiFEvnN4r+qDYxSHuXEX5Yq67yQLLE+BM5rWzAaOiV664U/5gr/YvkaISNxEYSHx75GBVCg=="/>
         </item>
     </channel>
 </rss>

@@ -1,0 +1,5 @@
+# Only the website is deployed: the Vercel project's Root Directory is `website`.
+# Without this file the CLI uploads the whole repository, including local build
+# output (hundreds of megabytes).
+/*
+!/website

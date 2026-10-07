@@ -23,6 +23,8 @@ enum ScreenshotCaptureMode: String, CaseIterable {
 
 struct ScreenshotCaptureOverlayView: View {
   let screenFrame: NSRect
+  /// The display this overlay covers; every capture reads from it.
+  let target: CaptureTarget
   let captureManager: ScreenCaptureManager
   let onCapture: (NSImage) -> Void
   let onCancel: () -> Void
@@ -330,7 +332,7 @@ struct ScreenshotCaptureOverlayView: View {
 
     Task {
       do {
-        let image = try await captureManager.captureArea(rect: captureRect)
+        let image = try await captureManager.captureArea(rect: captureRect, on: target)
         await MainActor.run {
           onCapture(image)
         }
@@ -351,7 +353,7 @@ struct ScreenshotCaptureOverlayView: View {
 
     Task {
       do {
-        let image = try await captureManager.captureWindow(window)
+        let image = try await captureManager.captureWindow(window, scale: target.scale)
         await MainActor.run {
           onCapture(image)
         }
@@ -366,7 +368,7 @@ struct ScreenshotCaptureOverlayView: View {
   private func captureFullscreenImage() {
     Task {
       do {
-        let image = try await captureManager.captureFullscreen()
+        let image = try await captureManager.captureFullscreen(on: target)
         await MainActor.run {
           onCapture(image)
         }
@@ -416,19 +418,19 @@ struct ScreenshotCaptureOverlayView: View {
       .min(by: { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height })
   }
 
-  /// Convert view coordinates (SwiftUI, top-left origin) to screen coordinates (Core Graphics, top-left origin)
+  /// Convert a point in this overlay (top-left origin) to Core Graphics
+  /// global coordinates, which is what window frames are reported in. Both
+  /// axes need this display's offset: assuming y started at 0 only held on
+  /// the primary display.
   private func viewToScreen(_ point: CGPoint, screenFrame: NSRect) -> CGPoint {
-    CGPoint(
-      x: screenFrame.minX + point.x,
-      y: point.y  // Both SwiftUI and SCWindow use top-left origin
-    )
+    CGPoint(x: target.cgOrigin.x + point.x, y: target.cgOrigin.y + point.y)
   }
 
-  /// Convert screen coordinates (Core Graphics, top-left origin) to view coordinates (SwiftUI)
+  /// Convert a rectangle in Core Graphics global coordinates to this overlay's coordinates
   private func screenToView(_ rect: CGRect, screenFrame: NSRect) -> CGRect {
     CGRect(
-      x: rect.minX - screenFrame.minX,
-      y: rect.minY,  // Both use top-left origin in this context
+      x: rect.minX - target.cgOrigin.x,
+      y: rect.minY - target.cgOrigin.y,
       width: rect.width,
       height: rect.height
     )

@@ -11,10 +11,13 @@ class ScreenshotCapturePanel: NSPanel {
   var onCancel: (() -> Void)?
   private var localKeyMonitor: Any?
   private let screenFrame: NSRect
+  private let target: CaptureTarget
   private let captureManager = ScreenCaptureManager()
 
-  init(screenFrame: NSRect) {
-    self.screenFrame = screenFrame
+  /// - Parameter screen: the display to cover and capture from.
+  init(screen: NSScreen) {
+    self.screenFrame = screen.frame
+    self.target = CaptureTarget(screen: screen)
 
     super.init(
       contentRect: screenFrame,
@@ -62,6 +65,7 @@ class ScreenshotCapturePanel: NSPanel {
   private func setupContentView() {
     let overlayView = ScreenshotCaptureOverlayView(
       screenFrame: screenFrame,
+      target: target,
       captureManager: captureManager,
       onCapture: { [weak self] image in
         self?.handleCapture(image)
@@ -139,6 +143,14 @@ class ScreenshotCapturePanel: NSPanel {
 
     cleanupPanel()
     cancelCallback?()
+  }
+
+  /// Close without reporting a capture or a cancel: the overlay is being
+  /// moved to another display, not dismissed.
+  func dismissSilently() {
+    onCapture = nil
+    onCancel = nil
+    cleanupPanel()
   }
 
   private func cleanupPanel() {

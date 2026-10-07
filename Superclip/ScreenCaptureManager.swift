@@ -6,103 +6,111 @@
 import AppKit
 import ScreenCaptureKit
 
+/// The display a capture is for, fixed at the moment the capture overlay opens.
+///
+/// Captures used to ask `NSScreen.main` which display to read *at capture
+/// time*. While the overlay is up that is not the display the overlay is on:
+/// the overlay panel can be key but never main, so with the overlay on a
+/// second display AppKit still reported the primary one. The rectangle
+/// selected on display 2 was then read from display 1.
+struct CaptureTarget {
+  let displayID: CGDirectDisplayID
+  /// The display's frame in AppKit's global coordinates (origin bottom-left).
+  let frame: NSRect
+  let scale: CGFloat
+
+  init(screen: NSScreen) {
+    let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber
+    displayID = number.map { CGDirectDisplayID($0.uint32Value) } ?? CGMainDisplayID()
+    frame = screen.frame
+    scale = screen.backingScaleFactor
+  }
+
+  /// The screen the pointer is on: where the user is about to select.
+  static func screenUnderPointer() -> NSScreen? {
+    let mouse = NSEvent.mouseLocation
+    return NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main
+  }
+
+  /// This display's top-left corner in Core Graphics global coordinates
+  /// (origin at the top-left of the primary display, y growing downward).
+  /// ScreenCaptureKit reports window frames in this space.
+  var cgOrigin: CGPoint {
+    let primaryHeight = NSScreen.screens.first?.frame.height ?? frame.height
+    return CGPoint(x: frame.minX, y: primaryHeight - frame.maxY)
+  }
+}
+
 /// Shared capture engine for area, fullscreen, and window screenshot capture.
 /// Used by both the OCR flow and the screenshot capture flow.
 class ScreenCaptureManager {
 
-  /// Display ID of the screen with keyboard focus — the screen the capture
-  /// overlay panel is shown on. Falling back to CGMainDisplayID (the primary
-  /// display) captures the wrong monitor on multi-display setups.
-  @MainActor
-  private static func focusedDisplayID() -> CGDirectDisplayID {
-    let key = NSDeviceDescriptionKey("NSScreenNumber")
-    if let id = (NSScreen.main?.deviceDescription[key] as? NSNumber)?.uint32Value {
-      return CGDirectDisplayID(id)
-    }
-    return CGMainDisplayID()
-  }
-
-  /// Capture a rectangular region of the focused display.
-  func captureArea(rect: NSRect) async throws -> NSImage {
-    let scaleFactor = await MainActor.run { NSScreen.main?.backingScaleFactor ?? 2.0 }
-    let targetDisplayID = await Self.focusedDisplayID()
-
-    let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-
-    guard let display = content.displays.first(where: { $0.displayID == targetDisplayID })
-      ?? content.displays.first
-    else {
+  private func display(for target: CaptureTarget, in content: SCShareableContent) throws -> SCDisplay {
+    // No silent fallback to "the first display": capturing the wrong screen
+    // is worse than reporting that the right one was not found.
+    guard let display = content.displays.first(where: { $0.displayID == target.displayID }) else {
       throw ScreenCaptureError.noDisplay
     }
+    return display
+  }
 
+  private func filter(for display: SCDisplay, in content: SCShareableContent) -> SCContentFilter {
     let ourBundleID = Bundle.main.bundleIdentifier ?? ""
     let windowsToExclude = content.windows.filter {
       $0.owningApplication?.bundleIdentifier == ourBundleID
     }
+    return SCContentFilter(display: display, excludingWindows: windowsToExclude)
+  }
 
-    let filter = SCContentFilter(display: display, excludingWindows: windowsToExclude)
+  /// Capture a rectangular region of the target display. `rect` is in the
+  /// display's own points, origin top-left.
+  func captureArea(rect: NSRect, on target: CaptureTarget) async throws -> NSImage {
+    let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+    let display = try display(for: target, in: content)
 
     let config = SCStreamConfiguration()
     config.sourceRect = rect
-    config.width = Int(rect.width * scaleFactor)
-    config.height = Int(rect.height * scaleFactor)
+    config.width = Int(rect.width * target.scale)
+    config.height = Int(rect.height * target.scale)
     config.scalesToFit = true
     config.showsCursor = false
     config.pixelFormat = kCVPixelFormatType_32BGRA
 
     let cgImage = try await SCScreenshotManager.captureImage(
-      contentFilter: filter,
+      contentFilter: filter(for: display, in: content),
       configuration: config
     )
 
     return NSImage(cgImage: cgImage, size: NSSize(width: rect.width, height: rect.height))
   }
 
-  /// Capture the entire focused display.
-  func captureFullscreen() async throws -> NSImage {
-    let targetDisplayID = await Self.focusedDisplayID()
+  /// Capture the whole target display.
+  func captureFullscreen(on target: CaptureTarget) async throws -> NSImage {
     let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-
-    guard let display = content.displays.first(where: { $0.displayID == targetDisplayID })
-      ?? content.displays.first
-    else {
-      throw ScreenCaptureError.noDisplay
-    }
-
-    let ourBundleID = Bundle.main.bundleIdentifier ?? ""
-    let windowsToExclude = content.windows.filter {
-      $0.owningApplication?.bundleIdentifier == ourBundleID
-    }
-
-    let filter = SCContentFilter(display: display, excludingWindows: windowsToExclude)
-
-    let scaleFactor = await MainActor.run { NSScreen.main?.backingScaleFactor ?? 2.0 }
-    let screenFrame = await MainActor.run { NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 1920, height: 1080) }
+    let display = try display(for: target, in: content)
 
     let config = SCStreamConfiguration()
-    config.width = Int(screenFrame.width * scaleFactor)
-    config.height = Int(screenFrame.height * scaleFactor)
+    config.width = Int(target.frame.width * target.scale)
+    config.height = Int(target.frame.height * target.scale)
     config.scalesToFit = true
     config.showsCursor = false
     config.pixelFormat = kCVPixelFormatType_32BGRA
 
     let cgImage = try await SCScreenshotManager.captureImage(
-      contentFilter: filter,
+      contentFilter: filter(for: display, in: content),
       configuration: config
     )
 
-    return NSImage(cgImage: cgImage, size: screenFrame.size)
+    return NSImage(cgImage: cgImage, size: target.frame.size)
   }
 
-  /// Capture a specific window.
-  func captureWindow(_ window: SCWindow) async throws -> NSImage {
+  /// Capture a specific window at the given display scale.
+  func captureWindow(_ window: SCWindow, scale: CGFloat) async throws -> NSImage {
     let filter = SCContentFilter(desktopIndependentWindow: window)
 
-    let scaleFactor = await MainActor.run { NSScreen.main?.backingScaleFactor ?? 2.0 }
-
     let config = SCStreamConfiguration()
-    config.width = Int(CGFloat(window.frame.width) * scaleFactor)
-    config.height = Int(CGFloat(window.frame.height) * scaleFactor)
+    config.width = Int(CGFloat(window.frame.width) * scale)
+    config.height = Int(CGFloat(window.frame.height) * scale)
     config.scalesToFit = true
     config.showsCursor = false
     config.pixelFormat = kCVPixelFormatType_32BGRA

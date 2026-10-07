@@ -549,6 +549,30 @@ check("image copy: a JPEG stays a JPEG (not inflated to PNG)", firstType() == "p
 check("image copy: junk is refused rather than written", !ClipboardManager.writeImage(Data("not an image".utf8), to: pb))
 for item in [pngItem, tiffItem, jpegItem] { ImageStore.shared.delete(for: item.id) }
 
+
+// ---------------------------------------------------------------- Capture targets (multiple displays)
+
+// Checked against Core Graphics for every display actually connected, so on a
+// multi-display setup this exercises the secondary-display maths for real.
+print("info  displays connected: \(NSScreen.screens.count)")
+for screen in NSScreen.screens {
+  let target = CaptureTarget(screen: screen)
+  let number = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value
+  check("capture: target carries its own display's ID (\(target.displayID))", number.map { CGDirectDisplayID($0) } == target.displayID)
+  let cg = CGDisplayBounds(target.displayID)
+  check("capture: display \(target.displayID) origin matches Core Graphics",
+        abs(target.cgOrigin.x - cg.origin.x) < 0.5 && abs(target.cgOrigin.y - cg.origin.y) < 0.5,
+        "\(target.cgOrigin) vs \(cg.origin)")
+  check("capture: display \(target.displayID) uses its own scale and size",
+        target.scale == screen.backingScaleFactor && target.frame.size == screen.frame.size)
+}
+if let underPointer = CaptureTarget.screenUnderPointer() {
+  check("capture: the screen under the pointer contains the pointer",
+        NSMouseInRect(NSEvent.mouseLocation, underPointer.frame, false) || NSScreen.screens.count == 1)
+}
+let ids = Set(NSScreen.screens.map { CaptureTarget(screen: $0).displayID })
+check("capture: every display gets a distinct target", ids.count == NSScreen.screens.count)
+
 clipboard.clearHistory()
 spin(0.2)
 pb.releaseGlobally()

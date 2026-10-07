@@ -126,6 +126,14 @@ class ScreenCapturePanel: NSPanel {
     cancelCallback?()
   }
 
+  /// Close without reporting a capture or a cancel: the overlay is being
+  /// moved to another display, not dismissed.
+  func dismissSilently() {
+    onCapture = nil
+    onCancel = nil
+    cleanupPanel()
+  }
+
   private func cleanupPanel() {
     // Remove event monitor
     if let monitor = localKeyMonitor {

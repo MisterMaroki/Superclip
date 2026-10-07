@@ -29,6 +29,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   var ocrHotKey: HotKey?
   var screenshotHotKey: HotKey?
   var fullscreenScreenshotHotKey: HotKey?
+  /// The display the last screenshot came from; its thumbnail appears there.
+  private var captureScreen: NSScreen?
   private var isQuickCapturing = false
   private var hotkeyCancellables = Set<AnyCancellable>()
   var screenCaptureWindow: NSWindow?
@@ -1262,17 +1264,26 @@ class AppDelegate: NSObject, NSApplicationDelegate {
       return
     }
 
-    // Get the main screen frame
-    guard let screen = NSScreen.main else { return }
-    let screenFrame = screen.frame
+    guard let screen = CaptureTarget.screenUnderPointer() else { return }
+    presentTextSniperOverlay(on: screen)
+    followPointer { [weak self] screen in self?.presentTextSniperOverlay(on: screen) }
+  }
 
-    // Create and show the capture panel
-    let capturePanel = ScreenCapturePanel(screenFrame: screenFrame)
+  /// Show the Text Sniper overlay on one display. The capture reads from this
+  /// display, not from whichever one AppKit calls main.
+  private func presentTextSniperOverlay(on screen: NSScreen) {
+    (screenCaptureWindow as? ScreenCapturePanel)?.dismissSilently()
+    captureScreen = screen
+    let target = CaptureTarget(screen: screen)
+
+    let capturePanel = ScreenCapturePanel(screenFrame: screen.frame)
     capturePanel.onCapture = { [weak self] rect in
-      self?.captureScreenRegion(rect)
+      self?.stopFollowingPointer()
+      self?.captureScreenRegion(rect, on: target)
       self?.screenCaptureWindow = nil
     }
     capturePanel.onCancel = { [weak self] in
+      self?.stopFollowingPointer()
       self?.screenCaptureWindow = nil
     }
 
@@ -1281,12 +1292,43 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     NSApp.activate(ignoringOtherApps: true)
   }
 
-  private func captureScreenRegion(_ rect: NSRect) {
+  // MARK: - Capture overlay follows the pointer
+
+  private var pointerFollowTimer: Timer?
+
+  /// Keep an open capture overlay on whichever display the pointer is on,
+  /// until the user starts interacting with it. Pressing the hotkey and then
+  /// moving to the other display should just work.
+  private func followPointer(reopen: @escaping (NSScreen) -> Void) {
+    stopFollowingPointer()
+    let timer = Timer(timeInterval: 0.08, repeats: true) { [weak self] timer in
+      guard let self = self else {
+        timer.invalidate()
+        return
+      }
+      // A click or drag has started on this display: it stays here
+      if NSEvent.pressedMouseButtons != 0 {
+        self.stopFollowingPointer()
+        return
+      }
+      guard let screen = CaptureTarget.screenUnderPointer(), screen != self.captureScreen else { return }
+      reopen(screen)
+    }
+    RunLoop.main.add(timer, forMode: .common)
+    pointerFollowTimer = timer
+  }
+
+  private func stopFollowingPointer() {
+    pointerFollowTimer?.invalidate()
+    pointerFollowTimer = nil
+  }
+
+  private func captureScreenRegion(_ rect: NSRect, on target: CaptureTarget) {
     Task { [weak self] in
       guard let self = self else { return }
 
       do {
-        let image = try await self.screenCaptureManager.captureArea(rect: rect)
+        let image = try await self.screenCaptureManager.captureArea(rect: rect, on: target)
 
         // Recognise off the main thread: this Task runs on the main actor, so
         // the synchronous call froze the whole UI for the duration of the OCR.
@@ -1419,10 +1461,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
       return
     }
 
+    guard let screen = CaptureTarget.screenUnderPointer() else { return }
+    captureScreen = screen
+    let target = CaptureTarget(screen: screen)
+
     isQuickCapturing = true
     let manager = screenCaptureManager
     Task { [weak self] in
-      let image = try? await manager.captureFullscreen()
+      let image = try? await manager.captureFullscreen(on: target)
       await MainActor.run { [weak self] in
         guard let self = self else { return }
         self.isQuickCapturing = false
@@ -1449,17 +1495,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
       return
     }
 
-    // Get the main screen frame
-    guard let screen = NSScreen.main else { return }
-    let screenFrame = screen.frame
+    // The display the pointer is on is the one to capture
+    guard let screen = CaptureTarget.screenUnderPointer() else { return }
+    presentScreenshotOverlay(on: screen)
+    followPointer { [weak self] screen in self?.presentScreenshotOverlay(on: screen) }
+  }
 
-    // Create and show the screenshot capture panel
-    let capturePanel = ScreenshotCapturePanel(screenFrame: screenFrame)
+  private func presentScreenshotOverlay(on screen: NSScreen) {
+    (screenshotCaptureWindow as? ScreenshotCapturePanel)?.dismissSilently()
+    captureScreen = screen
+
+    let capturePanel = ScreenshotCapturePanel(screen: screen)
     capturePanel.onCapture = { [weak self] image in
+      self?.stopFollowingPointer()
       self?.handleScreenshotCapture(image)
       self?.screenshotCaptureWindow = nil
     }
     capturePanel.onCancel = { [weak self] in
+      self?.stopFollowingPointer()
       self?.screenshotCaptureWindow = nil
     }
 
@@ -1563,8 +1616,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     let panel = FloatingOverlayPanel(thumbnail: thumbnail, pngData: pngData)
     panel.appDelegate = self
 
-    // Position off-screen initially (below visible area) so it slides up
-    guard let screen = NSScreen.main else { return }
+    // Position off-screen initially (below visible area) so it slides up.
+    // On the display that was captured, so it appears where the user is looking.
+    guard let screen = captureScreen ?? NSScreen.main else { return }
     let screenFrame = screen.visibleFrame
     let startX = screenFrame.minX + overlayPadding
     panel.setFrameOrigin(NSPoint(x: startX, y: screenFrame.minY - panel.frame.height))
@@ -1592,7 +1646,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   /// Recalculate and animate all floating overlay positions.
   /// Stacks from bottom-left upward, newest on top.
   private func relayoutFloatingOverlays() {
-    guard let screen = NSScreen.main else { return }
+    guard let screen = captureScreen ?? NSScreen.main else { return }
     let screenFrame = screen.visibleFrame
     let x = screenFrame.minX + overlayPadding
     var y = screenFrame.minY + overlayPadding

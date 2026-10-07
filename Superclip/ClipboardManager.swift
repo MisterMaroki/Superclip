@@ -786,6 +786,11 @@ class ClipboardManager: ObservableObject {
 
   /// Image dimensions string ("W×H") read from compressed data headers via
   /// CGImageSource — no full bitmap decode.
+  /// "WIDTH×HEIGHT" in pixels for image bytes, the label image clips carry.
+  static func imageDimensionsText(for data: Data) -> String {
+    imageDescription(from: data)
+  }
+
   private static func imageDescription(from data: Data) -> String {
     guard let source = CGImageSourceCreateWithData(data as CFData, nil),
       let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],

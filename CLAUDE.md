@@ -134,6 +134,12 @@ Panels use `floatingLevel` and `canJoinAllSpaces`.
 - One JSON file with history, images, rich text, pinboards and snippets
 - Import merges; it never replaces or deletes existing data
 
+**PasteImporter** (`PasteImport.swift`) - Import from the Paste app:
+
+- Reads a copy of Paste's Core Data store (`db.sqlite` in the folder the user picks); never writes to Paste's data
+- Payloads are plist or JSON, sometimes LZFSE/zlib compressed, sometimes in an external file
+- Merges like any import: duplicates are skipped, pinboards with the same name are joined
+
 ## Dependencies
 
 Managed via Swift Package Manager:

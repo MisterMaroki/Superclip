@@ -5,6 +5,7 @@
 // directory: it never reads or writes the real clipboard or real Superclip data.
 import AppKit
 import CloudKit
+import SQLite3
 
 let app = NSApplication.shared
 app.setActivationPolicy(.prohibited)
@@ -572,6 +573,111 @@ if let underPointer = CaptureTarget.screenUnderPointer() {
 }
 let ids = Set(NSScreen.screens.map { CaptureTarget(screen: $0).displayID })
 check("capture: every display gets a distinct target", ids.count == NSScreen.screens.count)
+
+
+// ---------------------------------------------------------------- Import from Paste
+
+// A miniature Paste data folder, built the way Paste 7 stores things: Core
+// Data tables, payloads as plist or JSON, some compressed, one stored in an
+// external file.
+let pasteFolder = FileManager.default.temporaryDirectory.appendingPathComponent("paste-fixture-\(UUID().uuidString)")
+let pasteExternal = pasteFolder.appendingPathComponent(".db_SUPPORT/_EXTERNAL_DATA")
+try! FileManager.default.createDirectory(at: pasteExternal, withIntermediateDirectories: true)
+var fixture: OpaquePointer?
+sqlite3_open(pasteFolder.appendingPathComponent("db.sqlite").path, &fixture)
+func run(_ sql: String) { precondition(sqlite3_exec(fixture, sql, nil, nil, nil) == SQLITE_OK, String(cString: sqlite3_errmsg(fixture))) }
+run("create table ZLISTENTITY (Z_PK integer primary key, ZRAWTYPE integer, ZNAME varchar, ZRAWATTRIBUTES blob)")
+run("create table ZLISTMETADATAENTITY (Z_PK integer primary key, ZINDEX integer, ZLIST integer)")
+run("create table ZAPPLICATIONENTITY (Z_PK integer primary key, ZNAME varchar, ZBUNDLEIDENTIFIER varchar)")
+run("create table ZITEMDATAENTITY (Z_PK integer primary key, ZRAWPASTEBOARDITEMS blob)")
+run("create table ZITEMENTITY (Z_PK integer primary key, ZRAWTYPE integer, ZIDENTIFIER varchar, ZTITLE varchar, ZTIMESTAMP timestamp, ZCREATEDAT timestamp, ZLIST integer, ZDISPLAYORDERINPINBOARD integer, ZDATA integer, ZSOURCEAPPLICATION integer)")
+
+func inline(_ data: Data) -> Data { Data([1]) + data }
+func plistPayload(_ byType: [String: Any]) -> Data {
+  try! PropertyListSerialization.data(fromPropertyList: [["dataByType": byType, "types": Array(byType.keys)]], format: .binary, options: 0)
+}
+func jsonPayload(_ byType: [String: String]) -> Data {
+  try! JSONSerialization.data(withJSONObject: [["dataByType": byType, "types": Array(byType.keys)]])
+}
+func squeeze(_ data: Data, _ algorithm: NSData.CompressionAlgorithm) -> Data { try! (data as NSData).compressed(using: algorithm) as Data }
+func insertBlob(_ sql: String, _ blob: Data) {
+  var stmt: OpaquePointer?
+  sqlite3_prepare_v2(fixture, sql, -1, &stmt, nil)
+  _ = blob.withUnsafeBytes { sqlite3_bind_blob(stmt, 1, $0.baseAddress, Int32(blob.count), unsafeBitCast(-1, to: sqlite3_destructor_type.self)) }
+  precondition(sqlite3_step(stmt) == SQLITE_DONE)
+  sqlite3_finalize(stmt)
+}
+var nextKey = 1
+func addItem(type: Int, payload: Data, title: String? = nil, list: Int? = nil, order: Int = 0, age: Double, app: Int? = 1) {
+  let key = nextKey; nextKey += 1
+  insertBlob("insert into ZITEMDATAENTITY (Z_PK, ZRAWPASTEBOARDITEMS) values (\(key), ?)", payload)
+  let when = Date().timeIntervalSinceReferenceDate - age
+  run("insert into ZITEMENTITY values (\(key), \(type), '\(UUID().uuidString)', \(title.map { "'\($0)'" } ?? "null"), \(when), \(when), \(list.map(String.init) ?? "null"), \(order), \(key), \(app.map(String.init) ?? "null"))")
+}
+run("insert into ZAPPLICATIONENTITY values (1, 'Safari', 'com.apple.Safari')")
+insertBlob("insert into ZLISTENTITY values (1, 1, 'Clipboard', ?)", inline(Data(#"{"type":"clipboard"}"#.utf8)))
+insertBlob("insert into ZLISTENTITY values (2, 2, 'Useful Links', ?)", inline(Data(#"{"type":"pinboard","colorCode":31487}"#.utf8)))   // 0x007AFF
+insertBlob("insert into ZLISTENTITY values (3, 2, 'Useful Links', ?)", inline(Data(#"{"type":"pinboard","colorCode":4294917120}"#.utf8)))
+insertBlob("insert into ZLISTENTITY values (4, 2, 'Snaps', ?)", inline(Data(#"{"type":"pinboard","colorCode":3458905}"#.utf8)))  // 0x34C759
+run("insert into ZLISTMETADATAENTITY values (1, 0, 1), (2, 1, 2), (3, 2, 3), (4, 3, 4)")
+
+addItem(type: 5, payload: inline(plistPayload(["public.utf8-plain-text": Data("plain plist text".utf8)])), age: 10)
+addItem(type: 5, payload: inline(squeeze(plistPayload(["public.utf8-plain-text": Data("  lzfse text with indent\n".utf8)]), .lzfse)), age: 20)
+addItem(type: 5, payload: inline(squeeze(jsonPayload(["public.utf8-plain-text": "zlib json text"]), .zlib)), age: 30)
+addItem(type: 4, payload: inline(plistPayload(["public.url": "https://example.com/a", "public.url-name": "Example A", "public.utf8-plain-text": "https://example.com/a"])), list: 2, order: 2, age: 40)
+addItem(type: 4, payload: inline(jsonPayload(["public.url": "https://example.com/b"])), title: "Custom title", list: 3, order: 1, age: 50)
+let externalName = UUID().uuidString
+try! plistPayload(["public.png": shotPNG]).write(to: pasteExternal.appendingPathComponent(externalName))
+addItem(type: 1, payload: Data([2]) + Data(externalName.utf8) + Data([0]), list: 4, order: 0, age: 60)
+addItem(type: 3, payload: inline(plistPayload(["public.file-url": Data("file:///Applications/Safari.app/".utf8)])), age: 70)
+addItem(type: 0, payload: inline(plistPayload(["org.chromium.web-custom-data": Data([1, 2, 3])])), age: 80)   // nothing to import
+addItem(type: 5, payload: inline(Data("garbage that is no format at all".utf8)), age: 90)                       // unreadable
+sqlite3_close(fixture)
+
+let pasteLibrary = try! PasteImporter.read(folder: pasteFolder)
+func pasteTexts(_ kind: PasteImporter.Kind) -> [String] { pasteLibrary.items.filter { $0.kind == kind }.map(\.text) }
+check("paste import: reads plain, LZFSE and zlib+JSON text alike",
+      Set(pasteTexts(.text)) == ["plain plist text", "  lzfse text with indent\n", "zlib json text"], "\(pasteTexts(.text))")
+check("paste import: text keeps its whitespace", pasteTexts(.text).contains("  lzfse text with indent\n"))
+check("paste import: links carry their URL", Set(pasteTexts(.link)) == ["https://example.com/a", "https://example.com/b"])
+check("paste import: a link takes Paste's page title, or the custom title when set",
+      Set(pasteLibrary.items.filter { $0.kind == .link }.compactMap(\.title)) == ["Example A", "Custom title"])
+check("paste import: an image stored in an external file is read", pasteLibrary.items.first { $0.kind == .image }?.imageData == shotPNG)
+check("paste import: copied files keep their path", pasteLibrary.items.first { $0.kind == .files }?.fileURLs.first?.path == "/Applications/Safari.app")
+check("paste import: items with nothing usable are counted, not imported", pasteLibrary.skipped == 2 && pasteLibrary.items.count == 7, "\(pasteLibrary.skipped) / \(pasteLibrary.items.count)")
+check("paste import: only pinboards become lists (not the history list)", pasteLibrary.lists.map(\.name) == ["Useful Links", "Useful Links", "Snaps"], "\(pasteLibrary.lists.map(\.name))")
+check("paste import: colours map to the nearest Superclip colour", pasteLibrary.lists.map(\.color) == [.blue, .red, .green], "\(pasteLibrary.lists.map(\.color))")
+check("paste import: the source app comes across", pasteLibrary.items.allSatisfy { $0.appName == "Safari" && $0.bundleID == "com.apple.Safari" })
+check("paste import: a folder without Paste's database is refused",
+      (try? PasteImporter.read(folder: FileManager.default.temporaryDirectory.appendingPathComponent("nope-\(UUID().uuidString)"))) == nil)
+
+// merging into Superclip
+clipboard.clearHistory(includingPinned: true)
+spin(0.2)
+let pasteBoards = PinboardManager()
+for b in pasteBoards.pinboards { pasteBoards.deletePinboard(b) }
+clipboard.isItemProtected = { id in pasteBoards.pinboards.contains { $0.itemIds.contains(id) } }
+clipboard.onItemsPurged = nil
+userCopies("zlib json text")          // already in Superclip under another ID
+let existingLinks = pasteBoards.createPinboard(name: "useful links", color: .purple)   // same name, different case
+let pasteSummary = PasteImporter.merge(pasteLibrary, clipboard: clipboard, pinboards: pasteBoards)
+print("info  paste fixture import: \(pasteSummary.description)")
+check("paste import: new clips are added, duplicates are not", pasteSummary.clips == 6 && pasteSummary.alreadyHere == 1 && clipboard.history.count == 7, "\(pasteSummary) / \(clipboard.history.count)")
+check("paste import: history is ordered by when each clip was last used in Paste",
+      clipboard.history.map(\.timestamp) == clipboard.history.map(\.timestamp).sorted(by: >))
+let importedLink = clipboard.history.first { $0.content == "https://example.com/a" }
+check("paste import: a link becomes a link card with its title", importedLink?.type == .url && importedLink?.linkMetadata?.title == "Example A")
+let importedImage = clipboard.history.first { $0.type == .image }
+check("paste import: an image becomes an image card with its bytes stored", importedImage.map { $0.hasImage && ImageStore.shared.loadData(for: $0.id) == shotPNG && $0.content == "928\u{00D7}1946" } ?? false, "\(String(describing: importedImage?.content))")
+check("paste import: same-named pinboards merge into the one already here", pasteBoards.pinboards.filter { $0.name.lowercased() == "useful links" }.count == 1)
+let mergedLinks = pasteBoards.pinboards.first { $0.id == existingLinks.id }
+check("paste import: both Paste boards' pins land on it", mergedLinks?.itemIds.count == 2 && mergedLinks?.color == .purple, "\(String(describing: mergedLinks?.itemIds.count))")
+check("paste import: a new pinboard is created with its colour and pin", pasteBoards.pinboards.first { $0.name == "Snaps" }.map { $0.color == .green && $0.itemIds == [importedImage?.id].compactMap { $0 } } ?? false)
+check("paste import: summary counts new boards and pins", pasteSummary.pinboards == 1 && pasteSummary.pins == 3 && pasteSummary.skipped == 2, "\(pasteSummary)")
+let again2 = PasteImporter.merge(pasteLibrary, clipboard: clipboard, pinboards: pasteBoards)
+check("paste import: importing twice adds nothing", again2.clips == 0 && again2.pins == 0 && again2.pinboards == 0 && clipboard.history.count == 7, "\(again2)")
+try? FileManager.default.removeItem(at: pasteFolder)
+for b in pasteBoards.pinboards { pasteBoards.deletePinboard(b) }
 
 clipboard.clearHistory()
 spin(0.2)

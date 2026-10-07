@@ -144,6 +144,7 @@ clearing history keeps pinned items
 pinboards persisted across launches
 snippets persisted across launches
 export/import history, pinboards and snippets (settings > storage)
+import history and pinboards from the Paste app (settings > storage)
 
 iCloud Sync (needs setup, see SYNC_SETUP.md):
 clips, pinboards and snippets sync between Mac and iPhone through the user's iCloud

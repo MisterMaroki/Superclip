@@ -1095,6 +1095,7 @@ struct StorageSettingsPane: View {
     @State private var showClearHistoryAlert = false
     @State private var showClearPinboardsAlert = false
     @State private var transferMessage: String?
+    @State private var isImportingFromPaste = false
 
     private let historySizeOptions = [0, 25, 50, 100, 200, 500]
 
@@ -1159,6 +1160,15 @@ struct StorageSettingsPane: View {
                         action: { importData() }
                     )
                     SettingsDivider()
+                    SettingsButtonRow(
+                        title: "Import from Paste",
+                        subtitle: isImportingFromPaste
+                            ? "Importing\u{2026}"
+                            : "Bring your Paste clipboard history and pinboards into Superclip",
+                        buttonTitle: "Import",
+                        action: { importFromPaste() }
+                    )
+                    SettingsDivider()
                     SettingsToggleRow(
                         title: "Clear on quit",
                         subtitle: "Erase history when Superclip quits",
@@ -1211,6 +1221,39 @@ struct StorageSettingsPane: View {
             transferMessage = "Exported \(clipboardManager.history.count) clips, \(pinboardManager.pinboards.count) pinboards and \(snippetManager.snippets.count) snippets."
         } catch {
             transferMessage = "Export failed: \(error.localizedDescription)"
+        }
+    }
+
+    /// Import history and pinboards from Paste. The user points at Paste's
+    /// data folder (the sandbox needs that explicit choice to read it); the
+    /// panel opens on it when it can be found.
+    private func importFromPaste() {
+        guard !isImportingFromPaste else { return }
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.showsHiddenFiles = true
+        panel.prompt = "Import"
+        panel.message = "Choose Paste\u{2019}s data folder (com.wiheads.paste or com.wiheads.paste-setapp, in Library \u{203A} Application Support). Paste\u{2019}s own data is not changed."
+        let found = PasteImporter.likelyFolders().first { FileManager.default.fileExists(atPath: $0.path) }
+        panel.directoryURL = found ?? PasteImporter.likelyFolders().first?.deletingLastPathComponent()
+        guard panel.runModal() == .OK, let folder = panel.url else { return }
+
+        isImportingFromPaste = true
+        let clipboard = clipboardManager, boards = pinboardManager
+        Task.detached(priority: .userInitiated) {
+            // Reading (decompressing, loading images) happens off the main thread
+            let outcome = Result { try PasteImporter.read(folder: folder) }
+            await MainActor.run {
+                isImportingFromPaste = false
+                switch outcome {
+                case .success(let library):
+                    transferMessage = PasteImporter.merge(library, clipboard: clipboard, pinboards: boards).description
+                case .failure(let error):
+                    transferMessage = "Import failed: \(error.localizedDescription)"
+                }
+            }
         }
     }
 

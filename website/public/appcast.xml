@@ -3,6 +3,17 @@
     <channel>
         <title>Superclip</title>
         <item>
+            <title>1.3</title>
+            <pubDate>Sun, 11 Oct 2026 12:40:08 +0100</pubDate>
+            <sparkle:version>4</sparkle:version>
+            <sparkle:shortVersionString>1.3</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://superclip-tan.vercel.app/releases/Superclip-1.3.dmg" length="3981549" type="application/octet-stream" sparkle:edSignature="kVhZtc+EU3ba3m/sPBavfXLL4dzzp07iVF0lpkVvfl+lGvdk2FLg1Nm3L4dIUVq3i3TxDKoyNX08TycOD1s/Dw=="/>
+            <sparkle:deltas>
+                <enclosure url="https://superclip-tan.vercel.app/releases/Superclip4-3.delta" sparkle:deltaFrom="3" length="475086" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977840" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="r+ooc2+WaS6ed5eFZOvi4T7vrR1Se3uwjBN1yhz+dhdeAZs8YONRPq/MwU2gd48G7sCP/NJhZL5sPVA17A2MDg=="/>
+            </sparkle:deltas>
+        </item>
+        <item>
             <title>1.2</title>
             <pubDate>Tue, 06 Oct 2026 20:21:30 +0100</pubDate>
             <sparkle:version>3</sparkle:version>

@@ -15,10 +15,13 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 WORK="${1:-$(mktemp -d /tmp/superclip-release.XXXXXX)}"
-SPARKLE_BIN=$(find ~/Library/Developer/Xcode/DerivedData/Superclip-*/SourcePackages/artifacts/sparkle/Sparkle/bin -maxdepth 1 -name generate_appcast 2>/dev/null | head -1 | xargs dirname)
-[ -n "$SPARKLE_BIN" ] || { echo "Sparkle tools not found — build once in Xcode first"; exit 1; }
+# No `| head -1` here: under pipefail a writer killed by the closed pipe fails the whole script
+GENERATE_APPCAST=$(find ~/Library/Developer/Xcode/DerivedData/Superclip-*/SourcePackages/artifacts/sparkle/Sparkle/bin -maxdepth 1 -name generate_appcast -print -quit 2>/dev/null || true)
+[ -n "$GENERATE_APPCAST" ] || { echo "Sparkle tools not found — build once in Xcode first"; exit 1; }
+SPARKLE_BIN=$(dirname "$GENERATE_APPCAST")
 
-VERSION=$(sed -n 's/.*MARKETING_VERSION = \([^;]*\);.*/\1/p' Superclip.xcodeproj/project.pbxproj | head -1)
+VERSION=$(awk -F' = |;' '/MARKETING_VERSION/ { print $2; exit }' Superclip.xcodeproj/project.pbxproj)
+[ -n "$VERSION" ] || { echo "Could not read MARKETING_VERSION"; exit 1; }
 echo "==> Releasing Superclip $VERSION (work dir: $WORK)"
 
 echo "==> Archiving"

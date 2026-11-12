@@ -59,6 +59,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   func applicationDidFinishLaunching(_ notification: Notification) {
     NSApp.setActivationPolicy(.accessory)
 
+    trackPasteTarget()
+
     settingsManager.applyTheme()
 
     statusItemController = StatusItemController(appDelegate: self)
@@ -851,12 +853,65 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
   }
 
+  /// The last app other than Superclip to be frontmost: where a paste should land.
+  private var pasteTarget: NSRunningApplication?
+  private var pasteTargetObserver: NSObjectProtocol?
+
+  private func trackPasteTarget() {
+    if let front = NSWorkspace.shared.frontmostApplication,
+      front.processIdentifier != ProcessInfo.processInfo.processIdentifier
+    {
+      pasteTarget = front
+    }
+    pasteTargetObserver = NSWorkspace.shared.notificationCenter.addObserver(
+      forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+    ) { [weak self] note in
+      guard
+        let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+        app.processIdentifier != ProcessInfo.processInfo.processIdentifier
+      else { return }
+      MainActor.assumeIsolated { self?.pasteTarget = app }
+    }
+  }
+
+  /// Settings, the editors and the capture tools activate Superclip, and nothing hands focus back
+  /// when they close. From then on Superclip stays the frontmost app, so a synthetic Cmd+V lands
+  /// in Superclip and nothing pastes until a relaunch. Hand focus back to the user's app first.
   private func simulatePaste() {
     guard AXIsProcessTrusted() || CGPreflightPostEventAccess() else {
       warnPasteNeedsAccessibility()
       return
     }
 
+    let ownPID = ProcessInfo.processInfo.processIdentifier
+    let frontPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
+    guard NSApp.isActive || frontPID == ownPID else {
+      postPasteKeystroke()
+      return
+    }
+
+    if let target = pasteTarget, !target.isTerminated {
+      target.activate()
+    } else {
+      NSApp.hide(nil)
+    }
+    // Wait (briefly) for the other app to actually come to the front before typing into it.
+    let deadline = Date().addingTimeInterval(1)
+    func postWhenFocused() {
+      let front = NSWorkspace.shared.frontmostApplication?.processIdentifier
+      if (front != nil && front != ownPID && !NSApp.isActive) || Date() >= deadline {
+        // A beat for the target's key window to settle after activation.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+          self?.postPasteKeystroke()
+        }
+      } else {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) { postWhenFocused() }
+      }
+    }
+    postWhenFocused()
+  }
+
+  private func postPasteKeystroke() {
     isSimulatingPaste = true
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
       self?.isSimulatingPaste = false

@@ -3,6 +3,18 @@
     <channel>
         <title>Superclip</title>
         <item>
+            <title>1.3.1</title>
+            <pubDate>Thu, 12 Nov 2026 16:14:46 +0800</pubDate>
+            <sparkle:version>5</sparkle:version>
+            <sparkle:shortVersionString>1.3.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://superclip-tan.vercel.app/releases/Superclip-1.3.1.dmg" length="3986646" type="application/octet-stream" sparkle:edSignature="XVgOQGuUkuMqHOvGKVZUfVC85Se0b6y22cG6IC4u52OD18WcNojwCB+1EZl9+JlciJUX3fbJm3TRBeg6M+8qDQ=="/>
+            <sparkle:deltas>
+                <enclosure url="https://superclip-tan.vercel.app/releases/Superclip5-4.delta" sparkle:deltaFrom="4" length="277442" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977840" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="YplJOOBdjTIKR8hApydQ/3tB21MpblqPPyk+IyvT0jhxcMoAcAdUYoiQWCgeU0cumDfCoJWqdyJqQj9d6xEWBg=="/>
+                <enclosure url="https://superclip-tan.vercel.app/releases/Superclip5-3.delta" sparkle:deltaFrom="3" length="481458" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977840" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="jhWCYzy8baYyi2tf8VCnJX4XULLtCQViBWLffXlUEi0iv8qwSzUWo6hH8CdKAXPYHWE2C1wxB+JAqvirLMHoBw=="/>
+            </sparkle:deltas>
+        </item>
+        <item>
             <title>1.3</title>
             <pubDate>Sun, 11 Oct 2026 12:40:08 +0100</pubDate>
             <sparkle:version>4</sparkle:version>
